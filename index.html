@@ -37,41 +37,89 @@
   </div>
 
   <div class="app" id="app-root" hidden>
-    <header class="app-header">
-      <div class="header-top">
-        <h1>Mis Tareas</h1>
-        <button type="button" class="settings-btn" id="settings-btn" aria-label="Ajustes">⚙️</button>
+    <!-- Navegación: barra lateral en desktop; menú a pantalla completa en móvil -->
+    <nav class="app-nav" id="app-nav" aria-label="Navegación principal">
+      <div class="app-nav-head">
+        <span class="app-nav-brand">Menú</span>
+        <button type="button" class="app-nav-close" id="nav-close" aria-label="Cerrar menú">✕</button>
       </div>
-      <p class="subtitle" id="summary">Sin tareas todavía</p>
-    </header>
-
-    <form class="new-task" id="task-form" autocomplete="off">
-      <input
-        type="text"
-        id="task-input"
-        class="task-input"
-        placeholder="Añadir una tarea…"
-        aria-label="Nueva tarea"
-        maxlength="200"
-      />
-      <button type="submit" class="add-btn" aria-label="Añadir tarea">+</button>
-    </form>
-
-    <nav class="filters" id="filters" aria-label="Filtrar tareas">
-      <button class="filter-btn is-active" data-filter="active">Pendientes</button>
-      <button class="filter-btn" data-filter="done">Completadas</button>
+      <button type="button" class="app-nav-item is-active" data-view="tareas">Mis tareas</button>
+      <button type="button" class="app-nav-item" data-view="planificadas">Planificadas</button>
     </nav>
 
-    <ul class="task-list" id="task-list"></ul>
+    <div class="app-main">
+      <!-- Barra superior con icono de menú (solo móvil) -->
+      <div class="mobile-navbar">
+        <button type="button" class="nav-toggle" id="nav-toggle" aria-label="Abrir menú">☰</button>
+      </div>
 
-    <p class="empty-state" id="empty-state" hidden>
-      No hay tareas aquí. ¡Añade una arriba! 🎉
-    </p>
+      <!-- Vista: Mis tareas -->
+      <section class="view" id="view-tareas">
+        <header class="app-header">
+          <div class="header-top">
+            <h1>Mis Tareas</h1>
+            <button type="button" class="settings-btn" id="settings-btn" aria-label="Ajustes">⚙️</button>
+          </div>
+          <p class="subtitle" id="summary">Sin tareas todavía</p>
+        </header>
 
-    <footer class="app-footer" id="footer" hidden>
-      <span id="count-remaining"></span>
-      <button class="clear-btn" id="clear-done">Borrar completadas</button>
-    </footer>
+        <form class="new-task" id="task-form" autocomplete="off">
+          <input
+            type="text"
+            id="task-input"
+            class="task-input"
+            placeholder="Añadir una tarea…"
+            aria-label="Nueva tarea"
+            maxlength="200"
+          />
+          <button type="submit" class="add-btn" aria-label="Añadir tarea">+</button>
+        </form>
+
+        <nav class="filters" id="filters" aria-label="Filtrar tareas">
+          <button class="filter-btn is-active" data-filter="active">Pendientes</button>
+          <button class="filter-btn" data-filter="done">Completadas</button>
+        </nav>
+
+        <ul class="task-list" id="task-list"></ul>
+
+        <p class="empty-state" id="empty-state" hidden>
+          No hay tareas aquí. ¡Añade una arriba! 🎉
+        </p>
+
+        <footer class="app-footer" id="footer" hidden>
+          <span id="count-remaining"></span>
+          <button class="clear-btn" id="clear-done">Borrar completadas</button>
+        </footer>
+      </section>
+
+      <!-- Vista: Planificadas -->
+      <section class="view" id="view-planificadas" hidden>
+        <header class="app-header">
+          <div class="header-top">
+            <h1>Planificadas</h1>
+          </div>
+          <p class="subtitle">Tareas anotadas. Se quedan aquí (no se completan).</p>
+        </header>
+
+        <form class="new-task" id="planned-form" autocomplete="off">
+          <input
+            type="text"
+            id="planned-input"
+            class="task-input"
+            placeholder="Añadir tarea planificada…"
+            aria-label="Nueva tarea planificada"
+            maxlength="200"
+          />
+          <button type="submit" class="add-btn" aria-label="Añadir">+</button>
+        </form>
+
+        <ul class="planned-list" id="planned-list"></ul>
+
+        <p class="planned-empty" id="planned-empty" hidden>
+          No hay tareas planificadas.
+        </p>
+      </section>
+    </div>
   </div>
 
   <!-- Vista de detalle de tarea -->
@@ -93,6 +141,7 @@
           ></textarea>
         </div>
 
+        <div id="detail-task-fields">
         <h3 class="detail-section-label">Fecha</h3>
         <div class="detail-date">
           <select id="detail-date-mode" class="date-mode" aria-label="Tipo de fecha">
@@ -121,6 +170,55 @@
           />
           <button type="submit" class="subtask-add-btn" aria-label="Añadir subtarea">+</button>
         </form>
+        </div>
+
+        <div id="detail-repeat-section" hidden>
+          <h3 class="detail-section-label">Repetir</h3>
+          <div class="detail-repeat">
+            <select id="detail-repeat-mode" class="date-mode" aria-label="Repetir">
+              <option value="never">Nunca</option>
+              <option value="weekly">Semanalmente</option>
+              <option value="yearly">Anualmente</option>
+              <option value="quarterly">Trimestralmente</option>
+              <option value="biennial">Cada dos años</option>
+            </select>
+            <div class="repeat-day-wrap" id="repeat-day-wrap" hidden>
+              <label class="detail-subtle-label" for="detail-repeat-day">Día de la semana</label>
+              <select id="detail-repeat-day" class="date-mode" aria-label="Día de la semana">
+                <option value="1">Lunes</option>
+                <option value="2">Martes</option>
+                <option value="3">Miércoles</option>
+                <option value="4">Jueves</option>
+                <option value="5">Viernes</option>
+                <option value="6">Sábado</option>
+                <option value="7">Domingo</option>
+              </select>
+            </div>
+            <div class="repeat-year-wrap" id="repeat-year-wrap" hidden>
+              <label class="detail-subtle-label" for="detail-repeat-month">Mes</label>
+              <select id="detail-repeat-month" class="date-mode" aria-label="Mes">
+                <option value="1">Enero</option>
+                <option value="2">Febrero</option>
+                <option value="3">Marzo</option>
+                <option value="4">Abril</option>
+                <option value="5">Mayo</option>
+                <option value="6">Junio</option>
+                <option value="7">Julio</option>
+                <option value="8">Agosto</option>
+                <option value="9">Septiembre</option>
+                <option value="10">Octubre</option>
+                <option value="11">Noviembre</option>
+                <option value="12">Diciembre</option>
+              </select>
+              <label class="detail-subtle-label" for="detail-repeat-dom">Día del mes</label>
+              <select id="detail-repeat-dom" class="date-mode" aria-label="Día del mes"></select>
+            </div>
+            <div class="repeat-biennial-wrap" id="repeat-biennial-wrap" hidden>
+              <label class="detail-subtle-label" for="detail-repeat-start">Fecha de inicio</label>
+              <input type="date" id="detail-repeat-start" class="date-input" aria-label="Fecha de inicio" />
+            </div>
+          </div>
+        </div>
 
         <label class="detail-note-label detail-section-label" for="detail-note">Nota</label>
         <textarea
@@ -140,37 +238,17 @@
   <div class="settings-overlay" id="settings-overlay" hidden>
     <div class="settings-panel" role="dialog" aria-modal="true" aria-label="Ajustes">
       <aside class="settings-nav">
-        <button type="button" class="settings-tab is-active" data-tab="planificadas">Planificadas</button>
-        <button type="button" class="settings-tab" data-tab="datos">Datos</button>
+        <button type="button" class="settings-tab is-active" data-tab="datos">Datos</button>
         <button type="button" class="settings-tab" data-tab="sesion">Sesión</button>
       </aside>
 
       <div class="settings-content">
         <header class="settings-head">
-          <h2 class="settings-title" id="settings-title">Planificadas</h2>
+          <h2 class="settings-title" id="settings-title">Datos</h2>
           <button type="button" class="settings-close" id="settings-close" aria-label="Cerrar">✕</button>
         </header>
 
-        <section class="settings-section" id="tab-planificadas">
-          <p class="settings-desc">
-            Tareas que quieres tener anotadas. Se quedan aquí (no se completan).
-          </p>
-          <form class="planned-add" id="planned-form" autocomplete="off">
-            <input
-              type="text"
-              id="planned-input"
-              class="planned-add-input"
-              placeholder="Añadir tarea planificada…"
-              maxlength="200"
-              aria-label="Nueva tarea planificada"
-            />
-            <button type="submit" class="planned-add-btn" aria-label="Añadir">+</button>
-          </form>
-          <ul class="planned-list" id="planned-list"></ul>
-          <p class="planned-empty" id="planned-empty" hidden>No hay tareas planificadas.</p>
-        </section>
-
-        <section class="settings-section" id="tab-datos" hidden>
+        <section class="settings-section" id="tab-datos">
           <p class="settings-desc">
             Guarda una copia de tus tareas en un archivo, o restaura tus tareas desde uno.
           </p>
