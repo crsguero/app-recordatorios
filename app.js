@@ -30,6 +30,7 @@
   const fauth = firebase.auth();
   const FB_ROOT = "recordatorios"; // ruta raíz de esta app en la base de datos
   const FB_KEY = "tasks"; // recordatorios/tasks = array de tareas
+  const FB_KEY_PLANNED = "planned"; // recordatorios/planned = tareas planificadas
 
   /* ---------- Respaldo local (IndexedDB) ----------
      Usamos IndexedDB en lugar de localStorage porque los archivos abiertos
@@ -40,11 +41,13 @@
   const DB_NAME = "app-recordatorios";
   const STORE = "kv";
   const IDB_KEY = "tasks";
+  const IDB_KEY_PLANNED = "planned";
   let db = null;
   let fbReady = false; // true cuando Firebase está autenticado y escuchando
   let appStarted = false; // evita arrancar la app dos veces
 
   let tasks = [];
+  let planned = []; // tareas planificadas (solo texto, sin completar)
   let filter = "active"; // active | done
 
   /* ---------- Aviso de errores visible ---------- */
@@ -105,6 +108,41 @@
     }
   }
 
+  function savePlanned() {
+    if (db) idbSet(IDB_KEY_PLANNED, planned).catch(() => {});
+    if (fbReady) {
+      fdb
+        .ref(FB_ROOT + "/" + FB_KEY_PLANNED)
+        .set(planned && planned.length ? planned : null)
+        .catch((e) =>
+          showError("Al sincronizar: " + (e && e.message ? e.message : e))
+        );
+    }
+  }
+
+  /* ---------- Acciones: planificadas ---------- */
+  function addPlanned(text) {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    planned.unshift({ id: newId(), text: trimmed });
+    savePlanned();
+    renderPlanned();
+  }
+
+  function setPlannedText(id, text) {
+    const item = planned.find((p) => p.id === id);
+    if (item) {
+      item.text = text;
+      savePlanned();
+    }
+  }
+
+  function deletePlanned(id) {
+    planned = planned.filter((p) => p.id !== id);
+    savePlanned();
+    renderPlanned();
+  }
+
   /* ---------- Acciones ---------- */
   function addTask(text) {
     const trimmed = text.trim();
@@ -123,6 +161,8 @@
     const task = tasks.find((t) => t.id === id);
     if (task) {
       task.done = !task.done;
+      if (task.done) task.completedAt = todayISO();
+      else delete task.completedAt;
       save();
       render();
     }
@@ -180,6 +220,29 @@
 
   function newId() {
     return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+  }
+
+  function todayISO() {
+    const d = new Date();
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return y + "-" + m + "-" + day;
+  }
+
+  // Migración puntual: las tareas ya completadas antes de guardar la fecha de
+  // completado reciben el 25/07/2026. Idempotente (solo afecta a las que no
+  // tienen fecha; las nuevas siempre la guardan). Se puede retirar más adelante.
+  const LEGACY_COMPLETED_DATE = "2026-07-25";
+  function backfillCompletedDates() {
+    let changed = false;
+    tasks.forEach((t) => {
+      if (t.done && !t.completedAt) {
+        t.completedAt = LEGACY_COMPLETED_DATE;
+        changed = true;
+      }
+    });
+    return changed;
   }
 
   /* ---------- Subtareas ---------- */
@@ -429,6 +492,35 @@
       .map((entry) => entry.task);
   }
 
+  function renderPlanned() {
+    const container = document.getElementById("planned-list");
+    const empty = document.getElementById("planned-empty");
+    if (!container) return;
+    container.innerHTML = "";
+    planned.forEach((item) => {
+      const li = document.createElement("li");
+      li.className = "planned-item";
+
+      const input = document.createElement("input");
+      input.type = "text";
+      input.className = "planned-input";
+      input.value = item.text;
+      input.setAttribute("aria-label", "Tarea planificada");
+      input.addEventListener("input", () => setPlannedText(item.id, input.value));
+
+      const del = document.createElement("button");
+      del.type = "button";
+      del.className = "planned-del";
+      del.textContent = "🗑";
+      del.setAttribute("aria-label", "Eliminar tarea planificada");
+      del.addEventListener("click", () => deletePlanned(item.id));
+
+      li.append(input, del);
+      container.appendChild(li);
+    });
+    if (empty) empty.hidden = planned.length !== 0;
+  }
+
   function render() {
     list.innerHTML = "";
 
@@ -450,7 +542,12 @@
       //            una vez cumplida:      checkbox + "Antes de [fin]"
       let dateLabel = "";
       let useClock = false;
-      if (task.dateMode === "from" && task.dateStart) {
+      if (task.done) {
+        // Tarea completada: muestra la fecha en que se completó
+        if (task.completedAt) {
+          dateLabel = "Completada el " + formatDate(task.completedAt);
+        }
+      } else if (task.dateMode === "from" && task.dateStart) {
         dateLabel = "A partir de " + formatDate(task.dateStart);
         useClock = true;
       } else if (task.dateMode === "before" && task.dateStart) {
@@ -688,6 +785,113 @@
     { passive: false }
   );
 
+  /* ---------- Ajustes ---------- */
+  const settingsBtn = document.getElementById("settings-btn");
+  const settingsOverlay = document.getElementById("settings-overlay");
+  const settingsClose = document.getElementById("settings-close");
+  const settingsTitle = document.getElementById("settings-title");
+  const exportBtn = document.getElementById("export-btn");
+  const importBtn = document.getElementById("import-btn");
+  const importFile = document.getElementById("import-file");
+
+  const plannedForm = document.getElementById("planned-form");
+  const plannedInput = document.getElementById("planned-input");
+
+  function openSettings() {
+    renderPlanned(); // asegura la lista al día al abrir
+    settingsOverlay.hidden = false;
+    document.body.classList.add("no-scroll");
+  }
+  function closeSettings() {
+    settingsOverlay.hidden = true;
+    document.body.classList.remove("no-scroll");
+  }
+
+  plannedForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    addPlanned(plannedInput.value);
+    plannedInput.value = "";
+    plannedInput.focus();
+  });
+
+  settingsBtn.addEventListener("click", openSettings);
+  settingsClose.addEventListener("click", closeSettings);
+  settingsOverlay.addEventListener("click", (e) => {
+    if (e.target === settingsOverlay) closeSettings();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !settingsOverlay.hidden) closeSettings();
+  });
+
+  // Navegación entre pestañas del modal
+  const settingsTabs = document.querySelectorAll(".settings-tab");
+  const settingsSections = {
+    planificadas: "tab-planificadas",
+    datos: "tab-datos",
+    sesion: "tab-sesion",
+  };
+  settingsTabs.forEach((tab) => {
+    tab.addEventListener("click", () => {
+      const name = tab.dataset.tab;
+      settingsTabs.forEach((t) => t.classList.toggle("is-active", t === tab));
+      Object.keys(settingsSections).forEach((key) => {
+        const el = document.getElementById(settingsSections[key]);
+        if (el) el.hidden = key !== name;
+      });
+      settingsTitle.textContent = tab.textContent.trim();
+    });
+  });
+
+  // Exportar: descarga un JSON con todas las tareas
+  exportBtn.addEventListener("click", () => {
+    const data = JSON.stringify(tasks, null, 2);
+    const blob = new Blob([data], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "tareas-" + todayISO() + ".json";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  });
+
+  // Importar: reemplaza las tareas con las del archivo elegido
+  importBtn.addEventListener("click", () => importFile.click());
+  importFile.addEventListener("change", () => {
+    const file = importFile.files && importFile.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const parsed = JSON.parse(reader.result);
+        if (!Array.isArray(parsed)) {
+          throw new Error("El archivo no contiene una lista de tareas.");
+        }
+        if (
+          !confirm(
+            "Esto reemplazará TODAS tus tareas actuales por las del archivo. ¿Continuar?"
+          )
+        ) {
+          importFile.value = "";
+          return;
+        }
+        // Garantiza que cada tarea tenga id (necesario para editar/reordenar)
+        tasks = parsed.map((t) =>
+          Object.assign({}, t, { id: t && t.id ? t.id : newId() })
+        );
+        save();
+        render();
+        closeSettings();
+      } catch (err) {
+        showError("Al importar: " + (err && err.message ? err.message : err));
+      }
+      importFile.value = "";
+    };
+    reader.onerror = () => showError("No se pudo leer el archivo.");
+    reader.readAsText(file);
+  });
+
   /* ---------- Arranque tras iniciar sesión ---------- */
   function loadLegacy() {
     // Migración: importa las tareas de la antigua versión con localStorage.
@@ -715,6 +919,12 @@
       }
     }
     tasks = Array.isArray(local) ? local : [];
+    if (backfillCompletedDates() && db) idbSet(IDB_KEY, tasks).catch(() => {});
+
+    let localPlanned = [];
+    if (db) localPlanned = await idbGet(IDB_KEY_PLANNED);
+    planned = Array.isArray(localPlanned) ? localPlanned : [];
+
     render(); // pinta al instante con el respaldo local
   }
 
@@ -740,9 +950,34 @@
         }
         first = false;
         tasks = remote;
+        const migrated = backfillCompletedDates();
         if (db) idbSet(IDB_KEY, tasks).catch(() => {}); // respaldo local al día
+        if (migrated) save(); // sube la migración a la nube
         clearError();
         render();
+      },
+      (err) =>
+        showError("Al leer la nube: " + (err && err.message ? err.message : err))
+    );
+
+    // Segundo listener: tareas planificadas
+    let firstP = true;
+    const refP = fdb.ref(FB_ROOT + "/" + FB_KEY_PLANNED);
+    refP.on(
+      "value",
+      (snap) => {
+        const raw = snap.val();
+        const remote = Array.isArray(raw) ? raw : raw ? Object.values(raw) : [];
+        if (firstP && remote.length === 0 && planned.length > 0) {
+          firstP = false;
+          refP.set(planned).catch(() => {});
+          return;
+        }
+        firstP = false;
+        planned = remote;
+        if (db) idbSet(IDB_KEY_PLANNED, planned).catch(() => {});
+        clearError();
+        renderPlanned();
       },
       (err) =>
         showError("Al leer la nube: " + (err && err.message ? err.message : err))

@@ -190,19 +190,19 @@ body {
   font-weight: 700;
 }
 
-.logout-btn {
+.settings-btn {
   flex: 0 0 auto;
   background: transparent;
   border: none;
-  color: var(--text-soft);
-  font-size: 0.85rem;
+  font-size: 1.3rem;
+  line-height: 1;
   cursor: pointer;
-  padding: 4px 6px;
-  border-radius: 6px;
+  padding: 2px 4px;
+  border-radius: 8px;
 }
 
-.logout-btn:hover {
-  color: var(--primary);
+.settings-btn:hover {
+  opacity: 0.7;
 }
 
 .subtitle {
@@ -211,11 +211,137 @@ body {
   margin-top: 2px;
 }
 
-.session-email {
+/* --- Modal de ajustes --- */
+.settings-overlay[hidden] {
+  display: none !important;
+}
+
+.settings-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.settings-panel {
+  width: 100%;
+  max-width: 620px;
+  height: 80vh;
+  max-height: 560px;
+  display: flex;
+  background: var(--card);
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
+}
+
+.settings-nav {
+  flex: 0 0 130px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px 8px;
+  background: var(--bg);
+  border-right: 1px solid var(--border);
+}
+
+.settings-tab {
+  text-align: left;
+  padding: 10px 12px;
+  font-size: 0.9rem;
+  font-weight: 500;
   color: var(--text-soft);
-  font-size: 0.72rem;
-  margin-top: 2px;
-  opacity: 0.7;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.settings-tab.is-active {
+  color: var(--text);
+  background: var(--card);
+}
+
+.settings-content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 16px 20px;
+  overflow-y: auto;
+}
+
+.settings-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.settings-title {
+  font-size: 1.15rem;
+  font-weight: 600;
+}
+
+.settings-close {
+  background: transparent;
+  border: none;
+  color: var(--text-soft);
+  font-size: 1.1rem;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+
+.settings-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.settings-section[hidden] {
+  display: none;
+}
+
+.settings-desc {
+  color: var(--text-soft);
+  font-size: 0.9rem;
+}
+
+.settings-action {
+  padding: 12px 14px;
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: var(--text);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.settings-action:hover {
+  border-color: var(--primary);
+}
+
+.settings-action.danger {
+  color: var(--danger);
+}
+
+.settings-action.danger:hover {
+  border-color: var(--danger);
+  background: rgba(239, 68, 68, 0.08);
+}
+
+.settings-email {
+  font-size: 1rem;
+  font-weight: 500;
+  color: var(--text);
+  word-break: break-all;
 }
 
 /* --- Formulario nueva tarea --- */
@@ -412,6 +538,99 @@ body {
 
 .task-item.is-starred .star-btn {
   color: var(--star);
+}
+
+/* --- Tareas planificadas (dentro del modal de Ajustes) --- */
+.planned-add {
+  display: flex;
+  gap: 8px;
+}
+
+.planned-add-input {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 12px;
+  font-size: 0.95rem;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.planned-add-input:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.15);
+}
+
+.planned-add-btn {
+  flex: 0 0 44px;
+  height: 42px;
+  font-size: 1.4rem;
+  line-height: 1;
+  color: #fff;
+  background: var(--primary);
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.planned-add-btn:hover {
+  background: var(--primary-dark);
+}
+
+.planned-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.planned-empty {
+  color: var(--text-soft);
+  font-size: 0.9rem;
+}
+
+.planned-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.planned-input {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 4px;
+  font-size: 1rem;
+  font-family: inherit;
+  color: var(--text);
+  background: transparent;
+  border: none;
+}
+
+.planned-input:focus {
+  outline: none;
+}
+
+.planned-del {
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  font-size: 1.05rem;
+  color: var(--text-soft);
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.planned-del:hover {
+  color: var(--danger);
+  background: rgba(239, 68, 68, 0.08);
 }
 
 /* --- Estado vacío --- */

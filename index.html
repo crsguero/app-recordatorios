@@ -40,10 +40,9 @@
     <header class="app-header">
       <div class="header-top">
         <h1>Mis Tareas</h1>
-        <button type="button" class="logout-btn" id="logout-btn">Salir</button>
+        <button type="button" class="settings-btn" id="settings-btn" aria-label="Ajustes">⚙️</button>
       </div>
       <p class="subtitle" id="summary">Sin tareas todavía</p>
-      <p class="session-email" id="session-email"></p>
     </header>
 
     <form class="new-task" id="task-form" autocomplete="off">
@@ -133,6 +132,58 @@
         <button class="detail-delete" id="detail-delete" type="button">
           🗑 Eliminar tarea
         </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Ajustes -->
+  <div class="settings-overlay" id="settings-overlay" hidden>
+    <div class="settings-panel" role="dialog" aria-modal="true" aria-label="Ajustes">
+      <aside class="settings-nav">
+        <button type="button" class="settings-tab is-active" data-tab="planificadas">Planificadas</button>
+        <button type="button" class="settings-tab" data-tab="datos">Datos</button>
+        <button type="button" class="settings-tab" data-tab="sesion">Sesión</button>
+      </aside>
+
+      <div class="settings-content">
+        <header class="settings-head">
+          <h2 class="settings-title" id="settings-title">Planificadas</h2>
+          <button type="button" class="settings-close" id="settings-close" aria-label="Cerrar">✕</button>
+        </header>
+
+        <section class="settings-section" id="tab-planificadas">
+          <p class="settings-desc">
+            Tareas que quieres tener anotadas. Se quedan aquí (no se completan).
+          </p>
+          <form class="planned-add" id="planned-form" autocomplete="off">
+            <input
+              type="text"
+              id="planned-input"
+              class="planned-add-input"
+              placeholder="Añadir tarea planificada…"
+              maxlength="200"
+              aria-label="Nueva tarea planificada"
+            />
+            <button type="submit" class="planned-add-btn" aria-label="Añadir">+</button>
+          </form>
+          <ul class="planned-list" id="planned-list"></ul>
+          <p class="planned-empty" id="planned-empty" hidden>No hay tareas planificadas.</p>
+        </section>
+
+        <section class="settings-section" id="tab-datos" hidden>
+          <p class="settings-desc">
+            Guarda una copia de tus tareas en un archivo, o restaura tus tareas desde uno.
+          </p>
+          <button type="button" class="settings-action" id="export-btn">⬇️ Exportar datos</button>
+          <button type="button" class="settings-action" id="import-btn">⬆️ Importar datos</button>
+          <input type="file" id="import-file" accept="application/json,.json" hidden />
+        </section>
+
+        <section class="settings-section" id="tab-sesion" hidden>
+          <p class="settings-desc">Sesión iniciada como:</p>
+          <p class="settings-email" id="session-email"></p>
+          <button type="button" class="settings-action danger" id="logout-btn">Cerrar sesión</button>
+        </section>
       </div>
     </div>
   </div>
