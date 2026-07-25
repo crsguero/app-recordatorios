@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#4f46e5" />
+  <title>Mis Tareas</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <!-- Pantalla de carga mientras se comprueba la sesión -->
+  <div id="auth-loading" class="auth-loading">
+    <span class="auth-loading-spinner"></span>
+  </div>
+
+  <!-- Login -->
+  <div id="login-overlay" class="login-overlay" hidden>
+    <div class="login-card">
+      <h1>✅ Mis Tareas</h1>
+      <p class="login-sub">Inicia sesión para sincronizar tus tareas</p>
+      <form id="login-form">
+        <div class="field">
+          <label for="login-email">Email</label>
+          <input type="email" id="login-email" placeholder="tu@email.com" autocomplete="email" required />
+        </div>
+        <div class="field">
+          <label for="login-password">Contraseña</label>
+          <input type="password" id="login-password" placeholder="••••••••" autocomplete="current-password" required />
+        </div>
+        <button type="submit">Entrar</button>
+        <p id="login-error" class="login-error"></p>
+      </form>
+    </div>
+  </div>
+
+  <div class="app" id="app-root" hidden>
+    <header class="app-header">
+      <div class="header-top">
+        <h1>Mis Tareas</h1>
+        <button type="button" class="logout-btn" id="logout-btn">Salir</button>
+      </div>
+      <p class="subtitle" id="summary">Sin tareas todavía</p>
+      <p class="session-email" id="session-email"></p>
+    </header>
+
+    <form class="new-task" id="task-form" autocomplete="off">
+      <input
+        type="text"
+        id="task-input"
+        class="task-input"
+        placeholder="Añadir una tarea…"
+        aria-label="Nueva tarea"
+        maxlength="200"
+      />
+      <button type="submit" class="add-btn" aria-label="Añadir tarea">+</button>
+    </form>
+
+    <nav class="filters" id="filters" aria-label="Filtrar tareas">
+      <button class="filter-btn is-active" data-filter="all">Todas</button>
+      <button class="filter-btn" data-filter="active">Pendientes</button>
+      <button class="filter-btn" data-filter="done">Completadas</button>
+    </nav>
+
+    <ul class="task-list" id="task-list"></ul>
+
+    <p class="empty-state" id="empty-state" hidden>
+      No hay tareas aquí. ¡Añade una arriba! 🎉
+    </p>
+
+    <footer class="app-footer" id="footer" hidden>
+      <span id="count-remaining"></span>
+      <button class="clear-btn" id="clear-done">Borrar completadas</button>
+    </footer>
+  </div>
+
+  <!-- Vista de detalle de tarea -->
+  <div class="detail-overlay" id="detail-overlay" hidden>
+    <div class="detail-panel" role="dialog" aria-modal="true" aria-labelledby="detail-title">
+      <header class="detail-header">
+        <button class="detail-close" id="detail-close" type="button" aria-label="Cerrar">‹ Volver</button>
+      </header>
+
+      <div class="detail-body">
+        <div class="detail-check-row">
+          <input type="checkbox" class="task-check" id="detail-check" aria-label="Completar tarea" />
+          <textarea
+            class="detail-title"
+            id="detail-title"
+            rows="1"
+            maxlength="200"
+            aria-label="Editar tarea"
+          ></textarea>
+        </div>
+
+        <h3 class="detail-section-label">Subtareas</h3>
+        <ul class="subtask-list" id="detail-subtasks"></ul>
+        <form class="subtask-add" id="subtask-form" autocomplete="off">
+          <input
+            type="text"
+            id="subtask-input"
+            class="subtask-input"
+            placeholder="Añadir subtarea…"
+            aria-label="Nueva subtarea"
+            maxlength="200"
+          />
+          <button type="submit" class="subtask-add-btn" aria-label="Añadir subtarea">+</button>
+        </form>
+
+        <label class="detail-note-label detail-section-label" for="detail-note">Nota</label>
+        <textarea
+          id="detail-note"
+          class="detail-note"
+          placeholder="Escribe una nota para esta tarea…"
+        ></textarea>
+
+        <button class="detail-delete" id="detail-delete" type="button">
+          🗑 Eliminar tarea
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Firebase (compat): mismo proyecto que la app de tareas → cuentas compartidas -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
