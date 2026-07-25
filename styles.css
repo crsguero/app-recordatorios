@@ -35,6 +35,26 @@ body {
   padding: 20px 16px 40px;
 }
 
+/* --- Aviso de errores --- */
+.sync-error[hidden] {
+  display: none !important;
+}
+.sync-error {
+  position: fixed;
+  left: 12px;
+  right: 12px;
+  bottom: calc(12px + env(safe-area-inset-bottom));
+  z-index: 2000;
+  padding: 12px 14px;
+  background: #7f1d1d;
+  color: #fff;
+  font-size: 0.85rem;
+  border-radius: 10px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+  max-width: 560px;
+  margin: 0 auto;
+}
+
 /* --- Login / Autenticación --- */
 /* El atributo hidden debe ganar al display:flex de estos contenedores */
 .app[hidden],

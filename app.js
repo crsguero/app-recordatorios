@@ -47,6 +47,26 @@
   let tasks = [];
   let filter = "all"; // all | active | done
 
+  /* ---------- Aviso de errores visible ---------- */
+  function showError(msg) {
+    const el = document.getElementById("sync-error");
+    if (el) {
+      el.textContent = "⚠️ " + msg;
+      el.hidden = false;
+    }
+  }
+  function clearError() {
+    const el = document.getElementById("sync-error");
+    if (el) el.hidden = true;
+  }
+  window.addEventListener("error", (ev) => {
+    showError((ev.message || "error desconocido"));
+  });
+  window.addEventListener("unhandledrejection", (ev) => {
+    const r = ev.reason;
+    showError("Promesa: " + (r && r.message ? r.message : r));
+  });
+
   function openDB() {
     return new Promise((resolve, reject) => {
       const req = indexedDB.open(DB_NAME, 1);
@@ -81,7 +101,7 @@
       fdb
         .ref(FB_ROOT + "/" + FB_KEY)
         .set(tasks && tasks.length ? tasks : null)
-        .catch(() => {});
+        .catch((e) => showError("Al sincronizar: " + (e && e.message ? e.message : e)));
     }
   }
 
@@ -599,9 +619,11 @@
         first = false;
         tasks = remote;
         if (db) idbSet(IDB_KEY, tasks).catch(() => {}); // respaldo local al día
+        clearError();
         render();
       },
-      () => {}
+      (err) =>
+        showError("Al leer la nube: " + (err && err.message ? err.message : err))
     );
   }
 
