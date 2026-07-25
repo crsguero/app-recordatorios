@@ -45,7 +45,7 @@
   let appStarted = false; // evita arrancar la app dos veces
 
   let tasks = [];
-  let filter = "all"; // all | active | done
+  let filter = "active"; // active | done
 
   /* ---------- Aviso de errores visible ---------- */
   function showError(msg) {
