@@ -94,6 +94,21 @@
           ></textarea>
         </div>
 
+        <h3 class="detail-section-label">Fecha</h3>
+        <div class="detail-date">
+          <select id="detail-date-mode" class="date-mode" aria-label="Tipo de fecha">
+            <option value="none">Sin fecha</option>
+            <option value="before">Antes de</option>
+            <option value="from">A partir de</option>
+            <option value="between">Entre</option>
+          </select>
+          <div class="date-fields" id="date-fields" hidden>
+            <input type="date" id="date-start" class="date-input" aria-label="Fecha" />
+            <span class="date-sep" id="date-sep" hidden>y</span>
+            <input type="date" id="date-end" class="date-input" aria-label="Fecha fin" hidden />
+          </div>
+        </div>
+
         <h3 class="detail-section-label">Subtareas</h3>
         <ul class="subtask-list" id="detail-subtasks"></ul>
         <form class="subtask-add" id="subtask-form" autocomplete="off">

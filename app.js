@@ -167,6 +167,11 @@
   const detailSubtasks = document.getElementById("detail-subtasks");
   const subtaskForm = document.getElementById("subtask-form");
   const subtaskInput = document.getElementById("subtask-input");
+  const dateMode = document.getElementById("detail-date-mode");
+  const dateFields = document.getElementById("date-fields");
+  const dateStart = document.getElementById("date-start");
+  const dateEnd = document.getElementById("date-end");
+  const dateSep = document.getElementById("date-sep");
   let openTaskId = null;
 
   function getOpenTask() {
@@ -244,6 +249,53 @@
     subtaskInput.focus();
   });
 
+  /* ---------- Fecha de la tarea ---------- */
+  function renderDate(task) {
+    const mode = task.dateMode || "none";
+    dateMode.value = mode;
+    dateStart.value = task.dateStart || "";
+    dateEnd.value = task.dateEnd || "";
+    // Muestra los campos según el modo:
+    //  none    → ninguno
+    //  before  → una fecha (límite máximo)
+    //  from    → una fecha (a partir de)
+    //  between → dos fechas
+    dateFields.hidden = mode === "none";
+    dateEnd.hidden = mode !== "between";
+    dateSep.hidden = mode !== "between";
+  }
+
+  dateMode.addEventListener("change", () => {
+    const task = getOpenTask();
+    if (!task) return;
+    task.dateMode = dateMode.value;
+    if (task.dateMode === "none") {
+      delete task.dateStart;
+      delete task.dateEnd;
+    } else if (task.dateMode !== "between") {
+      delete task.dateEnd;
+    }
+    save();
+    renderDate(task);
+    render();
+  });
+
+  dateStart.addEventListener("change", () => {
+    const task = getOpenTask();
+    if (!task) return;
+    task.dateStart = dateStart.value || undefined;
+    save();
+    render();
+  });
+
+  dateEnd.addEventListener("change", () => {
+    const task = getOpenTask();
+    if (!task) return;
+    task.dateEnd = dateEnd.value || undefined;
+    save();
+    render();
+  });
+
   function openDetail(id) {
     const task = tasks.find((t) => t.id === id);
     if (!task) return;
@@ -252,6 +304,7 @@
     detailTitle.classList.toggle("is-done", task.done);
     detailNote.value = task.note || "";
     detailCheck.checked = task.done;
+    renderDate(task);
     renderSubtasks(task);
     subtaskInput.value = "";
     overlay.hidden = false;
@@ -339,6 +392,29 @@
   });
 
   /* ---------- Render ---------- */
+  function formatDate(iso) {
+    if (!iso) return "";
+    const parts = iso.split("-");
+    if (parts.length !== 3) return iso;
+    const d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+    return d.toLocaleDateString("es-ES", {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    });
+  }
+
+  // ¿La fecha (yyyy-mm-dd) ya ha llegado? (hoy es igual o posterior)
+  function isReached(iso) {
+    if (!iso) return false;
+    const parts = iso.split("-");
+    if (parts.length !== 3) return false;
+    const d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return today.getTime() >= d.getTime();
+  }
+
   function visibleTasks() {
     let result = tasks;
     if (filter === "active") result = tasks.filter((t) => !t.done);
@@ -366,17 +442,53 @@
         (task.starred ? " is-starred" : "");
       li.dataset.id = task.id;
 
-      const check = document.createElement("input");
-      check.type = "checkbox";
-      check.className = "task-check";
-      check.checked = task.done;
-      check.setAttribute("aria-label", "Marcar como completada");
-      check.addEventListener("change", () => toggleTask(task.id));
+      // Estado de la fecha: define la etiqueta de la segunda línea y si se
+      // usa el reloj (🕑) en lugar del checkbox.
+      //  from    → 🕑 + "A partir de [inicio]"
+      //  before  → checkbox + "Antes de [inicio]"
+      //  between → antes de la 1ª fecha: 🕑 + "A partir de [inicio]"
+      //            una vez cumplida:      checkbox + "Antes de [fin]"
+      let dateLabel = "";
+      let useClock = false;
+      if (task.dateMode === "from" && task.dateStart) {
+        dateLabel = "A partir de " + formatDate(task.dateStart);
+        useClock = true;
+      } else if (task.dateMode === "before" && task.dateStart) {
+        dateLabel = "Antes de " + formatDate(task.dateStart);
+      } else if (task.dateMode === "between") {
+        if (task.dateStart && !isReached(task.dateStart)) {
+          dateLabel = "A partir de " + formatDate(task.dateStart);
+          useClock = true;
+        } else if (task.dateEnd) {
+          dateLabel = "Antes de " + formatDate(task.dateEnd);
+        }
+      }
+
+      // Control de estado: reloj o checkbox según lo anterior
+      let control;
+      if (useClock) {
+        control = document.createElement("button");
+        control.type = "button";
+        control.className = "task-clock";
+        control.textContent = "🕑";
+        control.setAttribute("aria-label", "Marcar como completada");
+        control.addEventListener("click", () => toggleTask(task.id));
+      } else {
+        control = document.createElement("input");
+        control.type = "checkbox";
+        control.className = "task-check";
+        control.checked = task.done;
+        control.setAttribute("aria-label", "Marcar como completada");
+        control.addEventListener("change", () => toggleTask(task.id));
+      }
+
+      const main = document.createElement("div");
+      main.className = "task-main";
+      main.addEventListener("click", () => openDetail(task.id));
 
       const span = document.createElement("span");
       span.className = "task-text";
       span.textContent = task.text;
-      span.addEventListener("click", () => openDetail(task.id));
 
       if (task.subtasks && task.subtasks.length) {
         const done = task.subtasks.filter((s) => s.done).length;
@@ -387,6 +499,16 @@
         span.appendChild(badge);
       }
 
+      main.appendChild(span);
+
+      // Segunda línea con la fecha
+      if (dateLabel) {
+        const dateLine = document.createElement("span");
+        dateLine.className = "task-date";
+        dateLine.textContent = dateLabel;
+        main.appendChild(dateLine);
+      }
+
       const star = document.createElement("button");
       star.className = "star-btn";
       star.type = "button";
@@ -395,7 +517,7 @@
       star.textContent = task.starred ? "★" : "☆";
       star.addEventListener("click", () => toggleStar(task.id));
 
-      li.append(check, span, star);
+      li.append(control, main, star);
       list.appendChild(li);
     });
 
