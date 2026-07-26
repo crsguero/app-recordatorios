@@ -75,21 +75,19 @@
           <button type="submit" class="add-btn" aria-label="Añadir tarea">+</button>
         </form>
 
-        <nav class="filters" id="filters" aria-label="Filtrar tareas">
-          <button class="filter-btn is-active" data-filter="active">Pendientes</button>
-          <button class="filter-btn" data-filter="done">Completadas</button>
-        </nav>
-
         <ul class="task-list" id="task-list"></ul>
 
         <p class="empty-state" id="empty-state" hidden>
           No hay tareas aquí. ¡Añade una arriba! 🎉
         </p>
 
-        <footer class="app-footer" id="footer" hidden>
-          <span id="count-remaining"></span>
-          <button class="clear-btn" id="clear-done">Borrar completadas</button>
-        </footer>
+        <div class="done-section" id="done-section" hidden>
+          <div class="done-header">
+            <button type="button" class="toggle-done-btn" id="toggle-done"></button>
+            <button type="button" class="clear-btn" id="clear-done">Borrar completadas</button>
+          </div>
+          <ul class="task-list done-list" id="done-list" hidden></ul>
+        </div>
       </section>
 
       <!-- Vista: Planificadas -->

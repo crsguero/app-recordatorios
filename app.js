@@ -4,10 +4,10 @@
   const form = document.getElementById("task-form");
   const input = document.getElementById("task-input");
   const list = document.getElementById("task-list");
-  const filters = document.getElementById("filters");
   const emptyState = document.getElementById("empty-state");
-  const footer = document.getElementById("footer");
-  const countRemaining = document.getElementById("count-remaining");
+  const doneSection = document.getElementById("done-section");
+  const doneList = document.getElementById("done-list");
+  const toggleDoneBtn = document.getElementById("toggle-done");
   const clearDoneBtn = document.getElementById("clear-done");
   const summary = document.getElementById("summary");
 
@@ -48,7 +48,7 @@
 
   let tasks = [];
   let planned = []; // tareas planificadas (solo texto, sin completar)
-  let filter = "active"; // active | done
+  let doneVisible = false; // sección de completadas desplegada/plegada
 
   /* ---------- Aviso de errores visible ---------- */
   function showError(msg) {
@@ -234,8 +234,12 @@
     const task = tasks.find((t) => t.id === id);
     if (task) {
       task.done = !task.done;
-      if (task.done) task.completedAt = todayISO();
-      else delete task.completedAt;
+      if (task.done) {
+        task.completedAt = todayISO();
+        task.starred = false; // al completar, deja de estar destacada
+      } else {
+        delete task.completedAt;
+      }
       save();
       render();
     }
@@ -850,18 +854,81 @@
     return today.getTime() >= d.getTime();
   }
 
-  function visibleTasks() {
-    let result = tasks;
-    if (filter === "active") result = tasks.filter((t) => !t.done);
-    else if (filter === "done") result = tasks.filter((t) => t.done);
-    // Las destacadas primero; el orden relativo se mantiene (sort estable)
-    return result
-      .map((task, index) => ({ task, index }))
-      .sort((a, b) => {
-        if (a.task.starred !== b.task.starred) return a.task.starred ? -1 : 1;
-        return a.index - b.index;
-      })
-      .map((entry) => entry.task);
+  // Construye el <li> de una tarea (se usa en la lista de pendientes y en la
+  // de completadas).
+  function createTaskItem(task) {
+    const li = document.createElement("li");
+    li.className =
+      "task-item" +
+      (task.done ? " is-done" : "") +
+      (task.starred ? " is-starred" : "");
+    li.dataset.id = task.id;
+
+    // Etiqueta de la segunda línea y si lleva 🕑 delante ("A partir de …")
+    let dateLabel = "";
+    let showClock = false;
+    if (task.done) {
+      if (task.completedAt) {
+        dateLabel = "Completada el " + formatDate(task.completedAt);
+      }
+    } else if (task.dateMode === "from" && task.dateStart) {
+      dateLabel = "A partir de " + formatDate(task.dateStart);
+      showClock = true;
+    } else if (task.dateMode === "before" && task.dateStart) {
+      dateLabel = "Antes de " + formatDate(task.dateStart);
+    } else if (task.dateMode === "between") {
+      if (task.dateStart && !isReached(task.dateStart)) {
+        dateLabel = "A partir de " + formatDate(task.dateStart);
+        showClock = true;
+      } else if (task.dateEnd) {
+        dateLabel = "Antes de " + formatDate(task.dateEnd);
+      }
+    }
+
+    // Control de estado: siempre checkbox
+    const control = document.createElement("input");
+    control.type = "checkbox";
+    control.className = "task-check";
+    control.checked = task.done;
+    control.setAttribute("aria-label", "Marcar como completada");
+    control.addEventListener("change", () => toggleTask(task.id));
+
+    const main = document.createElement("div");
+    main.className = "task-main";
+    main.addEventListener("click", () => openDetail(task.id));
+
+    const span = document.createElement("span");
+    span.className = "task-text";
+    span.textContent = task.text;
+
+    if (task.subtasks && task.subtasks.length) {
+      const done = task.subtasks.filter((s) => s.done).length;
+      const badge = document.createElement("span");
+      badge.className = "subtask-badge";
+      badge.setAttribute("aria-label", "Subtareas completadas");
+      badge.textContent = "☑ " + done + "/" + task.subtasks.length;
+      span.appendChild(badge);
+    }
+
+    main.appendChild(span);
+
+    if (dateLabel) {
+      const dateLine = document.createElement("span");
+      dateLine.className = "task-date";
+      dateLine.textContent = (showClock ? "🕑 " : "") + dateLabel;
+      main.appendChild(dateLine);
+    }
+
+    const star = document.createElement("button");
+    star.className = "star-btn";
+    star.type = "button";
+    star.setAttribute("aria-label", task.starred ? "Quitar destacado" : "Destacar tarea");
+    star.setAttribute("aria-pressed", task.starred ? "true" : "false");
+    star.textContent = task.starred ? "★" : "☆";
+    star.addEventListener("click", () => toggleStar(task.id));
+
+    li.append(control, main, star);
+    return li;
   }
 
   // "Todos los lunes/martes/…" a partir del día guardado (1=Lunes … 7=Domingo)
@@ -928,109 +995,47 @@
   }
 
   function render() {
+    // Pendientes (destacadas primero, orden estable) y completadas
+    const pending = tasks
+      .map((task, index) => ({ task, index }))
+      .filter((e) => !e.task.done)
+      .sort((a, b) => {
+        if (a.task.starred !== b.task.starred) return a.task.starred ? -1 : 1;
+        return a.index - b.index;
+      })
+      .map((e) => e.task);
+    // Completadas: siempre por fecha de completado, la más reciente primero.
+    // Las que no tengan fecha van al final.
+    const done = tasks
+      .filter((t) => t.done)
+      .slice()
+      .sort((a, b) => {
+        const ca = a.completedAt || "";
+        const cb = b.completedAt || "";
+        if (ca === cb) return 0;
+        return ca < cb ? 1 : -1;
+      });
+
     list.innerHTML = "";
+    pending.forEach((task) => list.appendChild(createTaskItem(task)));
 
-    const visible = visibleTasks();
+    doneList.innerHTML = "";
+    done.forEach((task) => doneList.appendChild(createTaskItem(task)));
 
-    visible.forEach((task) => {
-      const li = document.createElement("li");
-      li.className =
-        "task-item" +
-        (task.done ? " is-done" : "") +
-        (task.starred ? " is-starred" : "");
-      li.dataset.id = task.id;
+    // Estado vacío (referido a las pendientes)
+    emptyState.hidden = pending.length !== 0;
 
-      // Estado de la fecha: define la etiqueta de la segunda línea y si se
-      // usa el reloj (🕑) en lugar del checkbox.
-      //  from    → 🕑 + "A partir de [inicio]"
-      //  before  → checkbox + "Antes de [inicio]"
-      //  between → antes de la 1ª fecha: 🕑 + "A partir de [inicio]"
-      //            una vez cumplida:      checkbox + "Antes de [fin]"
-      let dateLabel = "";
-      let useClock = false;
-      if (task.done) {
-        // Tarea completada: muestra la fecha en que se completó
-        if (task.completedAt) {
-          dateLabel = "Completada el " + formatDate(task.completedAt);
-        }
-      } else if (task.dateMode === "from" && task.dateStart) {
-        dateLabel = "A partir de " + formatDate(task.dateStart);
-        useClock = true;
-      } else if (task.dateMode === "before" && task.dateStart) {
-        dateLabel = "Antes de " + formatDate(task.dateStart);
-      } else if (task.dateMode === "between") {
-        if (task.dateStart && !isReached(task.dateStart)) {
-          dateLabel = "A partir de " + formatDate(task.dateStart);
-          useClock = true;
-        } else if (task.dateEnd) {
-          dateLabel = "Antes de " + formatDate(task.dateEnd);
-        }
-      }
+    // Sección de completadas (plegable, debajo de las pendientes)
+    if (done.length === 0) doneVisible = false;
+    doneSection.hidden = done.length === 0;
+    doneList.hidden = !doneVisible;
+    toggleDoneBtn.textContent =
+      (doneVisible ? "Ocultar completadas" : "Mostrar completadas") +
+      " (" + done.length + ")";
 
-      // Control de estado: reloj o checkbox según lo anterior
-      let control;
-      if (useClock) {
-        control = document.createElement("button");
-        control.type = "button";
-        control.className = "task-clock";
-        control.textContent = "🕑";
-        control.setAttribute("aria-label", "Marcar como completada");
-        control.addEventListener("click", () => toggleTask(task.id));
-      } else {
-        control = document.createElement("input");
-        control.type = "checkbox";
-        control.className = "task-check";
-        control.checked = task.done;
-        control.setAttribute("aria-label", "Marcar como completada");
-        control.addEventListener("change", () => toggleTask(task.id));
-      }
-
-      const main = document.createElement("div");
-      main.className = "task-main";
-      main.addEventListener("click", () => openDetail(task.id));
-
-      const span = document.createElement("span");
-      span.className = "task-text";
-      span.textContent = task.text;
-
-      if (task.subtasks && task.subtasks.length) {
-        const done = task.subtasks.filter((s) => s.done).length;
-        const badge = document.createElement("span");
-        badge.className = "subtask-badge";
-        badge.setAttribute("aria-label", "Subtareas completadas");
-        badge.textContent = "☑ " + done + "/" + task.subtasks.length;
-        span.appendChild(badge);
-      }
-
-      main.appendChild(span);
-
-      // Segunda línea con la fecha
-      if (dateLabel) {
-        const dateLine = document.createElement("span");
-        dateLine.className = "task-date";
-        dateLine.textContent = dateLabel;
-        main.appendChild(dateLine);
-      }
-
-      const star = document.createElement("button");
-      star.className = "star-btn";
-      star.type = "button";
-      star.setAttribute("aria-label", task.starred ? "Quitar destacado" : "Destacar tarea");
-      star.setAttribute("aria-pressed", task.starred ? "true" : "false");
-      star.textContent = task.starred ? "★" : "☆";
-      star.addEventListener("click", () => toggleStar(task.id));
-
-      li.append(control, main, star);
-      list.appendChild(li);
-    });
-
-    // Estado vacío
-    emptyState.hidden = visible.length !== 0;
-
-    // Resumen y pie
-    const remaining = tasks.filter((t) => !t.done).length;
+    // Resumen de la cabecera
+    const remaining = pending.length;
     const total = tasks.length;
-
     if (total === 0) {
       summary.textContent = "Sin tareas todavía";
     } else if (remaining === 0) {
@@ -1039,10 +1044,6 @@
       summary.textContent =
         remaining + (remaining === 1 ? " tarea pendiente" : " tareas pendientes");
     }
-
-    footer.hidden = total === 0;
-    countRemaining.textContent =
-      remaining + (remaining === 1 ? " pendiente" : " pendientes");
   }
 
   /* ---------- Eventos ---------- */
@@ -1053,13 +1054,8 @@
     input.focus();
   });
 
-  filters.addEventListener("click", (e) => {
-    const btn = e.target.closest(".filter-btn");
-    if (!btn) return;
-    filter = btn.dataset.filter;
-    document
-      .querySelectorAll(".filter-btn")
-      .forEach((b) => b.classList.toggle("is-active", b === btn));
+  toggleDoneBtn.addEventListener("click", () => {
+    doneVisible = !doneVisible;
     render();
   });
 
