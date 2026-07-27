@@ -40,7 +40,9 @@ cálculo de la "siguiente ocurrencia").
 - Fechas por la **hora local** del dispositivo.
 
 ### Modelo de datos
-- Tarea (instancia): `sourcePlannedId` = id de la planificada de origen.
+- Tarea (instancia): `sourcePlannedId` = id de la planificada de origen y
+  `occurrenceDate` (ISO de la ocurrencia; se muestra en la 2ª línea con formato
+  relativo hoy/ayer/mañana).
 - Planificada: `createdAt` (ISO), `currentInstanceId` (id de la copia del ciclo
   actual, o null), `lastClearedAt` (ISO del último despeje, o null) y la config
   de repetición: `repeat` + (`repeatDay`) o (`repeatMonth`, `repeatDom`) o

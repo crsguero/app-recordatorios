@@ -57,6 +57,11 @@ body {
   background: var(--card);
 }
 
+/* Ajustes: al fondo de la barra de navegación */
+.app-nav-settings {
+  margin-top: auto;
+}
+
 .app-nav-head {
   display: flex;
   align-items: center;
@@ -297,21 +302,6 @@ body {
 .app-header h1 {
   font-size: 1.75rem;
   font-weight: 700;
-}
-
-.settings-btn {
-  flex: 0 0 auto;
-  background: transparent;
-  border: none;
-  font-size: 1.3rem;
-  line-height: 1;
-  cursor: pointer;
-  padding: 2px 4px;
-  border-radius: 8px;
-}
-
-.settings-btn:hover {
-  opacity: 0.7;
 }
 
 .subtitle {
@@ -614,6 +604,39 @@ body {
   text-decoration: line-through;
 }
 
+/* Tareas de planificadas: fondo de acento con textos claros (estilo invertido) */
+.task-item.is-planned {
+  background: var(--primary);
+  border-color: var(--primary);
+}
+
+.task-item.is-planned .task-text {
+  color: #fff;
+}
+
+.task-item.is-planned .task-date {
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.task-item.is-planned .task-check {
+  border-color: rgba(255, 255, 255, 0.7);
+}
+
+.task-item.is-planned .task-check:checked {
+  background: #fff;
+  border-color: #fff;
+}
+
+.task-item.is-planned .task-check:checked::after {
+  border-color: var(--primary);
+}
+
+.task-item.is-planned .subtask-badge {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.16);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
 .star-btn {
   flex: 0 0 auto;
   width: 36px;
@@ -634,6 +657,18 @@ body {
 
 .task-item.is-starred .star-btn {
   color: var(--star);
+}
+
+/* Indicador de "tarea planificada" (sustituye a la estrella en las copias) */
+.planned-indicator {
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.05rem;
+  line-height: 1;
 }
 
 /* --- Tareas planificadas --- */

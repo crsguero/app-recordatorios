@@ -11,6 +11,85 @@
   const clearDoneBtn = document.getElementById("clear-done");
   const summary = document.getElementById("summary");
 
+  // Vista Recados (segunda lista, misma funcionalidad sin planificadas auto)
+  const recadosForm = document.getElementById("recados-form");
+  const recadosInput = document.getElementById("recados-input");
+  const recadosList = document.getElementById("recados-list");
+  const recadosEmpty = document.getElementById("recados-empty");
+  const recadosDoneSection = document.getElementById("recados-done-section");
+  const recadosDoneList = document.getElementById("recados-done-list");
+  const recadosToggleDone = document.getElementById("recados-toggle-done");
+  const recadosClearDone = document.getElementById("recados-clear-done");
+  const recadosSummary = document.getElementById("recados-summary");
+
+  // Vista Pendientes (tercera lista, igual que Recados)
+  const pendientesForm = document.getElementById("pendientes-form");
+  const pendientesInput = document.getElementById("pendientes-input");
+  const pendientesList = document.getElementById("pendientes-list");
+  const pendientesEmpty = document.getElementById("pendientes-empty");
+  const pendientesDoneSection = document.getElementById("pendientes-done-section");
+  const pendientesDoneList = document.getElementById("pendientes-done-list");
+  const pendientesToggleDone = document.getElementById("pendientes-toggle-done");
+  const pendientesClearDone = document.getElementById("pendientes-clear-done");
+  const pendientesSummary = document.getElementById("pendientes-summary");
+
+  /* ---------- Contextos de lista (Mis tareas / Recados) ----------
+     Ambas listas comparten toda la lógica (render, modal, drag, completadas).
+     Cada contexto sabe de qué array leer/escribir y en qué DOM pintar. */
+  const ctxTareas = {
+    noun: "tarea",
+    items: () => tasks,
+    setItems: (v) => (tasks = v),
+    save: () => save(),
+    listEl: list,
+    doneListEl: doneList,
+    emptyEl: emptyState,
+    doneSectionEl: doneSection,
+    toggleBtn: toggleDoneBtn,
+    summaryEl: summary,
+    doneVisible: false,
+    plannedRank: true, // las copias de planificadas van arriba
+  };
+  const ctxRecados = {
+    noun: "recado",
+    items: () => recados,
+    setItems: (v) => (recados = v),
+    save: () => saveRecados(),
+    listEl: recadosList,
+    doneListEl: recadosDoneList,
+    emptyEl: recadosEmpty,
+    doneSectionEl: recadosDoneSection,
+    toggleBtn: recadosToggleDone,
+    summaryEl: recadosSummary,
+    doneVisible: false,
+    plannedRank: false,
+  };
+  const ctxPendientes = {
+    noun: "tarea",
+    items: () => pendientes,
+    setItems: (v) => (pendientes = v),
+    save: () => savePendientes(),
+    listEl: pendientesList,
+    doneListEl: pendientesDoneList,
+    emptyEl: pendientesEmpty,
+    doneSectionEl: pendientesDoneSection,
+    toggleBtn: pendientesToggleDone,
+    summaryEl: pendientesSummary,
+    doneVisible: false,
+    plannedRank: false,
+  };
+
+  // Busca una tarea por id en cualquiera de las listas
+  function findTaskEntry(id) {
+    let item = tasks.find((t) => t.id === id);
+    if (item) return { item: item, ctx: ctxTareas };
+    item = recados.find((t) => t.id === id);
+    if (item) return { item: item, ctx: ctxRecados };
+    item = pendientes.find((t) => t.id === id);
+    if (item) return { item: item, ctx: ctxPendientes };
+    return null;
+  }
+
   /* ---------- Firebase (mismo proyecto que la app de tareas) ----------
      Las cuentas de acceso son compartidas por ser el mismo proyecto. Los
      datos de esta app viven en la ruta "recordatorios" para no mezclarse
@@ -31,6 +110,8 @@
   const FB_ROOT = "recordatorios"; // ruta raíz de esta app en la base de datos
   const FB_KEY = "tasks"; // recordatorios/tasks = array de tareas
   const FB_KEY_PLANNED = "planned"; // recordatorios/planned = tareas planificadas
+  const FB_KEY_RECADOS = "recados"; // recordatorios/recados = segunda lista
+  const FB_KEY_PENDIENTES = "pendientes"; // recordatorios/pendientes = tercera lista
 
   /* ---------- Respaldo local (IndexedDB) ----------
      Usamos IndexedDB en lugar de localStorage porque los archivos abiertos
@@ -42,13 +123,16 @@
   const STORE = "kv";
   const IDB_KEY = "tasks";
   const IDB_KEY_PLANNED = "planned";
+  const IDB_KEY_RECADOS = "recados";
+  const IDB_KEY_PENDIENTES = "pendientes";
   let db = null;
   let fbReady = false; // true cuando Firebase está autenticado y escuchando
   let appStarted = false; // evita arrancar la app dos veces
 
   let tasks = [];
+  let recados = []; // segunda lista (misma funcionalidad, sin planificadas auto)
+  let pendientes = []; // tercera lista (igual que recados)
   let planned = []; // tareas planificadas (solo texto, sin completar)
-  let doneVisible = false; // sección de completadas desplegada/plegada
 
   /* ---------- Aviso de errores visible ---------- */
   function showError(msg) {
@@ -105,6 +189,30 @@
         .ref(FB_ROOT + "/" + FB_KEY)
         .set(tasks && tasks.length ? tasks : null)
         .catch((e) => showError("Al sincronizar: " + (e && e.message ? e.message : e)));
+    }
+  }
+
+  function saveRecados() {
+    if (db) idbSet(IDB_KEY_RECADOS, recados).catch(() => {});
+    if (fbReady) {
+      fdb
+        .ref(FB_ROOT + "/" + FB_KEY_RECADOS)
+        .set(recados && recados.length ? recados : null)
+        .catch((e) =>
+          showError("Al sincronizar: " + (e && e.message ? e.message : e))
+        );
+    }
+  }
+
+  function savePendientes() {
+    if (db) idbSet(IDB_KEY_PENDIENTES, pendientes).catch(() => {});
+    if (fbReady) {
+      fdb
+        .ref(FB_ROOT + "/" + FB_KEY_PENDIENTES)
+        .set(pendientes && pendientes.length ? pendientes : null)
+        .catch((e) =>
+          showError("Al sincronizar: " + (e && e.message ? e.message : e))
+        );
     }
   }
 
@@ -178,6 +286,19 @@
       if (p.currentInstanceId) {
         const inst = tasks.find((t) => t.id === p.currentInstanceId);
         if (inst && !inst.done) {
+          // Backfill: copias creadas antes de existir occurrenceDate. La
+          // ocurrencia se recalcula igual que cuando se creó (mismo boundary).
+          if (!inst.occurrenceDate) {
+            const occ = plannedNextOccurrence(
+              p,
+              p.lastClearedAt || p.createdAt,
+              !!p.lastClearedAt
+            );
+            if (occ) {
+              inst.occurrenceDate = occ;
+              tasksChanged = true;
+            }
+          }
           return; // pendiente → no duplicar
         }
         if (inst && inst.done) {
@@ -189,7 +310,8 @@
         plannedChanged = true;
       }
 
-      // Inactiva → ¿toca crear una nueva copia?
+      // Inactiva → ¿toca crear una nueva copia? Si se saltaron varias
+      // ocurrencias (app cerrada), se usa la MÁS ANTIGUA pendiente (firstOcc).
       const boundary = p.lastClearedAt || p.createdAt;
       const nextOcc = plannedNextOccurrence(p, boundary, !!p.lastClearedAt);
 
@@ -200,6 +322,7 @@
           done: false,
           starred: false,
           sourcePlannedId: p.id,
+          occurrenceDate: nextOcc, // fecha de la ocurrencia (2ª línea)
         };
         if (p.note && p.note.trim()) inst.note = p.note; // instantánea de la nota
         tasks.unshift(inst);
@@ -217,47 +340,48 @@
   }
 
   /* ---------- Acciones ---------- */
-  function addTask(text) {
+  function addTaskTo(ctx, text) {
     const trimmed = text.trim();
     if (!trimmed) return;
-    tasks.unshift({
-      id: Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
+    ctx.items().unshift({
+      id: newId(),
       text: trimmed,
       done: false,
       starred: false,
     });
-    save();
-    render();
+    ctx.save();
+    renderList(ctx);
   }
 
   function toggleTask(id) {
-    const task = tasks.find((t) => t.id === id);
-    if (task) {
-      task.done = !task.done;
-      if (task.done) {
-        task.completedAt = todayISO();
-        task.starred = false; // al completar, deja de estar destacada
-      } else {
-        delete task.completedAt;
-      }
-      save();
-      render();
+    const e = findTaskEntry(id);
+    if (!e) return;
+    const task = e.item;
+    task.done = !task.done;
+    if (task.done) {
+      task.completedAt = todayISO();
+      task.starred = false; // al completar, deja de estar destacada
+    } else {
+      delete task.completedAt;
     }
+    e.ctx.save();
+    renderList(e.ctx);
   }
 
   function toggleStar(id) {
-    const task = tasks.find((t) => t.id === id);
-    if (task) {
-      task.starred = !task.starred;
-      save();
-      render();
-    }
+    const e = findTaskEntry(id);
+    if (!e) return;
+    e.item.starred = !e.item.starred;
+    e.ctx.save();
+    renderList(e.ctx);
   }
 
   function deleteTask(id) {
+    const e = findTaskEntry(id);
+    if (!e) return;
+    const task = e.item;
     // Si es una copia de una planificada, registra el despeje por eliminación
-    const task = tasks.find((t) => t.id === id);
-    if (task && task.sourcePlannedId) {
+    if (task.sourcePlannedId) {
       const p = planned.find((pp) => pp.id === task.sourcePlannedId);
       if (p && p.currentInstanceId === id) {
         p.lastClearedAt = todayISO();
@@ -265,22 +389,22 @@
         savePlanned();
       }
     }
-    tasks = tasks.filter((t) => t.id !== id);
-    save();
-    render();
+    e.ctx.setItems(e.ctx.items().filter((t) => t.id !== id));
+    e.ctx.save();
+    renderList(e.ctx);
   }
 
-  function clearDone() {
-    tasks = tasks.filter((t) => !t.done);
-    save();
-    render();
+  function clearDoneIn(ctx) {
+    ctx.setItems(ctx.items().filter((t) => !t.done));
+    ctx.save();
+    renderList(ctx);
   }
 
   function setNote(id, note) {
-    const task = tasks.find((t) => t.id === id);
-    if (task) {
-      task.note = note;
-      save();
+    const e = findTaskEntry(id);
+    if (e) {
+      e.item.note = note;
+      e.ctx.save();
     }
   }
 
@@ -313,18 +437,27 @@
   let openTaskId = null;
 
   function getOpenTask() {
-    return tasks.find((t) => t.id === openTaskId) || null;
+    const e = findTaskEntry(openTaskId);
+    return e ? e.item : null;
+  }
+  function saveOpenTask() {
+    const e = findTaskEntry(openTaskId);
+    if (e) e.ctx.save();
+  }
+  function renderOpenTask() {
+    const e = findTaskEntry(openTaskId);
+    if (e) renderList(e.ctx);
   }
 
-  // Entidad abierta en el modal: tarea o planificada
+  // Entidad abierta en el modal: tarea (de cualquier lista) o planificada
   function getOpenEntity() {
-    if (openTaskId !== null) return tasks.find((t) => t.id === openTaskId) || null;
+    if (openTaskId !== null) return getOpenTask();
     if (openPlannedId !== null)
       return planned.find((p) => p.id === openPlannedId) || null;
     return null;
   }
   function saveOpen() {
-    if (openTaskId !== null) save();
+    if (openTaskId !== null) saveOpenTask();
     else if (openPlannedId !== null) savePlanned();
   }
 
@@ -521,7 +654,7 @@
     if (!trimmed || !task) return;
     if (!task.subtasks) task.subtasks = [];
     task.subtasks.push({ id: newId(), text: trimmed, done: false });
-    save();
+    saveOpenTask();
     renderSubtasks(task);
   }
 
@@ -531,7 +664,7 @@
     const sub = task.subtasks.find((s) => s.id === subId);
     if (sub) {
       sub.done = !sub.done;
-      save();
+      saveOpenTask();
       renderSubtasks(task);
     }
   }
@@ -540,7 +673,7 @@
     const task = getOpenTask();
     if (!task || !task.subtasks) return;
     task.subtasks = task.subtasks.filter((s) => s.id !== subId);
-    save();
+    saveOpenTask();
     renderSubtasks(task);
   }
 
@@ -577,25 +710,25 @@
     } else if (task.dateMode !== "between") {
       delete task.dateEnd;
     }
-    save();
+    saveOpenTask();
     renderDate(task);
-    render();
+    renderOpenTask();
   });
 
   dateStart.addEventListener("change", () => {
     const task = getOpenTask();
     if (!task) return;
     task.dateStart = dateStart.value || undefined;
-    save();
-    render();
+    saveOpenTask();
+    renderOpenTask();
   });
 
   dateEnd.addEventListener("change", () => {
     const task = getOpenTask();
     if (!task) return;
     task.dateEnd = dateEnd.value || undefined;
-    save();
-    render();
+    saveOpenTask();
+    renderOpenTask();
   });
 
   /* ---------- Repetir ---------- */
@@ -703,8 +836,9 @@
   }
 
   function openDetail(id) {
-    const task = tasks.find((t) => t.id === id);
-    if (!task) return;
+    const e = findTaskEntry(id);
+    if (!e) return;
+    const task = e.item;
     openPlannedId = null;
     detailCheck.hidden = false;
     detailTaskFields.hidden = false; // restaura los campos de tarea
@@ -728,7 +862,7 @@
     // Guarda la nota al cerrar
     if (openTaskId !== null) {
       setNote(openTaskId, detailNote.value);
-      render();
+      renderOpenTask();
     } else if (openPlannedId !== null) {
       setPlannedNote(openPlannedId, detailNote.value);
       renderPlanned();
@@ -743,7 +877,7 @@
 
   detailDelete.addEventListener("click", () => {
     if (openTaskId !== null) {
-      const task = tasks.find((t) => t.id === openTaskId);
+      const task = getOpenTask();
       const label = task ? task.text : "esta tarea";
       if (!confirm('¿Eliminar "' + label + '"?')) return;
       const id = openTaskId;
@@ -786,7 +920,7 @@
       const task = getOpenTask();
       if (task) {
         task.text = value;
-        save();
+        saveOpenTask();
       }
     } else if (openPlannedId !== null) {
       setPlannedText(openPlannedId, value);
@@ -822,7 +956,7 @@
   detailCheck.addEventListener("change", () => {
     if (openTaskId === null) return;
     toggleTask(openTaskId);
-    const task = tasks.find((t) => t.id === openTaskId);
+    const task = getOpenTask();
     detailTitle.classList.toggle("is-done", task && task.done);
   });
 
@@ -843,6 +977,16 @@
     });
   }
 
+  // Igual que formatDate pero devuelve "hoy" / "mañana" / "ayer" si aplica.
+  function formatDateRel(iso) {
+    if (!iso) return "";
+    const today = todayISO();
+    if (iso === today) return "hoy";
+    if (iso === addDaysISO(today, 1)) return "mañana";
+    if (iso === addDaysISO(today, -1)) return "ayer";
+    return formatDate(iso);
+  }
+
   // ¿La fecha (yyyy-mm-dd) ya ha llegado? (hoy es igual o posterior)
   function isReached(iso) {
     if (!iso) return false;
@@ -861,7 +1005,8 @@
     li.className =
       "task-item" +
       (task.done ? " is-done" : "") +
-      (task.starred ? " is-starred" : "");
+      (task.starred ? " is-starred" : "") +
+      (task.sourcePlannedId ? " is-planned" : "");
     li.dataset.id = task.id;
 
     // Etiqueta de la segunda línea y si lleva 🕑 delante ("A partir de …")
@@ -869,20 +1014,34 @@
     let showClock = false;
     if (task.done) {
       if (task.completedAt) {
-        dateLabel = "Completada el " + formatDate(task.completedAt);
+        const rel = formatDateRel(task.completedAt);
+        // "Completada hoy/ayer" en lugar de "Completada el hoy/ayer"
+        dateLabel =
+          rel === "hoy" || rel === "mañana" || rel === "ayer"
+            ? "Completada " + rel
+            : "Completada el " + rel;
       }
-    } else if (task.dateMode === "from" && task.dateStart) {
-      dateLabel = "A partir de " + formatDate(task.dateStart);
+    } else if (
+      task.dateMode === "from" &&
+      task.dateStart &&
+      !isReached(task.dateStart)
+    ) {
+      // "A partir de" solo mientras no se haya cumplido la fecha
+      dateLabel = "A partir de " + formatDateRel(task.dateStart);
       showClock = true;
     } else if (task.dateMode === "before" && task.dateStart) {
-      dateLabel = "Antes de " + formatDate(task.dateStart);
+      dateLabel = "Antes de " + formatDateRel(task.dateStart);
     } else if (task.dateMode === "between") {
       if (task.dateStart && !isReached(task.dateStart)) {
-        dateLabel = "A partir de " + formatDate(task.dateStart);
+        dateLabel = "A partir de " + formatDateRel(task.dateStart);
         showClock = true;
       } else if (task.dateEnd) {
-        dateLabel = "Antes de " + formatDate(task.dateEnd);
+        dateLabel = "Antes de " + formatDateRel(task.dateEnd);
       }
+    } else if (task.occurrenceDate) {
+      // Tarea generada por una planificada: solo la fecha de la ocurrencia
+      const rel = formatDateRel(task.occurrenceDate);
+      dateLabel = rel.charAt(0).toUpperCase() + rel.slice(1);
     }
 
     // Control de estado: siempre checkbox
@@ -919,15 +1078,28 @@
       main.appendChild(dateLine);
     }
 
-    const star = document.createElement("button");
-    star.className = "star-btn";
-    star.type = "button";
-    star.setAttribute("aria-label", task.starred ? "Quitar destacado" : "Destacar tarea");
-    star.setAttribute("aria-pressed", task.starred ? "true" : "false");
-    star.textContent = task.starred ? "★" : "☆";
-    star.addEventListener("click", () => toggleStar(task.id));
+    // Tarea generada por una planificada: indicador en lugar de "Destacar"
+    let trailing;
+    if (task.sourcePlannedId) {
+      trailing = document.createElement("span");
+      trailing.className = "planned-indicator";
+      trailing.textContent = "🔁";
+      trailing.setAttribute("aria-label", "Tarea planificada");
+      trailing.setAttribute("title", "Tarea planificada");
+    } else {
+      trailing = document.createElement("button");
+      trailing.className = "star-btn";
+      trailing.type = "button";
+      trailing.setAttribute(
+        "aria-label",
+        task.starred ? "Quitar destacado" : "Destacar tarea"
+      );
+      trailing.setAttribute("aria-pressed", task.starred ? "true" : "false");
+      trailing.textContent = task.starred ? "★" : "☆";
+      trailing.addEventListener("click", () => toggleStar(task.id));
+    }
 
-    li.append(control, main, star);
+    li.append(control, main, trailing);
     return li;
   }
 
@@ -994,19 +1166,24 @@
     if (empty) empty.hidden = planned.length !== 0;
   }
 
-  function render() {
-    // Pendientes (destacadas primero, orden estable) y completadas
-    const pending = tasks
+  function renderList(ctx) {
+    const items = ctx.items();
+    // Pendientes: con plannedRank, las copias de planificadas van primero; luego
+    // las destacadas; luego el resto. Orden estable dentro de cada grupo.
+    const rankOf = (t) =>
+      ctx.plannedRank && t.sourcePlannedId ? 0 : t.starred ? 1 : 2;
+    const pending = items
       .map((task, index) => ({ task, index }))
       .filter((e) => !e.task.done)
       .sort((a, b) => {
-        if (a.task.starred !== b.task.starred) return a.task.starred ? -1 : 1;
+        const ra = rankOf(a.task);
+        const rb = rankOf(b.task);
+        if (ra !== rb) return ra - rb;
         return a.index - b.index;
       })
       .map((e) => e.task);
-    // Completadas: siempre por fecha de completado, la más reciente primero.
-    // Las que no tengan fecha van al final.
-    const done = tasks
+    // Completadas: por fecha de completado, la más reciente primero.
+    const done = items
       .filter((t) => t.done)
       .slice()
       .sort((a, b) => {
@@ -1016,50 +1193,87 @@
         return ca < cb ? 1 : -1;
       });
 
-    list.innerHTML = "";
-    pending.forEach((task) => list.appendChild(createTaskItem(task)));
+    ctx.listEl.innerHTML = "";
+    pending.forEach((task) => ctx.listEl.appendChild(createTaskItem(task)));
 
-    doneList.innerHTML = "";
-    done.forEach((task) => doneList.appendChild(createTaskItem(task)));
+    ctx.doneListEl.innerHTML = "";
+    done.forEach((task) => ctx.doneListEl.appendChild(createTaskItem(task)));
 
-    // Estado vacío (referido a las pendientes)
-    emptyState.hidden = pending.length !== 0;
+    ctx.emptyEl.hidden = pending.length !== 0;
 
-    // Sección de completadas (plegable, debajo de las pendientes)
-    if (done.length === 0) doneVisible = false;
-    doneSection.hidden = done.length === 0;
-    doneList.hidden = !doneVisible;
-    toggleDoneBtn.textContent =
-      (doneVisible ? "Ocultar completadas" : "Mostrar completadas") +
+    if (done.length === 0) ctx.doneVisible = false;
+    ctx.doneSectionEl.hidden = done.length === 0;
+    ctx.doneListEl.hidden = !ctx.doneVisible;
+    const fem = ctx.noun === "recado" ? "os" : "as"; // completad-os/-as
+    ctx.toggleBtn.textContent =
+      (ctx.doneVisible ? "Ocultar completad" : "Mostrar completad") +
+      fem +
       " (" + done.length + ")";
 
-    // Resumen de la cabecera
     const remaining = pending.length;
-    const total = tasks.length;
+    const total = items.length;
+    const plural = ctx.noun + "s";
     if (total === 0) {
-      summary.textContent = "Sin tareas todavía";
+      ctx.summaryEl.textContent = "Sin " + plural + " todavía";
     } else if (remaining === 0) {
-      summary.textContent = "¡Todo completado! 🎉";
+      ctx.summaryEl.textContent = "¡Todo completado! 🎉";
     } else {
-      summary.textContent =
-        remaining + (remaining === 1 ? " tarea pendiente" : " tareas pendientes");
+      ctx.summaryEl.textContent =
+        remaining +
+        " " +
+        (remaining === 1 ? ctx.noun : plural) +
+        (remaining === 1 ? " pendiente" : " pendientes");
     }
+  }
+
+  function render() {
+    renderList(ctxTareas);
+  }
+  function renderRecados() {
+    renderList(ctxRecados);
+  }
+  function renderPendientes() {
+    renderList(ctxPendientes);
   }
 
   /* ---------- Eventos ---------- */
   form.addEventListener("submit", (e) => {
     e.preventDefault();
-    addTask(input.value);
+    addTaskTo(ctxTareas, input.value);
     input.value = "";
     input.focus();
   });
 
-  toggleDoneBtn.addEventListener("click", () => {
-    doneVisible = !doneVisible;
-    render();
+  recadosForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    addTaskTo(ctxRecados, recadosInput.value);
+    recadosInput.value = "";
+    recadosInput.focus();
   });
 
-  clearDoneBtn.addEventListener("click", clearDone);
+  pendientesForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    addTaskTo(ctxPendientes, pendientesInput.value);
+    pendientesInput.value = "";
+    pendientesInput.focus();
+  });
+
+  toggleDoneBtn.addEventListener("click", () => {
+    ctxTareas.doneVisible = !ctxTareas.doneVisible;
+    renderList(ctxTareas);
+  });
+  recadosToggleDone.addEventListener("click", () => {
+    ctxRecados.doneVisible = !ctxRecados.doneVisible;
+    renderList(ctxRecados);
+  });
+  pendientesToggleDone.addEventListener("click", () => {
+    ctxPendientes.doneVisible = !ctxPendientes.doneVisible;
+    renderList(ctxPendientes);
+  });
+
+  clearDoneBtn.addEventListener("click", () => clearDoneIn(ctxTareas));
+  recadosClearDone.addEventListener("click", () => clearDoneIn(ctxRecados));
+  pendientesClearDone.addEventListener("click", () => clearDoneIn(ctxPendientes));
 
   /* ---------- Reordenar con drag & drop (ratón y táctil) ---------- */
   const LONG_PRESS_MS = 300; // mantener pulsado para empezar a arrastrar
@@ -1192,6 +1406,8 @@
   }
 
   enableReorder(list, "task-item", () => tasks, save);
+  enableReorder(recadosList, "task-item", () => recados, saveRecados);
+  enableReorder(pendientesList, "task-item", () => pendientes, savePendientes);
   enableReorder(
     document.getElementById("planned-list"),
     "planned-item",
@@ -1228,11 +1444,16 @@
   document.querySelectorAll(".app-nav-item").forEach((item) => {
     item.addEventListener("click", () => {
       const view = item.dataset.view;
+      if (!view) return; // p. ej. el botón de Ajustes (no es una vista)
       document
         .querySelectorAll(".app-nav-item")
         .forEach((n) => n.classList.toggle("is-active", n === item));
       document.getElementById("view-tareas").hidden = view !== "tareas";
+      document.getElementById("view-recados").hidden = view !== "recados";
+      document.getElementById("view-pendientes").hidden = view !== "pendientes";
       document.getElementById("view-planificadas").hidden = view !== "planificadas";
+      if (view === "recados") renderRecados();
+      if (view === "pendientes") renderPendientes();
       if (view === "planificadas") renderPlanned();
       closeNav(); // en móvil, cierra el menú al elegir
     });
@@ -1266,7 +1487,10 @@
     plannedInput.focus();
   });
 
-  settingsBtn.addEventListener("click", openSettings);
+  settingsBtn.addEventListener("click", () => {
+    closeNav(); // en móvil, cierra el menú a pantalla completa antes de abrir
+    openSettings();
+  });
   settingsClose.addEventListener("click", closeSettings);
   settingsOverlay.addEventListener("click", (e) => {
     if (e.target === settingsOverlay) closeSettings();
@@ -1294,45 +1518,77 @@
   });
 
   // Exportar: descarga un JSON con todas las tareas
+  // Exportar: descarga un JSON con las tres listas y las planificadas
   exportBtn.addEventListener("click", () => {
-    const data = JSON.stringify(tasks, null, 2);
+    const payload = { tasks, recados, pendientes, planned };
+    const data = JSON.stringify(payload, null, 2);
     const blob = new Blob([data], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "tareas-" + todayISO() + ".json";
+    a.download = "recordatorios-" + todayISO() + ".json";
     document.body.appendChild(a);
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
   });
 
-  // Importar: reemplaza las tareas con las del archivo elegido
+  // Importar: reemplaza las listas presentes en el archivo
   importBtn.addEventListener("click", () => importFile.click());
   importFile.addEventListener("change", () => {
     const file = importFile.files && importFile.files[0];
     if (!file) return;
     const reader = new FileReader();
+    const ensureId = (t) =>
+      Object.assign({}, t, { id: t && t.id ? t.id : newId() });
     reader.onload = () => {
       try {
         const parsed = JSON.parse(reader.result);
-        if (!Array.isArray(parsed)) {
-          throw new Error("El archivo no contiene una lista de tareas.");
+        // Formato nuevo: objeto con listas. Formato antiguo: array = solo tareas.
+        let inTasks = null;
+        let inRecados = null;
+        let inPendientes = null;
+        let inPlanned = null;
+        if (Array.isArray(parsed)) {
+          inTasks = parsed;
+        } else if (parsed && typeof parsed === "object") {
+          inTasks = Array.isArray(parsed.tasks) ? parsed.tasks : null;
+          inRecados = Array.isArray(parsed.recados) ? parsed.recados : null;
+          inPendientes = Array.isArray(parsed.pendientes)
+            ? parsed.pendientes
+            : null;
+          inPlanned = Array.isArray(parsed.planned) ? parsed.planned : null;
+        } else {
+          throw new Error("El archivo no tiene un formato válido.");
         }
         if (
           !confirm(
-            "Esto reemplazará TODAS tus tareas actuales por las del archivo. ¿Continuar?"
+            "Esto reemplazará las listas incluidas en el archivo (tareas, recados, pendientes y planificadas). ¿Continuar?"
           )
         ) {
           importFile.value = "";
           return;
         }
-        // Garantiza que cada tarea tenga id (necesario para editar/reordenar)
-        tasks = parsed.map((t) =>
-          Object.assign({}, t, { id: t && t.id ? t.id : newId() })
-        );
-        save();
-        render();
+        if (inTasks) {
+          tasks = inTasks.map(ensureId);
+          save();
+          render();
+        }
+        if (inRecados) {
+          recados = inRecados.map(ensureId);
+          saveRecados();
+          renderRecados();
+        }
+        if (inPendientes) {
+          pendientes = inPendientes.map(ensureId);
+          savePendientes();
+          renderPendientes();
+        }
+        if (inPlanned) {
+          planned = inPlanned.map(ensureId);
+          savePlanned();
+          renderPlanned();
+        }
         closeSettings();
       } catch (err) {
         showError("Al importar: " + (err && err.message ? err.message : err));
@@ -1372,11 +1628,21 @@
     tasks = Array.isArray(local) ? local : [];
     if (backfillCompletedDates() && db) idbSet(IDB_KEY, tasks).catch(() => {});
 
+    let localRecados = [];
+    if (db) localRecados = await idbGet(IDB_KEY_RECADOS);
+    recados = Array.isArray(localRecados) ? localRecados : [];
+
+    let localPendientes = [];
+    if (db) localPendientes = await idbGet(IDB_KEY_PENDIENTES);
+    pendientes = Array.isArray(localPendientes) ? localPendientes : [];
+
     let localPlanned = [];
     if (db) localPlanned = await idbGet(IDB_KEY_PLANNED);
     planned = Array.isArray(localPlanned) ? localPlanned : [];
 
     render(); // pinta al instante con el respaldo local
+    renderRecados();
+    renderPendientes();
     renderPlanned();
   }
 
@@ -1447,6 +1713,52 @@
         renderPlanned();
         plannedSynced = true;
         maybeMaterialize();
+      },
+      (err) =>
+        showError("Al leer la nube: " + (err && err.message ? err.message : err))
+    );
+
+    // Tercer listener: recados (segunda lista, sin materialización)
+    let firstR = true;
+    const refR = fdb.ref(FB_ROOT + "/" + FB_KEY_RECADOS);
+    refR.on(
+      "value",
+      (snap) => {
+        const raw = snap.val();
+        const remote = Array.isArray(raw) ? raw : raw ? Object.values(raw) : [];
+        if (firstR && remote.length === 0 && recados.length > 0) {
+          firstR = false;
+          refR.set(recados).catch(() => {});
+          return;
+        }
+        firstR = false;
+        recados = remote;
+        if (db) idbSet(IDB_KEY_RECADOS, recados).catch(() => {});
+        clearError();
+        renderRecados();
+      },
+      (err) =>
+        showError("Al leer la nube: " + (err && err.message ? err.message : err))
+    );
+
+    // Cuarto listener: pendientes (tercera lista)
+    let firstPen = true;
+    const refPen = fdb.ref(FB_ROOT + "/" + FB_KEY_PENDIENTES);
+    refPen.on(
+      "value",
+      (snap) => {
+        const raw = snap.val();
+        const remote = Array.isArray(raw) ? raw : raw ? Object.values(raw) : [];
+        if (firstPen && remote.length === 0 && pendientes.length > 0) {
+          firstPen = false;
+          refPen.set(pendientes).catch(() => {});
+          return;
+        }
+        firstPen = false;
+        pendientes = remote;
+        if (db) idbSet(IDB_KEY_PENDIENTES, pendientes).catch(() => {});
+        clearError();
+        renderPendientes();
       },
       (err) =>
         showError("Al leer la nube: " + (err && err.message ? err.message : err))

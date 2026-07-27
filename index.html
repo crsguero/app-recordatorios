@@ -43,8 +43,11 @@
         <span class="app-nav-brand">Menú</span>
         <button type="button" class="app-nav-close" id="nav-close" aria-label="Cerrar menú">✕</button>
       </div>
-      <button type="button" class="app-nav-item is-active" data-view="tareas">Mis tareas</button>
+      <button type="button" class="app-nav-item is-active" data-view="tareas">Tareas</button>
+      <button type="button" class="app-nav-item" data-view="recados">Recados</button>
+      <button type="button" class="app-nav-item" data-view="pendientes">Pendientes</button>
       <button type="button" class="app-nav-item" data-view="planificadas">Planificadas</button>
+      <button type="button" class="app-nav-item app-nav-settings" id="settings-btn">⚙️ Ajustes</button>
     </nav>
 
     <div class="app-main">
@@ -57,8 +60,7 @@
       <section class="view" id="view-tareas">
         <header class="app-header">
           <div class="header-top">
-            <h1>Mis Tareas</h1>
-            <button type="button" class="settings-btn" id="settings-btn" aria-label="Ajustes">⚙️</button>
+            <h1>Tareas</h1>
           </div>
           <p class="subtitle" id="summary">Sin tareas todavía</p>
         </header>
@@ -87,6 +89,78 @@
             <button type="button" class="clear-btn" id="clear-done">Borrar completadas</button>
           </div>
           <ul class="task-list done-list" id="done-list" hidden></ul>
+        </div>
+      </section>
+
+      <!-- Vista: Recados (igual que Mis tareas, sin planificadas automáticas) -->
+      <section class="view" id="view-recados" hidden>
+        <header class="app-header">
+          <div class="header-top">
+            <h1>Recados</h1>
+          </div>
+          <p class="subtitle" id="recados-summary">Sin recados todavía</p>
+        </header>
+
+        <form class="new-task" id="recados-form" autocomplete="off">
+          <input
+            type="text"
+            id="recados-input"
+            class="task-input"
+            placeholder="Añadir un recado…"
+            aria-label="Nuevo recado"
+            maxlength="200"
+          />
+          <button type="submit" class="add-btn" aria-label="Añadir recado">+</button>
+        </form>
+
+        <ul class="task-list" id="recados-list"></ul>
+
+        <p class="empty-state" id="recados-empty" hidden>
+          No hay recados aquí. ¡Añade uno arriba! 🎉
+        </p>
+
+        <div class="done-section" id="recados-done-section" hidden>
+          <div class="done-header">
+            <button type="button" class="toggle-done-btn" id="recados-toggle-done"></button>
+            <button type="button" class="clear-btn" id="recados-clear-done">Borrar completados</button>
+          </div>
+          <ul class="task-list done-list" id="recados-done-list" hidden></ul>
+        </div>
+      </section>
+
+      <!-- Vista: Pendientes (igual que Recados) -->
+      <section class="view" id="view-pendientes" hidden>
+        <header class="app-header">
+          <div class="header-top">
+            <h1>Pendientes</h1>
+          </div>
+          <p class="subtitle" id="pendientes-summary">Sin tareas todavía</p>
+        </header>
+
+        <form class="new-task" id="pendientes-form" autocomplete="off">
+          <input
+            type="text"
+            id="pendientes-input"
+            class="task-input"
+            placeholder="Añadir una tarea…"
+            aria-label="Nueva tarea"
+            maxlength="200"
+          />
+          <button type="submit" class="add-btn" aria-label="Añadir tarea">+</button>
+        </form>
+
+        <ul class="task-list" id="pendientes-list"></ul>
+
+        <p class="empty-state" id="pendientes-empty" hidden>
+          No hay tareas aquí. ¡Añade una arriba! 🎉
+        </p>
+
+        <div class="done-section" id="pendientes-done-section" hidden>
+          <div class="done-header">
+            <button type="button" class="toggle-done-btn" id="pendientes-toggle-done"></button>
+            <button type="button" class="clear-btn" id="pendientes-clear-done">Borrar completadas</button>
+          </div>
+          <ul class="task-list done-list" id="pendientes-done-list" hidden></ul>
         </div>
       </section>
 
@@ -248,7 +322,8 @@
 
         <section class="settings-section" id="tab-datos">
           <p class="settings-desc">
-            Guarda una copia de tus tareas en un archivo, o restaura tus tareas desde uno.
+            Guarda una copia de todas tus listas (tareas, recados, pendientes y
+            planificadas) en un archivo, o restáuralas desde uno.
           </p>
           <button type="button" class="settings-action" id="export-btn">⬇️ Exportar datos</button>
           <button type="button" class="settings-action" id="import-btn">⬆️ Importar datos</button>
