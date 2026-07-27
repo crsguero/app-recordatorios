@@ -43,6 +43,7 @@
         <span class="app-nav-brand">Menú</span>
         <button type="button" class="app-nav-close" id="nav-close" aria-label="Cerrar menú">✕</button>
       </div>
+      <button type="button" class="app-nav-item" data-view="hoy">Hoy</button>
       <button type="button" class="app-nav-item is-active" data-view="tareas">Tareas</button>
       <button type="button" class="app-nav-item" data-view="recados">Recados</button>
       <button type="button" class="app-nav-item" data-view="pendientes">Pendientes</button>
@@ -56,7 +57,29 @@
         <button type="button" class="nav-toggle" id="nav-toggle" aria-label="Abrir menú">☰</button>
       </div>
 
-      <!-- Vista: Mis tareas -->
+      <!-- Vista: Hoy -->
+      <section class="view" id="view-hoy" hidden>
+        <header class="app-header">
+          <div class="header-top">
+            <h1>Hoy</h1>
+            <button type="button" class="settings-btn" id="hoy-settings-btn" aria-label="Planificar el día">⚙️</button>
+          </div>
+        </header>
+
+        <section class="hoy-view-section">
+          <h2 class="hoy-view-title">Mañana</h2>
+          <ul class="task-list" id="hoy-view-manana"></ul>
+          <p class="hoy-view-empty" id="hoy-view-manana-empty" hidden>Nada por la mañana.</p>
+        </section>
+
+        <section class="hoy-view-section">
+          <h2 class="hoy-view-title">Tarde</h2>
+          <ul class="task-list" id="hoy-view-tarde"></ul>
+          <p class="hoy-view-empty" id="hoy-view-tarde-empty" hidden>Nada por la tarde.</p>
+        </section>
+      </section>
+
+      <!-- Vista: Tareas -->
       <section class="view" id="view-tareas">
         <header class="app-header">
           <div class="header-top">
@@ -334,6 +357,50 @@
           <p class="settings-desc">Sesión iniciada como:</p>
           <p class="settings-email" id="session-email"></p>
           <button type="button" class="settings-action danger" id="logout-btn">Cerrar sesión</button>
+        </section>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal de "Hoy": crear tareas en secciones Mañana / Tarde -->
+  <div class="hoymodal-overlay" id="hoy-overlay" hidden>
+    <div class="hoymodal-panel" role="dialog" aria-modal="true" aria-label="Planificar el día">
+      <header class="hoymodal-head">
+        <h2 class="hoymodal-title">Hoy</h2>
+        <button class="settings-close" id="hoy-close" type="button" aria-label="Cerrar">✕</button>
+      </header>
+
+      <div class="hoymodal-body">
+        <section class="hoy-section">
+          <h3 class="detail-section-label">Mañana</h3>
+          <form class="new-task" id="hoy-manana-form" autocomplete="off">
+            <input
+              type="text"
+              id="hoy-manana-input"
+              class="task-input"
+              placeholder="Añadir a la mañana…"
+              aria-label="Nueva tarea de la mañana"
+              maxlength="200"
+            />
+            <button type="submit" class="add-btn" aria-label="Añadir">+</button>
+          </form>
+          <ul class="hoy-list" id="hoy-manana-list"></ul>
+        </section>
+
+        <section class="hoy-section">
+          <h3 class="detail-section-label">Tarde</h3>
+          <form class="new-task" id="hoy-tarde-form" autocomplete="off">
+            <input
+              type="text"
+              id="hoy-tarde-input"
+              class="task-input"
+              placeholder="Añadir a la tarde…"
+              aria-label="Nueva tarea de la tarde"
+              maxlength="200"
+            />
+            <button type="submit" class="add-btn" aria-label="Añadir">+</button>
+          </form>
+          <ul class="hoy-list" id="hoy-tarde-list"></ul>
         </section>
       </div>
     </div>

@@ -112,6 +112,7 @@
   const FB_KEY_PLANNED = "planned"; // recordatorios/planned = tareas planificadas
   const FB_KEY_RECADOS = "recados"; // recordatorios/recados = segunda lista
   const FB_KEY_PENDIENTES = "pendientes"; // recordatorios/pendientes = tercera lista
+  const FB_KEY_HOY = "hoy"; // recordatorios/hoy = tareas del día (mañana/tarde)
 
   /* ---------- Respaldo local (IndexedDB) ----------
      Usamos IndexedDB en lugar de localStorage porque los archivos abiertos
@@ -125,6 +126,7 @@
   const IDB_KEY_PLANNED = "planned";
   const IDB_KEY_RECADOS = "recados";
   const IDB_KEY_PENDIENTES = "pendientes";
+  const IDB_KEY_HOY = "hoy";
   let db = null;
   let fbReady = false; // true cuando Firebase está autenticado y escuchando
   let appStarted = false; // evita arrancar la app dos veces
@@ -132,6 +134,9 @@
   let tasks = [];
   let recados = []; // segunda lista (misma funcionalidad, sin planificadas auto)
   let pendientes = []; // tercera lista (igual que recados)
+  let hoy = []; // tareas del día {id, text, section: "manana"|"tarde", done}
+  let hoyDay = null; // día (ISO) al que pertenecen los estados "done" actuales
+  let hoyReady = false; // true tras la primera sincronización de hoy
   let planned = []; // tareas planificadas (solo texto, sin completar)
 
   /* ---------- Aviso de errores visible ---------- */
@@ -214,6 +219,52 @@
           showError("Al sincronizar: " + (e && e.message ? e.message : e))
         );
     }
+  }
+
+  // Almacena {day, items}: el día permite resetear los "done" cada jornada.
+  function saveHoy() {
+    const payload = hoy && hoy.length ? { day: hoyDay, items: hoy } : null;
+    if (db) idbSet(IDB_KEY_HOY, payload).catch(() => {});
+    if (fbReady) {
+      fdb
+        .ref(FB_ROOT + "/" + FB_KEY_HOY)
+        .set(payload)
+        .catch((e) =>
+          showError("Al sincronizar: " + (e && e.message ? e.message : e))
+        );
+    }
+  }
+
+  // Admite el formato antiguo (array) y el nuevo ({day, items})
+  function parseHoy(raw) {
+    if (Array.isArray(raw)) return { items: raw, day: null };
+    if (raw && typeof raw === "object") {
+      const its = Array.isArray(raw.items)
+        ? raw.items
+        : raw.items
+        ? Object.values(raw.items)
+        : [];
+      return { items: its, day: raw.day || null };
+    }
+    return { items: [], day: null };
+  }
+
+  // Resetea los estados "done" al cambiar de día (idempotente, sincronizado por
+  // `hoyDay` para no pisar los checks hechos hoy en otro dispositivo).
+  function resetHoyIfNewDay() {
+    if (!hoyReady) return false;
+    const today = todayISO();
+    if (hoyDay === today) return false;
+    let changed = false;
+    hoy.forEach((h) => {
+      if (h.done) {
+        h.done = false;
+        changed = true;
+      }
+    });
+    hoyDay = today;
+    saveHoy();
+    return changed;
   }
 
   function savePlanned() {
@@ -1448,6 +1499,8 @@
       document
         .querySelectorAll(".app-nav-item")
         .forEach((n) => n.classList.toggle("is-active", n === item));
+      document.getElementById("view-hoy").hidden = view !== "hoy";
+      if (view === "hoy") renderHoy();
       document.getElementById("view-tareas").hidden = view !== "tareas";
       document.getElementById("view-recados").hidden = view !== "recados";
       document.getElementById("view-pendientes").hidden = view !== "pendientes";
@@ -1599,6 +1652,166 @@
     reader.readAsText(file);
   });
 
+  /* ---------- Modal de Hoy (secciones Mañana / Tarde) ---------- */
+  const hoyOverlay = document.getElementById("hoy-overlay");
+  const hoySettingsBtn = document.getElementById("hoy-settings-btn");
+  const hoyClose = document.getElementById("hoy-close");
+  const hoyMananaForm = document.getElementById("hoy-manana-form");
+  const hoyMananaInput = document.getElementById("hoy-manana-input");
+  const hoyMananaList = document.getElementById("hoy-manana-list");
+  const hoyTardeForm = document.getElementById("hoy-tarde-form");
+  const hoyTardeInput = document.getElementById("hoy-tarde-input");
+  const hoyTardeList = document.getElementById("hoy-tarde-list");
+
+  // Lista del modal: texto + eliminar + reordenar
+  function renderHoyModal() {
+    hoyMananaList.innerHTML = "";
+    hoyTardeList.innerHTML = "";
+    hoy.forEach((item) => {
+      const li = document.createElement("li");
+      li.className = "hoy-item";
+      li.dataset.id = item.id;
+
+      const input = document.createElement("input");
+      input.type = "text";
+      input.className = "hoy-item-input";
+      input.value = item.text;
+      input.setAttribute("aria-label", "Editar tarea");
+      // Durante la escritura: solo memoria + vista (NO guardar, para no
+      // disparar el eco de Firebase que reconstruiría este input y perdería
+      // el foco). Se persiste al salir del campo.
+      input.addEventListener("input", () => {
+        const v = input.value.trim();
+        if (v) {
+          item.text = v;
+          renderHoyView(); // refleja el cambio en la vista Hoy
+        }
+      });
+      input.addEventListener("blur", () => {
+        const v = input.value.trim();
+        if (v) {
+          item.text = v;
+          saveHoy(); // persiste al terminar de editar
+        } else {
+          input.value = item.text; // restaura si quedó vacío
+        }
+      });
+
+      const del = document.createElement("button");
+      del.type = "button";
+      del.className = "hoy-del";
+      del.textContent = "🗑";
+      del.setAttribute("aria-label", "Eliminar");
+      del.addEventListener("click", () => deleteHoy(item.id));
+
+      li.append(input, del);
+      (item.section === "tarde" ? hoyTardeList : hoyMananaList).appendChild(li);
+    });
+  }
+
+  // Vista "Hoy": checkbox + texto. Las completadas NO se ocultan.
+  function renderHoyView() {
+    const vm = document.getElementById("hoy-view-manana");
+    const vt = document.getElementById("hoy-view-tarde");
+    if (!vm || !vt) return;
+    vm.innerHTML = "";
+    vt.innerHTML = "";
+    let nm = 0;
+    let nt = 0;
+    hoy.forEach((item) => {
+      const li = document.createElement("li");
+      li.className = "hoy-view-item" + (item.done ? " is-done" : "");
+
+      const check = document.createElement("input");
+      check.type = "checkbox";
+      check.className = "task-check";
+      check.checked = !!item.done;
+      check.setAttribute("aria-label", "Marcar como completada");
+      check.addEventListener("change", () => toggleHoy(item.id));
+
+      const text = document.createElement("span");
+      text.className = "hoy-view-text";
+      text.textContent = item.text;
+
+      li.append(check, text);
+      if (item.section === "tarde") {
+        vt.appendChild(li);
+        nt++;
+      } else {
+        vm.appendChild(li);
+        nm++;
+      }
+    });
+    document.getElementById("hoy-view-manana-empty").hidden = nm !== 0;
+    document.getElementById("hoy-view-tarde-empty").hidden = nt !== 0;
+  }
+
+  function renderHoy() {
+    renderHoyModal();
+    renderHoyView();
+  }
+
+  function addHoy(section, text) {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    hoy.push({ id: newId(), text: trimmed, section: section, done: false });
+    saveHoy();
+    renderHoy();
+  }
+
+  function deleteHoy(id) {
+    hoy = hoy.filter((h) => h.id !== id);
+    saveHoy();
+    renderHoy();
+  }
+
+  function toggleHoy(id) {
+    const item = hoy.find((h) => h.id === id);
+    if (!item) return;
+    item.done = !item.done;
+    saveHoy();
+    renderHoy();
+  }
+
+  function openHoy() {
+    renderHoy();
+    hoyOverlay.hidden = false;
+    document.body.classList.add("no-scroll");
+  }
+  function closeHoy() {
+    hoyOverlay.hidden = true;
+    document.body.classList.remove("no-scroll");
+    renderHoy(); // refleja en la vista los cambios/orden del modal
+  }
+
+  hoySettingsBtn.addEventListener("click", openHoy);
+  hoyClose.addEventListener("click", closeHoy);
+  hoyOverlay.addEventListener("click", (e) => {
+    if (e.target === hoyOverlay) closeHoy();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !hoyOverlay.hidden) closeHoy();
+  });
+
+  hoyMananaForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    addHoy("manana", hoyMananaInput.value);
+    hoyMananaInput.value = "";
+    hoyMananaInput.focus();
+  });
+  hoyTardeForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    addHoy("tarde", hoyTardeInput.value);
+    hoyTardeInput.value = "";
+    hoyTardeInput.focus();
+  });
+
+  // Reordenar por arrastre dentro de cada sección. Cada lista contiene solo los
+  // ítems de su sección, así que el reordenado afecta solo a esos (los de la
+  // otra sección quedan en su sitio dentro del array `hoy`).
+  enableReorder(hoyMananaList, "hoy-item", () => hoy, saveHoy);
+  enableReorder(hoyTardeList, "hoy-item", () => hoy, saveHoy);
+
   /* ---------- Arranque tras iniciar sesión ---------- */
   function loadLegacy() {
     // Migración: importa las tareas de la antigua versión con localStorage.
@@ -1636,6 +1849,12 @@
     if (db) localPendientes = await idbGet(IDB_KEY_PENDIENTES);
     pendientes = Array.isArray(localPendientes) ? localPendientes : [];
 
+    let rawHoy;
+    if (db) rawHoy = await idbGet(IDB_KEY_HOY);
+    const parsedHoy = parseHoy(rawHoy);
+    hoy = parsedHoy.items;
+    hoyDay = parsedHoy.day;
+
     let localPlanned = [];
     if (db) localPlanned = await idbGet(IDB_KEY_PLANNED);
     planned = Array.isArray(localPlanned) ? localPlanned : [];
@@ -1643,6 +1862,7 @@
     render(); // pinta al instante con el respaldo local
     renderRecados();
     renderPendientes();
+    renderHoy();
     renderPlanned();
   }
 
@@ -1763,6 +1983,31 @@
       (err) =>
         showError("Al leer la nube: " + (err && err.message ? err.message : err))
     );
+
+    // Quinto listener: tareas de "Hoy" (secciones mañana/tarde)
+    let firstH = true;
+    const refH = fdb.ref(FB_ROOT + "/" + FB_KEY_HOY);
+    refH.on(
+      "value",
+      (snap) => {
+        const parsed = parseHoy(snap.val());
+        if (firstH && parsed.items.length === 0 && hoy.length > 0) {
+          firstH = false;
+          saveHoy();
+          return;
+        }
+        firstH = false;
+        hoy = parsed.items;
+        hoyDay = parsed.day;
+        if (db) idbSet(IDB_KEY_HOY, snap.val()).catch(() => {});
+        clearError();
+        hoyReady = true;
+        resetHoyIfNewDay(); // resetea "done" si ha cambiado el día
+        renderHoy();
+      },
+      (err) =>
+        showError("Al leer la nube: " + (err && err.message ? err.message : err))
+    );
   }
 
   async function startApp() {
@@ -1770,6 +2015,10 @@
     appStarted = true;
     await initLocal(); // respaldo local → pinta ya
     startFirebaseSync(); // engancha la nube
+    // Reseteo diario de "Hoy": comprueba cada minuto por si cruza la medianoche
+    setInterval(() => {
+      if (resetHoyIfNewDay()) renderHoy();
+    }, 60000);
   }
 
   /* ---------- Autenticación ---------- */
