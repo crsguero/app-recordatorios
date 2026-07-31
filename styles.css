@@ -637,6 +637,12 @@ body {
   border-color: rgba(255, 255, 255, 0.3);
 }
 
+/* Tareas de App lactancia: fondo rosa sutil, agrupadas al principio */
+.task-item.is-lact {
+  background: #fdeef4;
+  border-color: #f6d3e1;
+}
+
 .star-btn {
   flex: 0 0 auto;
   width: 36px;

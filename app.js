@@ -49,6 +49,8 @@
     summaryEl: summary,
     doneVisible: false,
     plannedRank: true, // las copias de planificadas van arriba
+    externalPending: () => lactPending(), // tareas de App lactancia (arriba)
+    externalDone: () => lactDone(),
   };
   const ctxRecados = {
     noun: "recado",
@@ -113,6 +115,16 @@
   const FB_KEY_RECADOS = "recados"; // recordatorios/recados = segunda lista
   const FB_KEY_PENDIENTES = "pendientes"; // recordatorios/pendientes = tercera lista
   const FB_KEY_HOY = "hoy"; // recordatorios/hoy = tareas del día (mañana/tarde)
+
+  /* ---------- Integración con App lactancia (misma base de datos) ----------
+     Mostramos en la lista "Tareas" las tareas de App lactancia (Mamá › Tareas),
+     que viven en la raíz "lactancia". No son nuestras: solo las leemos y, al
+     completar/borrar, reescribimos su nodo. lactancia ya escucha esos nodos y
+     refleja el cambio solo. Esquema de cada tarea allí:
+     { id, texto, hecha, creada, completada?, auto?, fecha?, desde?, banoFecha?, extra? } */
+  const LACT_ROOT = "lactancia";
+  const LACT_NODES = ["tareas-mama", "tareas-antes-extraccion"];
+  let lactRaw = { "tareas-mama": [], "tareas-antes-extraccion": [] }; // copias vivas de la nube
 
   /* ---------- Respaldo local (IndexedDB) ----------
      Usamos IndexedDB en lugar de localStorage porque los archivos abiertos
@@ -459,6 +471,66 @@
     }
   }
 
+  /* ---------- Tareas de App lactancia (solo en la lista "Tareas") ---------- */
+  // Traduce una tarea de lactancia al formato que usa esta app para pintar.
+  function lactToItem(x, node) {
+    return {
+      id: "lact:" + node + ":" + x.id, // id enrutable y único
+      text: x.texto,
+      done: !!x.hecha,
+      completedAt: x.completada
+        ? new Date(x.completada).toISOString().slice(0, 10)
+        : undefined,
+      _lact: { node: node, id: x.id }, // marca de origen + enrutado de escritura
+    };
+  }
+  // Pendientes de lactancia: "antes de la extracción" primero, luego "durante el día"
+  // (mismo criterio de visibilidad que la propia app lactancia).
+  function lactPending() {
+    const hoy = todayISO();
+    const antes = (lactRaw["tareas-antes-extraccion"] || [])
+      .filter((x) => !x.hecha)
+      .map((x) => lactToItem(x, "tareas-antes-extraccion"));
+    const mama = (lactRaw["tareas-mama"] || [])
+      .filter((x) => !x.hecha && (!x.desde || x.desde <= hoy))
+      .map((x) => lactToItem(x, "tareas-mama"));
+    return antes.concat(mama);
+  }
+  // Completadas de lactancia (para la sección Completadas).
+  function lactDone() {
+    const out = [];
+    LACT_NODES.forEach((node) =>
+      (lactRaw[node] || [])
+        .filter((x) => x.hecha)
+        .forEach((x) => out.push(lactToItem(x, node)))
+    );
+    return out;
+  }
+  // Escribe de vuelta el array completo de un nodo de lactancia (optimista + nube).
+  function writeLact(node, arr) {
+    lactRaw[node] = arr;
+    if (fbReady) {
+      fdb
+        .ref(LACT_ROOT + "/" + node)
+        .set(arr && arr.length ? arr : null)
+        .catch((e) =>
+          showError("Al sincronizar lactancia: " + (e && e.message ? e.message : e))
+        );
+    }
+    render();
+  }
+  function toggleLactDone(ref) {
+    const arr = (lactRaw[ref.node] || []).map((x) => x); // copia superficial del array
+    const it = arr.find((x) => x.id === ref.id);
+    if (!it) return;
+    it.hecha = !it.hecha;
+    it.completada = it.hecha ? Date.now() : null; // esquema de lactancia (ms)
+    writeLact(ref.node, arr);
+  }
+  function deleteLact(ref) {
+    writeLact(ref.node, (lactRaw[ref.node] || []).filter((x) => x.id !== ref.id));
+  }
+
   /* ---------- Vista de detalle ---------- */
   const overlay = document.getElementById("detail-overlay");
   const detailClose = document.getElementById("detail-close");
@@ -466,6 +538,7 @@
   const detailNote = document.getElementById("detail-note");
   const detailCheck = document.getElementById("detail-check");
   const detailDelete = document.getElementById("detail-delete");
+  const detailNoteLabel = document.querySelector(".detail-note-label");
   const detailTaskFields = document.getElementById("detail-task-fields");
   const detailSubtasks = document.getElementById("detail-subtasks");
   const subtaskForm = document.getElementById("subtask-form");
@@ -486,6 +559,7 @@
   const repeatBiennialWrap = document.getElementById("repeat-biennial-wrap");
   const repeatStart = document.getElementById("detail-repeat-start");
   let openTaskId = null;
+  let openLactRef = null; // {node,id} si el modal muestra una tarea de lactancia
 
   function getOpenTask() {
     const e = findTaskEntry(openTaskId);
@@ -873,6 +947,10 @@
     if (!item) return;
     openTaskId = null;
     openPlannedId = id;
+    openLactRef = null;
+    detailTitle.readOnly = false; // restaura edición del título
+    detailNote.hidden = false; // restaura la nota
+    if (detailNoteLabel) detailNoteLabel.hidden = false;
     detailCheck.hidden = true; // las planificadas no se completan
     detailTaskFields.hidden = true; // oculta fecha y subtareas (título sí se ve)
     detailDelete.hidden = false; // eliminar desde el modal
@@ -886,12 +964,36 @@
     autoGrow(detailTitle);
   }
 
+  // Tarea de App lactancia: modal en modo solo lectura (completar / eliminar).
+  function openLactDetail(task) {
+    openTaskId = null;
+    openPlannedId = null;
+    openLactRef = task._lact;
+    detailCheck.hidden = false;
+    detailCheck.checked = task.done;
+    detailTitle.value = task.text;
+    detailTitle.classList.toggle("is-done", task.done);
+    detailTitle.readOnly = true; // el texto se edita en App lactancia
+    detailTaskFields.hidden = true; // sin fecha ni subtareas
+    detailRepeatSection.hidden = true;
+    detailNote.hidden = true; // sin nota
+    if (detailNoteLabel) detailNoteLabel.hidden = true;
+    detailDelete.hidden = false;
+    overlay.hidden = false;
+    document.body.classList.add("no-scroll");
+    autoGrow(detailTitle);
+  }
+
   function openDetail(id) {
     const e = findTaskEntry(id);
     if (!e) return;
     const task = e.item;
     openPlannedId = null;
+    openLactRef = null;
     detailCheck.hidden = false;
+    detailTitle.readOnly = false; // restaura edición del título
+    detailNote.hidden = false; // restaura la nota
+    if (detailNoteLabel) detailNoteLabel.hidden = false;
     detailTaskFields.hidden = false; // restaura los campos de tarea
     detailRepeatSection.hidden = true; // "Repetir" solo en planificadas
     detailDelete.hidden = false;
@@ -920,6 +1022,7 @@
     }
     openTaskId = null;
     openPlannedId = null;
+    openLactRef = null;
     overlay.hidden = true;
     document.body.classList.remove("no-scroll");
   }
@@ -927,6 +1030,15 @@
   detailClose.addEventListener("click", closeDetail);
 
   detailDelete.addEventListener("click", () => {
+    if (openLactRef) {
+      const ref = openLactRef;
+      if (!confirm("¿Eliminar esta tarea?")) return;
+      openLactRef = null;
+      overlay.hidden = true;
+      document.body.classList.remove("no-scroll");
+      deleteLact(ref);
+      return;
+    }
     if (openTaskId !== null) {
       const task = getOpenTask();
       const label = task ? task.text : "esta tarea";
@@ -1005,6 +1117,11 @@
   });
 
   detailCheck.addEventListener("change", () => {
+    if (openLactRef) {
+      toggleLactDone(openLactRef);
+      detailTitle.classList.toggle("is-done", detailCheck.checked);
+      return;
+    }
     if (openTaskId === null) return;
     toggleTask(openTaskId);
     const task = getOpenTask();
@@ -1057,7 +1174,8 @@
       "task-item" +
       (task.done ? " is-done" : "") +
       (task.starred ? " is-starred" : "") +
-      (task.sourcePlannedId ? " is-planned" : "");
+      (task.sourcePlannedId ? " is-planned" : "") +
+      (task._lact ? " is-lact" : "");
     li.dataset.id = task.id;
 
     // Etiqueta de la segunda línea y si lleva 🕑 delante ("A partir de …")
@@ -1101,11 +1219,15 @@
     control.className = "task-check";
     control.checked = task.done;
     control.setAttribute("aria-label", "Marcar como completada");
-    control.addEventListener("change", () => toggleTask(task.id));
+    control.addEventListener("change", () =>
+      task._lact ? toggleLactDone(task._lact) : toggleTask(task.id)
+    );
 
     const main = document.createElement("div");
     main.className = "task-main";
-    main.addEventListener("click", () => openDetail(task.id));
+    main.addEventListener("click", () =>
+      task._lact ? openLactDetail(task) : openDetail(task.id)
+    );
 
     const span = document.createElement("span");
     span.className = "task-text";
@@ -1129,9 +1251,15 @@
       main.appendChild(dateLine);
     }
 
-    // Tarea generada por una planificada: indicador en lugar de "Destacar"
+    // Tarea generada por una planificada o de lactancia: indicador (no "Destacar")
     let trailing;
-    if (task.sourcePlannedId) {
+    if (task._lact) {
+      trailing = document.createElement("span");
+      trailing.className = "planned-indicator";
+      trailing.textContent = "🍼";
+      trailing.setAttribute("aria-label", "Tarea de lactancia");
+      trailing.setAttribute("title", "Tarea de App lactancia");
+    } else if (task.sourcePlannedId) {
       trailing = document.createElement("span");
       trailing.className = "planned-indicator";
       trailing.textContent = "🔁";
@@ -1223,7 +1351,7 @@
     // las destacadas; luego el resto. Orden estable dentro de cada grupo.
     const rankOf = (t) =>
       ctx.plannedRank && t.sourcePlannedId ? 0 : t.starred ? 1 : 2;
-    const pending = items
+    const pendingNativas = items
       .map((task, index) => ({ task, index }))
       .filter((e) => !e.task.done)
       .sort((a, b) => {
@@ -1233,9 +1361,14 @@
         return a.index - b.index;
       })
       .map((e) => e.task);
+    // Tareas externas (App lactancia), agrupadas al principio de la lista.
+    const extPending = ctx.externalPending ? ctx.externalPending() : [];
+    const extDone = ctx.externalDone ? ctx.externalDone() : [];
+    const pending = extPending.concat(pendingNativas);
     // Completadas: por fecha de completado, la más reciente primero.
     const done = items
       .filter((t) => t.done)
+      .concat(extDone)
       .slice()
       .sort((a, b) => {
         const ca = a.completedAt || "";
@@ -1262,7 +1395,7 @@
       " (" + done.length + ")";
 
     const remaining = pending.length;
-    const total = items.length;
+    const total = pending.length + done.length;
     const plural = ctx.noun + "s";
     if (total === 0) {
       ctx.summaryEl.textContent = "Sin " + plural + " todavía";
@@ -1379,12 +1512,12 @@
       // Reordena el array real según el orden del DOM (solo elementos visibles),
       // dejando en su sitio los que no estén en el DOM (por filtro).
       const items = getItems();
-      const domIds = [...container.querySelectorAll("." + itemClass)].map(
-        (li) => li.dataset.id
-      );
-      const domSet = new Set(domIds);
       const byId = {};
       items.forEach((t) => (byId[t.id] = t));
+      const domIds = [...container.querySelectorAll("." + itemClass)]
+        .map((li) => li.dataset.id)
+        .filter((id) => byId[id]); // ignora tareas externas (no están en el array real)
+      const domSet = new Set(domIds);
       const slots = [];
       items.forEach((t, i) => {
         if (domSet.has(t.id)) slots.push(i);
@@ -1424,6 +1557,8 @@
       if (e.button && e.button !== 0) return; // solo botón principal
       const li = e.target.closest("." + itemClass);
       if (!li) return;
+      // Las tareas externas (App lactancia) no se reordenan aquí
+      if (li.dataset.id && li.dataset.id.indexOf("lact:") === 0) return;
       dragEl = li;
       startX = e.clientX;
       startY = e.clientY;
@@ -2025,6 +2160,28 @@
       (err) =>
         showError("Al leer la nube: " + (err && err.message ? err.message : err))
     );
+
+    // Listeners de App lactancia (solo lectura salvo cuando el usuario actúa).
+    // No hacen "first empty upload": esos nodos no son nuestros.
+    LACT_NODES.forEach((node) => {
+      fdb.ref(LACT_ROOT + "/" + node).on(
+        "value",
+        (snap) => {
+          const raw = snap.val();
+          lactRaw[node] = Array.isArray(raw)
+            ? raw
+            : raw
+            ? Object.values(raw)
+            : [];
+          clearError();
+          render(); // re-pinta la lista "Tareas" (ctxTareas)
+        },
+        (err) =>
+          showError(
+            "Al leer lactancia: " + (err && err.message ? err.message : err)
+          )
+      );
+    });
   }
 
   async function startApp() {
