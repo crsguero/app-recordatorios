@@ -1,0 +1,672 @@
+{
+  "tasks": [
+    {
+      "dateMode": "from",
+      "dateStart": "2026-08-03",
+      "done": false,
+      "id": "ms8o2wxp9buo3",
+      "note": "",
+      "starred": false,
+      "text": "Pedir cita fisioterapeuta"
+    },
+    {
+      "done": false,
+      "id": "ms8cqam7les8y",
+      "occurrenceDate": "2026-07-31",
+      "sourcePlannedId": "ms0npjzhillta",
+      "starred": false,
+      "text": "Sesión de belleza"
+    },
+    {
+      "dateMode": "from",
+      "dateStart": "2026-08-08",
+      "done": false,
+      "id": "ms7phre7xp7d8",
+      "note": "",
+      "starred": false,
+      "text": "Cambiar pendientes a Sofi"
+    },
+    {
+      "done": false,
+      "id": "ms7jkgtzsifuq",
+      "starred": false,
+      "text": "Poner a funcionar botella nueva Stanley"
+    },
+    {
+      "done": false,
+      "id": "ms7j7o6r5ia1f",
+      "starred": false,
+      "text": "Probar hervidor"
+    },
+    {
+      "done": false,
+      "id": "ms7j7kwszhsax",
+      "starred": false,
+      "text": "Poner a funcionar el termómetro de cocina"
+    },
+    {
+      "done": false,
+      "id": "ms5tg0ci5oxxj",
+      "occurrenceDate": "2026-07-29",
+      "sourcePlannedId": "ms0npy4ibzbfq",
+      "starred": false,
+      "text": "Poner al día la contabilidad personal"
+    },
+    {
+      "done": false,
+      "id": "ms2wbcjffsy7s",
+      "note": "",
+      "occurrenceDate": "2026-07-27",
+      "sourcePlannedId": "ms0np78swgfs7",
+      "starred": false,
+      "text": "Limpiar bandejas de entrada"
+    },
+    {
+      "dateMode": "from",
+      "dateStart": "2026-07-31",
+      "done": false,
+      "id": "mrzh7xaxctxjd",
+      "note": "Preguntar por Federica.\n\nhttps://aliderma.com/equipo-medico/dra--federica-liuti/1.html",
+      "starred": true,
+      "text": "Pedir cita con dermatóloga"
+    },
+    {
+      "done": false,
+      "id": "ms39motqs2ync",
+      "note": "",
+      "starred": false,
+      "text": "Probar el TENS"
+    },
+    {
+      "completedAt": "2026-07-27",
+      "done": true,
+      "id": "ms2z5ixy3e9tx",
+      "starred": false,
+      "text": "Mirar lo del tuper para la piña abierta"
+    },
+    {
+      "completedAt": "2026-07-28",
+      "done": true,
+      "id": "ms3rk5f78i3ky",
+      "starred": false,
+      "text": "Escribir a Hari"
+    },
+    {
+      "dateMode": "from",
+      "dateStart": "2026-07-27",
+      "done": false,
+      "id": "mrzi4hc3h1aky",
+      "note": "Prendas:\n- Protector de colchón\n- Body\n\nProceso:\n- Poner a remojo en agua fría con detergente. Dejar 30 minutos.\n- Poner quitamanchas para proteínas. Dejar actual 15-30 minutos.\n- Lavar a máquina a 30º\n- Secar en tendedero",
+      "starred": true,
+      "text": "Lavar ropa manchada de caca"
+    },
+    {
+      "done": false,
+      "id": "ms2xd2mm1x7d7",
+      "starred": true,
+      "text": "Mirar recordatorio 'Figma' en Notion"
+    },
+    {
+      "completedAt": "2026-07-27",
+      "done": true,
+      "id": "ms2d9eamqowxd",
+      "starred": false,
+      "text": "Apuntar cita médica 2 meses"
+    },
+    {
+      "done": false,
+      "id": "ms2xct89nmrx4",
+      "starred": true,
+      "text": "Mirar recordatorio de 'Daomain NAMECHEAP' en Notion"
+    },
+    {
+      "done": false,
+      "id": "ms2xbv5jql57q",
+      "starred": true,
+      "text": "Cancelar suscripción hosting NAMECHEAP (ver Notion)"
+    },
+    {
+      "completedAt": "2026-07-27",
+      "done": true,
+      "id": "mrzhwk2c78b21",
+      "note": "",
+      "starred": false,
+      "text": "Organizar devoluciones"
+    },
+    {
+      "completedAt": "2026-07-26",
+      "done": true,
+      "id": "mrzi4q0swp2xp",
+      "note": "",
+      "starred": false,
+      "text": "Lavar ropa de cama de Sofía"
+    },
+    {
+      "completedAt": "2026-07-26",
+      "done": true,
+      "id": "ms0yiykz32mj4",
+      "starred": true,
+      "text": "Hacer compra semanal"
+    },
+    {
+      "completedAt": "2026-07-27",
+      "dateMode": "from",
+      "dateStart": "2026-07-27",
+      "done": true,
+      "id": "ms1q0gncajxk7",
+      "note": "¡Buenos días Laura! El viernes se me olvidó pedírtelo. ¿Podrías hacerme factura de la última sesión? Si necesitas un correo: cristinaguerrarrodriguez@outlook.com. Muchas gracias de antemano ☺️",
+      "starred": false,
+      "text": "Pedir factura a Laura"
+    },
+    {
+      "completedAt": "2026-07-26",
+      "done": true,
+      "id": "ms0zipejb5g82",
+      "starred": false,
+      "text": "Limpiar a consciencia la tapa de la Stanley"
+    },
+    {
+      "done": false,
+      "id": "mrzhs7tr5dmdb",
+      "note": "General:\n- Estar descalzos dentro del baño, dejando las sandalias secas en la puerta (por fuera).\n\nEl que prepara la niña:\n- Quitarle la ropa\n- Quitarle el pañal\n- Esperar unos minutos a ver si hace pis\n- Llevar a la niña (con el pañal puesto pero abierto) cuando el otro haya terminado de preparar el baño.\n\nEl que prepara el baño:\n- Coger toalla\n- Coger muselina\n- Llenar bañera\n\nEl que recoge el baño:\n- Vaciar bañera\n- Limpiar bañera, hamaca, jarra y termómetro\n- Pasar fregona por el suelo",
+      "starred": true,
+      "text": "Optimizar rutina baño"
+    },
+    {
+      "done": false,
+      "id": "mrzhs04fv6rm3",
+      "note": "Mirar a ver cómo podemos hacer mientras estoy con la dolencia.\n\nUna vez y me encuentre bien, valorar:\n- Mañanas: Fer está con la niña\n- Tardes: Cris está con la niña mientras Fer trabaja\n- Sobre las 21:00 -> Poner a la niña en la cuna",
+      "starred": true,
+      "text": "Revisar rutina diaria con Fer"
+    },
+    {
+      "done": false,
+      "id": "mrzj5x44606av",
+      "note": "",
+      "starred": true,
+      "text": "Revisar sistema visitas"
+    },
+    {
+      "completedAt": "2026-07-25",
+      "done": true,
+      "id": "ms0845lz142em",
+      "starred": false,
+      "text": "Hacer limpieza en la nevera"
+    },
+    {
+      "done": false,
+      "id": "mrzh6o8bbamul",
+      "note": "",
+      "starred": true,
+      "text": "Ensayar proceso de preparar bibe fuera de casa"
+    },
+    {
+      "completedAt": "2026-07-25",
+      "done": true,
+      "id": "mrzjfrezemgpe",
+      "note": "",
+      "starred": false,
+      "text": "¿Dejo el Celebrex?"
+    },
+    {
+      "completedAt": "2026-07-25",
+      "done": true,
+      "id": "mrzhuqnlwe6i3",
+      "note": "",
+      "starred": false,
+      "text": "Tirar plásticos + cartón"
+    },
+    {
+      "completedAt": "2026-07-25",
+      "dateMode": "none",
+      "done": true,
+      "id": "mrzs71mx56rng",
+      "note": "",
+      "starred": false,
+      "text": "Lavadora ropa blanca Sofía"
+    },
+    {
+      "done": false,
+      "id": "ms0tjqhkzi73s",
+      "note": "",
+      "starred": false,
+      "text": "Poner fieltro a cesta ropa sucia de Sofía"
+    },
+    {
+      "completedAt": "2026-07-26",
+      "done": true,
+      "id": "ms1mx8u1s8qvo",
+      "starred": false,
+      "text": "Pagarle a Fer la Stanley nueva"
+    },
+    {
+      "completedAt": "2026-07-25",
+      "done": true,
+      "id": "mrzslyly2mbyf",
+      "starred": false,
+      "text": "Proyectos > Reclamar reposacabezas sillón lactancia"
+    },
+    {
+      "completedAt": "2026-07-25",
+      "done": true,
+      "id": "mrzsl6riq2yfz",
+      "starred": false,
+      "text": "Proyectos > Limpiar tapa registro estudio Cris"
+    },
+    {
+      "completedAt": "2026-07-25",
+      "done": true,
+      "id": "ms0n25554iltm",
+      "starred": false,
+      "text": "Proyectos > Reparar arañazos puerta de la calle"
+    },
+    {
+      "done": false,
+      "id": "ms0yifsbcx57l",
+      "note": "",
+      "starred": false,
+      "text": "Guardar almohada de embarazada"
+    },
+    {
+      "done": false,
+      "id": "mrzifj9ww9ojd",
+      "note": "",
+      "starred": false,
+      "text": "Organizar documentos de Sofía"
+    },
+    {
+      "done": false,
+      "id": "mrzi4z3xui4lf",
+      "note": "",
+      "starred": false,
+      "text": "Ordenar armario izquierda Sofía"
+    },
+    {
+      "completedAt": "2026-07-25",
+      "done": true,
+      "id": "mrzhr1mnmak1n",
+      "note": "",
+      "starred": false,
+      "text": "Registrar contenido del congelador para mamá"
+    },
+    {
+      "completedAt": "2026-07-26",
+      "done": true,
+      "id": "ms0pe2z5fcxez",
+      "starred": false,
+      "text": "Investigar cómo limpiar manchas de caca en protector colchón cuna"
+    },
+    {
+      "completedAt": "2026-07-26",
+      "done": true,
+      "id": "ms07duntqx38v",
+      "starred": false,
+      "text": "Lavar escurreplatos nuevo"
+    },
+    {
+      "done": false,
+      "id": "ms25dp4r1w459",
+      "note": "Comercios a añadir:\n- Djerf Avenue",
+      "starred": false,
+      "text": "App Estilo > Crear sección con comercios"
+    },
+    {
+      "done": false,
+      "id": "mrzhr98upk226",
+      "note": "",
+      "starred": false,
+      "text": "Limarle las uñas a Sofía"
+    },
+    {
+      "done": false,
+      "id": "mrzieddsvk7ia",
+      "note": "",
+      "starred": false,
+      "text": "Hacer los cumplemeses"
+    },
+    {
+      "done": false,
+      "id": "mrzhsf747x3lb",
+      "note": "Valorar lo de conseguir tener las conchas montadas al inicio de la extracción.\n\nPendiente:\n- Integrar limpieza del esterilizador\n- Integrar cuidado pezones",
+      "starred": false,
+      "text": "Profundizar en rutinas con el extractor"
+    },
+    {
+      "done": false,
+      "id": "mrzhygnc380sy",
+      "note": "",
+      "starred": false,
+      "subtasks": [
+        {
+          "done": false,
+          "id": "mrzidfc71mtai",
+          "text": "Redactar experiencia"
+        },
+        {
+          "done": false,
+          "id": "mrzidrov3yozx",
+          "text": "Generar imágenes de postura para dar a luz"
+        }
+      ],
+      "text": "Escribir experiencia de parto"
+    },
+    {
+      "done": false,
+      "id": "mrzhy5hqukzrm",
+      "note": "",
+      "starred": false,
+      "text": "Organizar fotos de Sofía"
+    },
+    {
+      "done": false,
+      "id": "mrzibfwl2kyg6",
+      "note": "Empecé una conversación con ChatGPT al respecto. Buscarla.\n\nEstaría bien documentar lo de los modos de concentración en Notion.",
+      "starred": false,
+      "text": "Investigar lo de que las llamadas de Fer me suenen siempre"
+    },
+    {
+      "completedAt": "2026-07-26",
+      "done": true,
+      "id": "mrzrq04hybzs6",
+      "starred": false,
+      "text": "Fer: Poner mando Hue en dormitorio Sofía"
+    },
+    {
+      "completedAt": "2026-07-25",
+      "done": true,
+      "id": "mrzjkr75hc0kq",
+      "note": "",
+      "starred": false,
+      "text": "Reenganchar trackpad"
+    },
+    {
+      "completedAt": "2026-07-25",
+      "done": true,
+      "id": "mrzh4r7rjg6cn",
+      "note": "",
+      "starred": false,
+      "text": "Guardar vasos de cristal en salón"
+    }
+  ],
+  "recados": [
+    {
+      "done": false,
+      "id": "ms3ghvyy0j9pc",
+      "note": "https://www.stradivarius.com/ic/camiseta-nadadora-rib-algodon-l02522687?colorId=001&xs=13&pelement=511324101",
+      "starred": true,
+      "text": "Mirar camisetas en STRADIVARIUS"
+    },
+    {
+      "done": false,
+      "id": "ms3f4zhv9dan0",
+      "note": "",
+      "starred": true,
+      "subtasks": [
+        {
+          "done": false,
+          "id": "ms3f56hirgkke",
+          "text": "Top fruncido"
+        }
+      ],
+      "text": "Devoluciones ZARA"
+    },
+    {
+      "done": false,
+      "id": "ms3f4wdt52c5n",
+      "note": "",
+      "starred": false,
+      "subtasks": [
+        {
+          "done": false,
+          "id": "ms3f5btkfuf6t",
+          "text": "Vestido azul"
+        },
+        {
+          "done": false,
+          "id": "ms3f5fbrm22qb",
+          "text": "Vestido marrón"
+        },
+        {
+          "done": false,
+          "id": "ms3f5ir6cff17",
+          "text": "Top deporte negro"
+        },
+        {
+          "done": false,
+          "id": "ms3f5rb5e77lg",
+          "text": "Mallas deporte negro"
+        }
+      ],
+      "text": "Devoluciones H&M"
+    },
+    {
+      "done": false,
+      "id": "ms3e15wgxs4dt",
+      "note": "",
+      "starred": false,
+      "subtasks": [
+        {
+          "done": false,
+          "id": "ms3f2knwqe8cs",
+          "text": "Top con sujetador amarillo"
+        }
+      ],
+      "text": "Devoluciones OYSHO"
+    },
+    {
+      "done": false,
+      "id": "ms3e0pcb7aaa2",
+      "note": "",
+      "starred": false,
+      "subtasks": [
+        {
+          "done": false,
+          "id": "ms3e0xeoztskx",
+          "text": "Regalos Juani"
+        }
+      ],
+      "text": "Devoluciones El Corte Inglés"
+    },
+    {
+      "done": false,
+      "id": "ms3dt9ocs897k",
+      "note": "",
+      "starred": true,
+      "subtasks": [
+        {
+          "done": false,
+          "id": "ms3dthmee8dl2",
+          "text": "Pack 2 paños cocina gofrados"
+        },
+        {
+          "done": false,
+          "id": "ms3dtli95go2r",
+          "text": "Paño de cocina"
+        },
+        {
+          "done": false,
+          "id": "ms3ephk8ipkgp",
+          "text": "Pantalón pijama"
+        }
+      ],
+      "text": "Devoluciones ZARA HOME"
+    }
+  ],
+  "pendientes": [
+    {
+      "done": false,
+      "id": "ms3luaiz4es47",
+      "starred": true,
+      "text": "Compra ZARA HOME"
+    },
+    {
+      "done": false,
+      "id": "ms3h6j67qxdvx",
+      "starred": false,
+      "text": "Mamá > Tupper para piña"
+    },
+    {
+      "done": false,
+      "id": "ms3h6at2sysrc",
+      "starred": false,
+      "text": "Factura sesión fisioterapia"
+    },
+    {
+      "done": false,
+      "id": "ms3h5xq6sn3ji",
+      "starred": false,
+      "text": "Confirmación inscripción del padrón de Sofía"
+    },
+    {
+      "done": false,
+      "id": "ms3h5gx67ts3w",
+      "starred": false,
+      "text": "Resolución nómina junio in-manas"
+    },
+    {
+      "done": false,
+      "id": "ms3gmm8cr4sug",
+      "note": "",
+      "starred": true,
+      "text": "Compra Manucurist"
+    },
+    {
+      "completedAt": "2026-07-30",
+      "done": true,
+      "id": "ms3gkm90o87io",
+      "starred": false,
+      "text": "Compra DJERF AVENUE"
+    },
+    {
+      "completedAt": "2026-07-29",
+      "done": true,
+      "id": "ms3gjtrjiz1dy",
+      "starred": false,
+      "text": "Compra H&M 1"
+    },
+    {
+      "done": false,
+      "id": "ms3gjwaf5g14w",
+      "starred": true,
+      "text": "Compra H&M 2"
+    },
+    {
+      "done": false,
+      "id": "ms3gjqjsk4bp9",
+      "starred": true,
+      "text": "Compra WESTWING"
+    },
+    {
+      "completedAt": "2026-07-29",
+      "done": true,
+      "id": "ms3gja8mi66za",
+      "note": "",
+      "starred": false,
+      "subtasks": [
+        {
+          "done": true,
+          "id": "ms3gjhh1pp2dy",
+          "text": "Envío 1"
+        },
+        {
+          "done": true,
+          "id": "ms3gjjgbvnwep",
+          "text": "Envío 2"
+        },
+        {
+          "done": false,
+          "id": "ms3gjliga88bv",
+          "text": "Envío 3"
+        }
+      ],
+      "text": "Compra OYSHO"
+    },
+    {
+      "done": false,
+      "id": "ms3gj7sdn9tnc",
+      "starred": true,
+      "text": "Compra LEFTIES"
+    }
+  ],
+  "planned": [
+    {
+      "createdAt": "2026-07-25",
+      "currentInstanceId": "ms2wbcjffsy7s",
+      "id": "ms0np78swgfs7",
+      "note": "",
+      "repeat": "weekly",
+      "repeatDay": "1",
+      "text": "Limpiar bandejas de entrada"
+    },
+    {
+      "createdAt": "2026-07-25",
+      "currentInstanceId": "ms5tg0ci5oxxj",
+      "id": "ms0npy4ibzbfq",
+      "note": "",
+      "repeat": "weekly",
+      "repeatDay": "3",
+      "text": "Poner al día la contabilidad personal"
+    },
+    {
+      "createdAt": "2026-07-25",
+      "currentInstanceId": "ms8cqam7les8y",
+      "id": "ms0npjzhillta",
+      "note": "",
+      "repeat": "weekly",
+      "repeatDay": "5",
+      "text": "Sesión de belleza"
+    },
+    {
+      "createdAt": "2026-07-25",
+      "id": "ms0wrhjl2w13e",
+      "note": "",
+      "repeat": "quarterly",
+      "repeatStart": "2026-10-01",
+      "text": "Cortarme el pelo"
+    },
+    {
+      "createdAt": "2026-07-25",
+      "id": "ms0vfjx76jjke",
+      "note": "",
+      "repeat": "yearly",
+      "repeatDom": 1,
+      "repeatMonth": 1,
+      "text": "Renovar programa de contabilidad"
+    },
+    {
+      "createdAt": "2026-07-25",
+      "id": "ms0vnntt740rr",
+      "note": "Convencer a Fer para que se la haga también",
+      "repeat": "yearly",
+      "repeatDom": 1,
+      "repeatMonth": 1,
+      "text": "Analítica general"
+    },
+    {
+      "createdAt": "2026-07-25",
+      "id": "ms0vntc31ln85",
+      "note": "",
+      "repeat": "yearly",
+      "repeatDom": 1,
+      "repeatMonth": 4,
+      "text": "Revisión ginecóloga"
+    },
+    {
+      "createdAt": "2026-07-25",
+      "id": "ms0vo65spgadj",
+      "note": "",
+      "repeat": "biennial",
+      "repeatStart": "2027-07-01",
+      "text": "Revisión oftalmólogo"
+    },
+    {
+      "createdAt": "2026-07-25",
+      "id": "ms0vo07fehbpj",
+      "note": "",
+      "repeat": "yearly",
+      "repeatDom": 1,
+      "repeatMonth": 10,
+      "text": "Revisión odontólogo"
+    }
+  ]
+}

@@ -1492,25 +1492,42 @@
   navToggle.addEventListener("click", openNav);
   navClose.addEventListener("click", closeNav);
 
+  // Cada vista tiene su propio hash en la URL (#hoy, #tareas, …), para poder
+  // enlazar/guardar un acceso directo que abra siempre esa pestaña.
+  const VIEWS = ["hoy", "tareas", "recados", "pendientes", "planificadas"];
+
+  function activateView(view) {
+    if (VIEWS.indexOf(view) === -1) view = "tareas"; // por defecto
+    document
+      .querySelectorAll(".app-nav-item")
+      .forEach((n) => n.classList.toggle("is-active", n.dataset.view === view));
+    VIEWS.forEach((v) => {
+      const el = document.getElementById("view-" + v);
+      if (el) el.hidden = v !== view;
+    });
+    if (view === "hoy") renderHoy();
+    else if (view === "recados") renderRecados();
+    else if (view === "pendientes") renderPendientes();
+    else if (view === "planificadas") renderPlanned();
+  }
+
+  function viewFromHash() {
+    return (location.hash || "").replace(/^#/, "");
+  }
+
   document.querySelectorAll(".app-nav-item").forEach((item) => {
     item.addEventListener("click", () => {
       const view = item.dataset.view;
       if (!view) return; // p. ej. el botón de Ajustes (no es una vista)
-      document
-        .querySelectorAll(".app-nav-item")
-        .forEach((n) => n.classList.toggle("is-active", n === item));
-      document.getElementById("view-hoy").hidden = view !== "hoy";
-      if (view === "hoy") renderHoy();
-      document.getElementById("view-tareas").hidden = view !== "tareas";
-      document.getElementById("view-recados").hidden = view !== "recados";
-      document.getElementById("view-pendientes").hidden = view !== "pendientes";
-      document.getElementById("view-planificadas").hidden = view !== "planificadas";
-      if (view === "recados") renderRecados();
-      if (view === "pendientes") renderPendientes();
-      if (view === "planificadas") renderPlanned();
+      const target = "#" + view;
+      if (location.hash === target) activateView(view);
+      else location.hash = target; // cambia el hash → dispara hashchange
       closeNav(); // en móvil, cierra el menú al elegir
     });
   });
+
+  window.addEventListener("hashchange", () => activateView(viewFromHash()));
+  activateView(viewFromHash()); // vista inicial según la URL
 
   /* ---------- Ajustes ---------- */
   const settingsBtn = document.getElementById("settings-btn");
