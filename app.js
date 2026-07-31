@@ -1662,7 +1662,6 @@
   });
 
   window.addEventListener("hashchange", () => activateView(viewFromHash()));
-  activateView(viewFromHash()); // vista inicial según la URL
 
   /* ---------- Ajustes ---------- */
   const settingsBtn = document.getElementById("settings-btn");
@@ -2229,4 +2228,8 @@
   document.getElementById("logout-btn").addEventListener("click", () => {
     fauth.signOut().then(() => location.reload());
   });
+
+  // Vista inicial según el hash de la URL (#hoy, #tareas, …). Va al final, con
+  // todas las constantes ya inicializadas (evita el error de TDZ al pintar Hoy).
+  activateView(viewFromHash());
 })();
