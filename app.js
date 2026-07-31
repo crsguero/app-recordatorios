@@ -33,14 +33,27 @@
   const pendientesClearDone = document.getElementById("pendientes-clear-done");
   const pendientesSummary = document.getElementById("pendientes-summary");
 
+  // Vista Rutinas: tareas automáticas (planificadas + lactancia)
+  const rutinasList = document.getElementById("rutinas-list");
+  const rutinasEmpty = document.getElementById("rutinas-empty");
+  const rutinasDoneSection = document.getElementById("rutinas-done-section");
+  const rutinasDoneList = document.getElementById("rutinas-done-list");
+  const rutinasToggleDone = document.getElementById("rutinas-toggle-done");
+  const rutinasClearDone = document.getElementById("rutinas-clear-done");
+  const rutinasSummary = document.getElementById("rutinas-summary");
+
   /* ---------- Contextos de lista (Mis tareas / Recados) ----------
      Ambas listas comparten toda la lógica (render, modal, drag, completadas).
      Cada contexto sabe de qué array leer/escribir y en qué DOM pintar. */
+  // Tareas y Rutinas comparten el mismo array `tasks`; se distinguen por filtro:
+  //  - Tareas: solo las manuales (sin sourcePlannedId).
+  //  - Rutinas: las automáticas (planificadas) + las externas de lactancia.
   const ctxTareas = {
     noun: "tarea",
     items: () => tasks,
     setItems: (v) => (tasks = v),
     save: () => save(),
+    filter: (t) => !t.sourcePlannedId,
     listEl: list,
     doneListEl: doneList,
     emptyEl: emptyState,
@@ -48,9 +61,25 @@
     toggleBtn: toggleDoneBtn,
     summaryEl: summary,
     doneVisible: false,
-    plannedRank: true, // las copias de planificadas van arriba
-    externalPending: () => lactPending(), // tareas de App lactancia (arriba)
-    externalDone: () => lactDone(),
+    plannedRank: false,
+  };
+  const ctxRutinas = {
+    noun: "tarea",
+    items: () => tasks,
+    setItems: (v) => (tasks = v),
+    save: () => save(),
+    filter: (t) => !!t.sourcePlannedId,
+    listEl: rutinasList,
+    doneListEl: rutinasDoneList,
+    emptyEl: rutinasEmpty,
+    doneSectionEl: rutinasDoneSection,
+    toggleBtn: rutinasToggleDone,
+    summaryEl: rutinasSummary,
+    doneVisible: false,
+    plannedRank: true,
+    // Fuentes externas de Rutinas: App lactancia + App tareas (Cristina)
+    externalPending: () => lactPending().concat(atareasPending()),
+    externalDone: () => lactDone().concat(atareasDone()),
   };
   const ctxRecados = {
     noun: "recado",
@@ -81,10 +110,12 @@
     plannedRank: false,
   };
 
-  // Busca una tarea por id en cualquiera de las listas
+  // Busca una tarea por id en cualquiera de las listas. Las que están en
+  // `tasks` van a Tareas o a Rutinas según si son automáticas (planificadas).
   function findTaskEntry(id) {
     let item = tasks.find((t) => t.id === id);
-    if (item) return { item: item, ctx: ctxTareas };
+    if (item)
+      return { item: item, ctx: item.sourcePlannedId ? ctxRutinas : ctxTareas };
     item = recados.find((t) => t.id === id);
     if (item) return { item: item, ctx: ctxRecados };
     item = pendientes.find((t) => t.id === id);
@@ -125,6 +156,15 @@
   const LACT_ROOT = "lactancia";
   const LACT_NODES = ["tareas-mama", "tareas-antes-extraccion"];
   let lactRaw = { "tareas-mama": [], "tareas-antes-extraccion": [] }; // copias vivas de la nube
+
+  /* ---------- Integración con App tareas (misma base de datos) ----------
+     App tareas (titulada "Rutinas") es dueña de la raíz: sus tareas están en el
+     array raíz `tasks`. Mostramos en Rutinas las de la pestaña Cristina
+     (owner === "cristina"; ausente = cristina) y, al completar/borrar, reescribimos
+     ese array. App tareas ya lo escucha y refleja el cambio solo. Las tareas no
+     tienen id estable: se identifican por su índice en el array vivo `atRaw`. */
+  const AT_ROOT = "tasks";
+  let atRaw = []; // copia viva del array raíz (ambos owners: cristina y fernando)
 
   /* ---------- Respaldo local (IndexedDB) ----------
      Usamos IndexedDB en lugar de localStorage porque los archivos abiertos
@@ -398,7 +438,7 @@
     if (plannedChanged) savePlanned();
     if (tasksChanged) {
       save();
-      render();
+      renderTasksViews(); // las copias creadas viven en Rutinas
     }
   }
 
@@ -458,7 +498,10 @@
   }
 
   function clearDoneIn(ctx) {
-    ctx.setItems(ctx.items().filter((t) => !t.done));
+    // Solo borra las completadas que pertenecen a esta vista (respeta el filtro,
+    // ya que Tareas y Rutinas comparten el array `tasks`).
+    const belongs = ctx.filter || (() => true);
+    ctx.setItems(ctx.items().filter((t) => !(t.done && belongs(t))));
     ctx.save();
     renderList(ctx);
   }
@@ -517,7 +560,7 @@
           showError("Al sincronizar lactancia: " + (e && e.message ? e.message : e))
         );
     }
-    render();
+    renderRutinas();
   }
   function toggleLactDone(ref) {
     const arr = (lactRaw[ref.node] || []).map((x) => x); // copia superficial del array
@@ -529,6 +572,51 @@
   }
   function deleteLact(ref) {
     writeLact(ref.node, (lactRaw[ref.node] || []).filter((x) => x.id !== ref.id));
+  }
+
+  /* ---------- Tareas de App tareas › Cristina (en Rutinas) ---------- */
+  // Identidad por índice en el array vivo (App tareas no tiene ids estables).
+  function atToItem(t, index) {
+    return { id: "at:" + index, text: t.text, done: !!t.done, _at: { index: index } };
+  }
+  function atIsCristina(t) {
+    return t && typeof t === "object" && (t.owner || "cristina") === "cristina";
+  }
+  function atareasPending() {
+    const out = [];
+    atRaw.forEach((t, i) => {
+      if (atIsCristina(t) && !t.done) out.push(atToItem(t, i));
+    });
+    return out;
+  }
+  function atareasDone() {
+    const out = [];
+    atRaw.forEach((t, i) => {
+      if (atIsCristina(t) && t.done) out.push(atToItem(t, i));
+    });
+    return out;
+  }
+  // Reescribe el array raíz completo de App tareas (conserva Fernando y todos los campos).
+  function writeAt() {
+    if (fbReady) {
+      fdb
+        .ref(AT_ROOT)
+        .set(atRaw && atRaw.length ? atRaw : null)
+        .catch((e) =>
+          showError("Al sincronizar App tareas: " + (e && e.message ? e.message : e))
+        );
+    }
+    renderRutinas();
+  }
+  function toggleAtDone(ref) {
+    const t = atRaw[ref.index];
+    if (!t) return;
+    t.done = !t.done;
+    writeAt();
+  }
+  function deleteAt(ref) {
+    atRaw.splice(ref.index, 1);
+    writeAt();
   }
 
   /* ---------- Vista de detalle ---------- */
@@ -560,6 +648,7 @@
   const repeatStart = document.getElementById("detail-repeat-start");
   let openTaskId = null;
   let openLactRef = null; // {node,id} si el modal muestra una tarea de lactancia
+  let openAtRef = null; // {index} si el modal muestra una tarea de App tareas
 
   function getOpenTask() {
     const e = findTaskEntry(openTaskId);
@@ -948,6 +1037,7 @@
     openTaskId = null;
     openPlannedId = id;
     openLactRef = null;
+    openAtRef = null;
     detailTitle.readOnly = false; // restaura edición del título
     detailNote.hidden = false; // restaura la nota
     if (detailNoteLabel) detailNoteLabel.hidden = false;
@@ -968,6 +1058,7 @@
   function openLactDetail(task) {
     openTaskId = null;
     openPlannedId = null;
+    openAtRef = null;
     openLactRef = task._lact;
     detailCheck.hidden = false;
     detailCheck.checked = task.done;
@@ -984,12 +1075,34 @@
     autoGrow(detailTitle);
   }
 
+  // Tarea de App tareas (Cristina): modal en modo solo lectura (completar / eliminar).
+  function openAtDetail(task) {
+    openTaskId = null;
+    openPlannedId = null;
+    openLactRef = null;
+    openAtRef = task._at;
+    detailCheck.hidden = false;
+    detailCheck.checked = task.done;
+    detailTitle.value = task.text;
+    detailTitle.classList.toggle("is-done", task.done);
+    detailTitle.readOnly = true; // el texto se edita en App tareas
+    detailTaskFields.hidden = true; // sin fecha ni subtareas
+    detailRepeatSection.hidden = true;
+    detailNote.hidden = true; // sin nota
+    if (detailNoteLabel) detailNoteLabel.hidden = true;
+    detailDelete.hidden = false;
+    overlay.hidden = false;
+    document.body.classList.add("no-scroll");
+    autoGrow(detailTitle);
+  }
+
   function openDetail(id) {
     const e = findTaskEntry(id);
     if (!e) return;
     const task = e.item;
     openPlannedId = null;
     openLactRef = null;
+    openAtRef = null;
     detailCheck.hidden = false;
     detailTitle.readOnly = false; // restaura edición del título
     detailNote.hidden = false; // restaura la nota
@@ -1023,6 +1136,7 @@
     openTaskId = null;
     openPlannedId = null;
     openLactRef = null;
+    openAtRef = null;
     overlay.hidden = true;
     document.body.classList.remove("no-scroll");
   }
@@ -1037,6 +1151,15 @@
       overlay.hidden = true;
       document.body.classList.remove("no-scroll");
       deleteLact(ref);
+      return;
+    }
+    if (openAtRef) {
+      const ref = openAtRef;
+      if (!confirm("¿Eliminar esta tarea?")) return;
+      openAtRef = null;
+      overlay.hidden = true;
+      document.body.classList.remove("no-scroll");
+      deleteAt(ref);
       return;
     }
     if (openTaskId !== null) {
@@ -1122,6 +1245,11 @@
       detailTitle.classList.toggle("is-done", detailCheck.checked);
       return;
     }
+    if (openAtRef) {
+      toggleAtDone(openAtRef);
+      detailTitle.classList.toggle("is-done", detailCheck.checked);
+      return;
+    }
     if (openTaskId === null) return;
     toggleTask(openTaskId);
     const task = getOpenTask();
@@ -1175,7 +1303,8 @@
       (task.done ? " is-done" : "") +
       (task.starred ? " is-starred" : "") +
       (task.sourcePlannedId ? " is-planned" : "") +
-      (task._lact ? " is-lact" : "");
+      (task._lact ? " is-lact" : "") +
+      (task._at ? " is-at" : "");
     li.dataset.id = task.id;
 
     // Etiqueta de la segunda línea y si lleva 🕑 delante ("A partir de …")
@@ -1220,13 +1349,21 @@
     control.checked = task.done;
     control.setAttribute("aria-label", "Marcar como completada");
     control.addEventListener("change", () =>
-      task._lact ? toggleLactDone(task._lact) : toggleTask(task.id)
+      task._lact
+        ? toggleLactDone(task._lact)
+        : task._at
+        ? toggleAtDone(task._at)
+        : toggleTask(task.id)
     );
 
     const main = document.createElement("div");
     main.className = "task-main";
     main.addEventListener("click", () =>
-      task._lact ? openLactDetail(task) : openDetail(task.id)
+      task._lact
+        ? openLactDetail(task)
+        : task._at
+        ? openAtDetail(task)
+        : openDetail(task.id)
     );
 
     const span = document.createElement("span");
@@ -1259,6 +1396,12 @@
       trailing.textContent = "🍼";
       trailing.setAttribute("aria-label", "Tarea de lactancia");
       trailing.setAttribute("title", "Tarea de App lactancia");
+    } else if (task._at) {
+      trailing = document.createElement("span");
+      trailing.className = "planned-indicator";
+      trailing.textContent = "🏠";
+      trailing.setAttribute("aria-label", "Tarea de App tareas");
+      trailing.setAttribute("title", "Tarea de App tareas (Cristina)");
     } else if (task.sourcePlannedId) {
       trailing = document.createElement("span");
       trailing.className = "planned-indicator";
@@ -1346,7 +1489,7 @@
   }
 
   function renderList(ctx) {
-    const items = ctx.items();
+    const items = ctx.filter ? ctx.items().filter(ctx.filter) : ctx.items();
     // Pendientes: con plannedRank, las copias de planificadas van primero; luego
     // las destacadas; luego el resto. Orden estable dentro de cada grupo.
     const rankOf = (t) =>
@@ -1413,6 +1556,14 @@
   function render() {
     renderList(ctxTareas);
   }
+  function renderRutinas() {
+    renderList(ctxRutinas);
+  }
+  // `tasks` alimenta tanto Tareas como Rutinas: repinta ambas.
+  function renderTasksViews() {
+    renderList(ctxTareas);
+    renderList(ctxRutinas);
+  }
   function renderRecados() {
     renderList(ctxRecados);
   }
@@ -1454,10 +1605,15 @@
     ctxPendientes.doneVisible = !ctxPendientes.doneVisible;
     renderList(ctxPendientes);
   });
+  rutinasToggleDone.addEventListener("click", () => {
+    ctxRutinas.doneVisible = !ctxRutinas.doneVisible;
+    renderList(ctxRutinas);
+  });
 
   clearDoneBtn.addEventListener("click", () => clearDoneIn(ctxTareas));
   recadosClearDone.addEventListener("click", () => clearDoneIn(ctxRecados));
   pendientesClearDone.addEventListener("click", () => clearDoneIn(ctxPendientes));
+  rutinasClearDone.addEventListener("click", () => clearDoneIn(ctxRutinas));
 
   /* ---------- Reordenar con drag & drop (ratón y táctil) ---------- */
   const LONG_PRESS_MS = 300; // mantener pulsado para empezar a arrastrar
@@ -1557,8 +1713,12 @@
       if (e.button && e.button !== 0) return; // solo botón principal
       const li = e.target.closest("." + itemClass);
       if (!li) return;
-      // Las tareas externas (App lactancia) no se reordenan aquí
-      if (li.dataset.id && li.dataset.id.indexOf("lact:") === 0) return;
+      // Las tareas externas (App lactancia / App tareas) no se reordenan aquí
+      if (
+        li.dataset.id &&
+        (li.dataset.id.indexOf("lact:") === 0 || li.dataset.id.indexOf("at:") === 0)
+      )
+        return;
       dragEl = li;
       startX = e.clientX;
       startY = e.clientY;
@@ -1592,6 +1752,7 @@
   }
 
   enableReorder(list, "task-item", () => tasks, save);
+  enableReorder(rutinasList, "task-item", () => tasks, save);
   enableReorder(recadosList, "task-item", () => recados, saveRecados);
   enableReorder(pendientesList, "task-item", () => pendientes, savePendientes);
   enableReorder(
@@ -1629,7 +1790,7 @@
 
   // Cada vista tiene su propio hash en la URL (#hoy, #tareas, …), para poder
   // enlazar/guardar un acceso directo que abra siempre esa pestaña.
-  const VIEWS = ["hoy", "tareas", "recados", "pendientes", "planificadas"];
+  const VIEWS = ["hoy", "rutinas", "tareas", "recados", "pendientes", "planificadas"];
 
   function activateView(view) {
     if (VIEWS.indexOf(view) === -1) view = "tareas"; // por defecto
@@ -1641,6 +1802,7 @@
       if (el) el.hidden = v !== view;
     });
     if (view === "hoy") renderHoy();
+    else if (view === "rutinas") renderRutinas();
     else if (view === "recados") renderRecados();
     else if (view === "pendientes") renderPendientes();
     else if (view === "planificadas") renderPlanned();
@@ -1776,7 +1938,7 @@
         if (inTasks) {
           tasks = inTasks.map(ensureId);
           save();
-          render();
+          renderTasksViews();
         }
         if (inRecados) {
           recados = inRecados.map(ensureId);
@@ -2010,7 +2172,7 @@
     if (db) localPlanned = await idbGet(IDB_KEY_PLANNED);
     planned = Array.isArray(localPlanned) ? localPlanned : [];
 
-    render(); // pinta al instante con el respaldo local
+    renderTasksViews(); // pinta Tareas + Rutinas con el respaldo local
     renderRecados();
     renderPendientes();
     renderHoy();
@@ -2056,7 +2218,7 @@
         if (db) idbSet(IDB_KEY, tasks).catch(() => {}); // respaldo local al día
         if (migrated) save(); // sube la migración a la nube
         clearError();
-        render();
+        renderTasksViews();
         tasksSynced = true;
         maybeMaterialize();
       },
@@ -2173,7 +2335,7 @@
             ? Object.values(raw)
             : [];
           clearError();
-          render(); // re-pinta la lista "Tareas" (ctxTareas)
+          renderRutinas(); // las tareas de lactancia viven en Rutinas
         },
         (err) =>
           showError(
@@ -2181,6 +2343,21 @@
           )
       );
     });
+
+    // Listener de App tareas (raíz `tasks`): sus tareas de Cristina van a Rutinas.
+    fdb.ref(AT_ROOT).on(
+      "value",
+      (snap) => {
+        const raw = snap.val();
+        atRaw = Array.isArray(raw) ? raw : raw ? Object.values(raw) : [];
+        clearError();
+        renderRutinas();
+      },
+      (err) =>
+        showError(
+          "Al leer App tareas: " + (err && err.message ? err.message : err)
+        )
+    );
   }
 
   async function startApp() {

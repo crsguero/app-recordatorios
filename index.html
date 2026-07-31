@@ -44,6 +44,7 @@
         <button type="button" class="app-nav-close" id="nav-close" aria-label="Cerrar menú">✕</button>
       </div>
       <button type="button" class="app-nav-item" data-view="hoy">Hoy</button>
+      <button type="button" class="app-nav-item" data-view="rutinas">Rutinas</button>
       <button type="button" class="app-nav-item is-active" data-view="tareas">Tareas</button>
       <button type="button" class="app-nav-item" data-view="recados">Recados</button>
       <button type="button" class="app-nav-item" data-view="pendientes">Pendientes</button>
@@ -77,6 +78,30 @@
           <ul class="task-list" id="hoy-view-tarde"></ul>
           <p class="hoy-view-empty" id="hoy-view-tarde-empty" hidden>Nada por la tarde.</p>
         </section>
+      </section>
+
+      <!-- Vista: Rutinas (tareas automáticas: planificadas + lactancia) -->
+      <section class="view" id="view-rutinas" hidden>
+        <header class="app-header">
+          <div class="header-top">
+            <h1>Rutinas</h1>
+          </div>
+          <p class="subtitle" id="rutinas-summary">Sin tareas todavía</p>
+        </header>
+
+        <ul class="task-list" id="rutinas-list"></ul>
+
+        <p class="empty-state" id="rutinas-empty" hidden>
+          No hay rutinas ahora mismo.
+        </p>
+
+        <div class="done-section" id="rutinas-done-section" hidden>
+          <div class="done-header">
+            <button type="button" class="toggle-done-btn" id="rutinas-toggle-done"></button>
+            <button type="button" class="clear-btn" id="rutinas-clear-done">Borrar completadas</button>
+          </div>
+          <ul class="task-list done-list" id="rutinas-done-list" hidden></ul>
+        </div>
       </section>
 
       <!-- Vista: Tareas -->

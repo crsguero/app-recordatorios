@@ -604,43 +604,37 @@ body {
   text-decoration: line-through;
 }
 
-/* Tareas de planificadas: fondo de acento con textos claros (estilo invertido) */
+/* Tareas generadas por planificadas: fondo lila claro */
 .task-item.is-planned {
-  background: var(--primary);
-  border-color: var(--primary);
+  background: #f3e6ff;
 }
 
-.task-item.is-planned .task-text {
-  color: #fff;
-}
-
+/* 2ª línea (fecha de ocurrencia) de esas tareas */
 .task-item.is-planned .task-date {
-  color: rgba(255, 255, 255, 0.78);
+  color: #975ecc;
 }
 
-.task-item.is-planned .task-check {
-  border-color: rgba(255, 255, 255, 0.7);
-}
-
-.task-item.is-planned .task-check:checked {
+/* El círculo (sin marcar) en blanco, para que no se confunda con el fondo */
+.task-item.is-planned .task-check:not(:checked) {
   background: #fff;
-  border-color: #fff;
-}
-
-.task-item.is-planned .task-check:checked::after {
-  border-color: var(--primary);
-}
-
-.task-item.is-planned .subtask-badge {
-  color: #fff;
-  background: rgba(255, 255, 255, 0.16);
-  border-color: rgba(255, 255, 255, 0.3);
 }
 
 /* Tareas de App lactancia: fondo rosa sutil, agrupadas al principio */
 .task-item.is-lact {
-  background: #fdeef4;
-  border-color: #f6d3e1;
+  background: #fff1f6;
+}
+
+/* El círculo (sin marcar) en blanco, para que no se confunda con el fondo */
+.task-item.is-lact .task-check:not(:checked) {
+  background: #fff;
+}
+
+/* Tareas de App tareas (Cristina): fondo amarillo sutil */
+.task-item.is-at {
+  background: #fdf6d8;
+}
+.task-item.is-at .task-check:not(:checked) {
+  background: #fff;
 }
 
 .star-btn {
