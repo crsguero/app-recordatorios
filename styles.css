@@ -57,6 +57,14 @@ body {
   background: var(--card);
 }
 
+/* Divisor: separa "Hoy" del resto de vistas */
+.app-nav-sep {
+  height: 0;
+  margin: 8px 4px;
+  border: none;
+  border-top: 1px solid var(--border);
+}
+
 /* Ajustes: al fondo de la barra de navegación */
 .app-nav-settings {
   margin-top: auto;
@@ -450,6 +458,45 @@ body {
   margin-bottom: 16px;
 }
 
+/* --- Tabs de filtro de "Mis tareas" --- */
+.task-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 16px;
+  padding: 4px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+}
+
+.task-tab {
+  flex: 1;
+  min-width: 0;
+  padding: 9px 6px;
+  font-family: inherit;
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: var(--text-soft);
+  background: transparent;
+  border: none;
+  border-radius: 9px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.task-tab:hover {
+  color: var(--text);
+}
+
+.task-tab.is-active {
+  color: var(--primary);
+  background: var(--star-bg);
+}
+
 .task-input {
   flex: 1;
   min-width: 0;
@@ -595,8 +642,19 @@ body {
   margin-top: 2px;
 }
 
+/* Procedencia (Tareas / Recados) en la 2ª línea, en el color de acento */
+.task-origin {
+  color: var(--primary);
+  font-weight: 600;
+}
+
 .task-item.is-starred {
   background: var(--star-bg);
+}
+
+/* En "Cuanto antes", las que vienen de Tareas/Recados van sin color de fondo */
+.task-item.has-origin {
+  background: var(--card);
 }
 
 .task-item.is-done .task-text {
@@ -697,12 +755,26 @@ body {
   box-shadow: var(--shadow);
 }
 
+.hoy-view-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
 .hoy-view-text {
   flex: 1;
   min-width: 0;
   font-size: 1rem;
   color: var(--text);
   word-break: break-word;
+}
+
+/* 2ª línea: "Hace N días" desde la última compleción */
+.hoy-view-date {
+  font-size: 0.78rem;
+  color: var(--text-soft);
+  margin-top: 2px;
 }
 
 .hoy-view-item.is-done .hoy-view-text {
@@ -766,10 +838,99 @@ body {
   gap: 24px;
 }
 
+#hoy-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
 .hoy-section {
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+.hoy-section-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.hoy-section-handle {
+  flex: 0 0 auto;
+  color: var(--text-soft);
+  font-size: 1rem;
+  line-height: 1;
+  cursor: grab;
+  padding: 2px 2px;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  touch-action: none;
+}
+
+.hoy-section.dragging {
+  opacity: 0.9;
+}
+
+.hoy-section-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-soft);
+  background: transparent;
+  border: none;
+  padding: 2px 4px;
+  margin: -2px -4px;
+  border-radius: 6px;
+}
+
+.hoy-section-name:focus {
+  outline: none;
+  color: var(--text);
+  background: var(--bg);
+  box-shadow: 0 0 0 2px var(--primary);
+}
+
+.hoy-section-del {
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  font-size: 0.95rem;
+  color: var(--text-soft);
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.hoy-section-del:hover {
+  color: var(--danger);
+  background: rgba(239, 68, 68, 0.08);
+}
+
+.hoy-add-form {
+  margin-bottom: 0;
+}
+
+.hoy-add-section {
+  align-self: flex-start;
+  background: transparent;
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  color: var(--text-soft);
+  font-size: 0.9rem;
+  font-weight: 500;
+  padding: 8px 12px;
+  cursor: pointer;
+}
+
+.hoy-add-section:hover {
+  color: var(--primary);
+  border-color: var(--primary);
 }
 
 .hoy-list {
@@ -781,8 +942,8 @@ body {
 
 .hoy-item {
   display: flex;
-  align-items: center;
-  gap: 10px;
+  flex-direction: column;
+  gap: 8px;
   padding: 8px 14px;
   background: var(--card);
   border: 1px solid var(--border);
@@ -793,9 +954,79 @@ body {
   -webkit-touch-callout: none;
 }
 
+.hoy-item-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.hoy-item-handle {
+  flex: 0 0 auto;
+  color: var(--text-soft);
+  font-size: 1rem;
+  line-height: 1;
+  cursor: grab;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  touch-action: none;
+}
+
+.hoy-cat-select {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  font-size: 0.9rem;
+  font-family: inherit;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.hoy-cat-select[hidden] {
+  display: none;
+}
+
 .hoy-item.dragging {
   opacity: 0.9;
   box-shadow: 0 8px 20px rgba(0, 0, 0, 0.18);
+}
+
+/* Colores sutiles por categoría (tareas temporales), en modal y vista */
+.hoy-item.cat-hogar,
+.hoy-view-item.cat-hogar {
+  background: #fff8e1;
+}
+.hoy-item.cat-personal,
+.hoy-view-item.cat-personal {
+  background: #f3e8ff;
+}
+.hoy-item.cat-salud,
+.hoy-view-item.cat-salud {
+  background: #eaf7ef;
+}
+.hoy-item.cat-profesional,
+.hoy-view-item.cat-profesional {
+  background: #eaf2ff;
+}
+.hoy-item.cat-relaciones,
+.hoy-view-item.cat-relaciones {
+  background: #fff0e0;
+}
+.hoy-item.cat-maternidad,
+.hoy-view-item.cat-maternidad {
+  background: #fce7f3;
+}
+
+/* En las tareas con color de fondo, el círculo (sin marcar) en blanco */
+.hoy-view-item.cat-hogar .task-check:not(:checked),
+.hoy-view-item.cat-personal .task-check:not(:checked),
+.hoy-view-item.cat-salud .task-check:not(:checked),
+.hoy-view-item.cat-profesional .task-check:not(:checked),
+.hoy-view-item.cat-relaciones .task-check:not(:checked),
+.hoy-view-item.cat-maternidad .task-check:not(:checked) {
+  background: #fff;
 }
 
 .hoy-item-text {
@@ -821,6 +1052,69 @@ body {
 
 .hoy-item-input:focus {
   outline: none;
+}
+
+/* Toggle "Temporal" de cada tarea del modal de Hoy */
+.hoy-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  cursor: pointer;
+}
+
+.hoy-switch-text {
+  font-size: 0.72rem;
+  color: var(--text-soft);
+}
+
+/* Toggle a ancho completo (etiqueta larga a la izquierda, switch a la derecha) */
+.hoy-switch-wide {
+  display: flex;
+  width: 100%;
+  justify-content: space-between;
+}
+
+.hoy-switch-wide .hoy-switch-text {
+  min-width: 0;
+}
+
+.hoy-switch input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.hoy-switch-slider {
+  position: relative;
+  flex: 0 0 auto;
+  width: 34px;
+  height: 19px;
+  background: var(--border);
+  border-radius: 999px;
+  transition: background 0.15s ease;
+}
+
+.hoy-switch-slider::before {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: 2px;
+  width: 15px;
+  height: 15px;
+  background: #fff;
+  border-radius: 50%;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  transition: transform 0.15s ease;
+}
+
+.hoy-switch input:checked + .hoy-switch-slider {
+  background: var(--primary);
+}
+
+.hoy-switch input:checked + .hoy-switch-slider::before {
+  transform: translateX(15px);
 }
 
 .hoy-del {

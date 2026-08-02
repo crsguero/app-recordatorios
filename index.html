@@ -44,11 +44,12 @@
         <button type="button" class="app-nav-close" id="nav-close" aria-label="Cerrar menú">✕</button>
       </div>
       <button type="button" class="app-nav-item" data-view="hoy">Hoy</button>
-      <button type="button" class="app-nav-item" data-view="rutinas">Rutinas</button>
+      <button type="button" class="app-nav-item" data-view="rutinas">Cuanto antes</button>
+      <hr class="app-nav-sep" />
       <button type="button" class="app-nav-item is-active" data-view="tareas">Tareas</button>
       <button type="button" class="app-nav-item" data-view="recados">Recados</button>
+      <button type="button" class="app-nav-item" data-view="planificadas">Rutinas</button>
       <button type="button" class="app-nav-item" data-view="pendientes">Pendientes</button>
-      <button type="button" class="app-nav-item" data-view="planificadas">Planificadas</button>
       <button type="button" class="app-nav-item app-nav-settings" id="settings-btn">⚙️ Ajustes</button>
     </nav>
 
@@ -67,24 +68,15 @@
           </div>
         </header>
 
-        <section class="hoy-view-section">
-          <h2 class="hoy-view-title">Mañana</h2>
-          <ul class="task-list" id="hoy-view-manana"></ul>
-          <p class="hoy-view-empty" id="hoy-view-manana-empty" hidden>Nada por la mañana.</p>
-        </section>
-
-        <section class="hoy-view-section">
-          <h2 class="hoy-view-title">Tarde</h2>
-          <ul class="task-list" id="hoy-view-tarde"></ul>
-          <p class="hoy-view-empty" id="hoy-view-tarde-empty" hidden>Nada por la tarde.</p>
-        </section>
+        <div id="hoy-view-sections"></div>
       </section>
 
-      <!-- Vista: Rutinas (tareas automáticas: planificadas + lactancia) -->
+      <!-- Vista: "Cuanto antes" (interna: rutinas). Tareas automáticas:
+           planificadas + lactancia. El id/hash sigue siendo `rutinas`. -->
       <section class="view" id="view-rutinas" hidden>
         <header class="app-header">
           <div class="header-top">
-            <h1>Rutinas</h1>
+            <h1>Cuanto antes</h1>
           </div>
           <p class="subtitle" id="rutinas-summary">Sin tareas todavía</p>
         </header>
@@ -92,7 +84,7 @@
         <ul class="task-list" id="rutinas-list"></ul>
 
         <p class="empty-state" id="rutinas-empty" hidden>
-          No hay rutinas ahora mismo.
+          No hay nada ahora mismo.
         </p>
 
         <div class="done-section" id="rutinas-done-section" hidden>
@@ -124,6 +116,13 @@
           />
           <button type="submit" class="add-btn" aria-label="Añadir tarea">+</button>
         </form>
+
+        <!-- Filtro por destacadas: Todo / Cuanto antes / Cuando se pueda -->
+        <div class="task-tabs" id="tareas-tabs" role="tablist" aria-label="Filtrar tareas">
+          <button type="button" class="task-tab is-active" data-star="all" data-label="Todo" role="tab" aria-selected="true">Todo</button>
+          <button type="button" class="task-tab" data-star="starred" data-label="Cuanto antes" role="tab" aria-selected="false">Cuanto antes</button>
+          <button type="button" class="task-tab" data-star="unstarred" data-label="Cuando se pueda" role="tab" aria-selected="false">Cuando se pueda</button>
+        </div>
 
         <ul class="task-list" id="task-list"></ul>
 
@@ -160,6 +159,13 @@
           />
           <button type="submit" class="add-btn" aria-label="Añadir recado">+</button>
         </form>
+
+        <!-- Filtro por destacados: Todo / Cuanto antes / Cuando se pueda -->
+        <div class="task-tabs" id="recados-tabs" role="tablist" aria-label="Filtrar recados">
+          <button type="button" class="task-tab is-active" data-star="all" data-label="Todo" role="tab" aria-selected="true">Todo</button>
+          <button type="button" class="task-tab" data-star="starred" data-label="Cuanto antes" role="tab" aria-selected="false">Cuanto antes</button>
+          <button type="button" class="task-tab" data-star="unstarred" data-label="Cuando se pueda" role="tab" aria-selected="false">Cuando se pueda</button>
+        </div>
 
         <ul class="task-list" id="recados-list"></ul>
 
@@ -212,11 +218,12 @@
         </div>
       </section>
 
-      <!-- Vista: Planificadas -->
+      <!-- Vista: "Rutinas" (interna: planificadas). El id/hash sigue siendo
+           `planificadas`. -->
       <section class="view" id="view-planificadas" hidden>
         <header class="app-header">
           <div class="header-top">
-            <h1>Planificadas</h1>
+            <h1>Rutinas</h1>
           </div>
           <p class="subtitle">Tareas anotadas. Se quedan aquí (no se completan).</p>
         </header>
@@ -226,8 +233,8 @@
             type="text"
             id="planned-input"
             class="task-input"
-            placeholder="Añadir tarea planificada…"
-            aria-label="Nueva tarea planificada"
+            placeholder="Añadir rutina…"
+            aria-label="Nueva rutina"
             maxlength="200"
           />
           <button type="submit" class="add-btn" aria-label="Añadir">+</button>
@@ -236,7 +243,7 @@
         <ul class="planned-list" id="planned-list"></ul>
 
         <p class="planned-empty" id="planned-empty" hidden>
-          No hay tareas planificadas.
+          No hay rutinas.
         </p>
       </section>
     </div>
@@ -396,37 +403,8 @@
       </header>
 
       <div class="hoymodal-body">
-        <section class="hoy-section">
-          <h3 class="detail-section-label">Mañana</h3>
-          <form class="new-task" id="hoy-manana-form" autocomplete="off">
-            <input
-              type="text"
-              id="hoy-manana-input"
-              class="task-input"
-              placeholder="Añadir a la mañana…"
-              aria-label="Nueva tarea de la mañana"
-              maxlength="200"
-            />
-            <button type="submit" class="add-btn" aria-label="Añadir">+</button>
-          </form>
-          <ul class="hoy-list" id="hoy-manana-list"></ul>
-        </section>
-
-        <section class="hoy-section">
-          <h3 class="detail-section-label">Tarde</h3>
-          <form class="new-task" id="hoy-tarde-form" autocomplete="off">
-            <input
-              type="text"
-              id="hoy-tarde-input"
-              class="task-input"
-              placeholder="Añadir a la tarde…"
-              aria-label="Nueva tarea de la tarde"
-              maxlength="200"
-            />
-            <button type="submit" class="add-btn" aria-label="Añadir">+</button>
-          </form>
-          <ul class="hoy-list" id="hoy-tarde-list"></ul>
-        </section>
+        <div id="hoy-sections"></div>
+        <button type="button" class="hoy-add-section" id="hoy-add-section">＋ Añadir sección</button>
       </div>
     </div>
   </div>
