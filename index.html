@@ -37,14 +37,14 @@
   </div>
 
   <div class="app" id="app-root" hidden>
-    <!-- Navegación: barra lateral en desktop; menú a pantalla completa en móvil -->
+    <!-- Navegación de escritorio: barra lateral (en móvil manda la barra inferior) -->
     <nav class="app-nav" id="app-nav" aria-label="Navegación principal">
       <div class="app-nav-head">
         <span class="app-nav-brand">Menú</span>
-        <button type="button" class="app-nav-close" id="nav-close" aria-label="Cerrar menú">✕</button>
       </div>
       <button type="button" class="app-nav-item" data-view="hoy">Hoy</button>
       <button type="button" class="app-nav-item" data-view="rutinas">Cuanto antes</button>
+      <button type="button" class="app-nav-item" data-view="agenda">Agenda</button>
       <hr class="app-nav-sep" />
       <button type="button" class="app-nav-item is-active" data-view="tareas">Tareas</button>
       <button type="button" class="app-nav-item" data-view="recados">Recados</button>
@@ -53,12 +53,74 @@
       <button type="button" class="app-nav-item app-nav-settings" id="settings-btn">⚙️ Ajustes</button>
     </nav>
 
-    <div class="app-main">
-      <!-- Barra superior con icono de menú (solo móvil) -->
-      <div class="mobile-navbar">
-        <button type="button" class="nav-toggle" id="nav-toggle" aria-label="Abrir menú">☰</button>
-      </div>
+    <!-- Barra de navegación inferior (solo móvil) -->
+    <nav class="mobile-tabbar" id="mobile-tabbar" aria-label="Navegación">
+      <button type="button" class="mtab" data-view="hoy">
+        <span class="mtab-ico">📅</span><span class="mtab-lbl">Hoy</span>
+      </button>
+      <!-- "Tareas" en la barra abre la vista Cuanto antes (decisión de diseño) -->
+      <button type="button" class="mtab" data-view="rutinas">
+        <span class="mtab-ico">✅</span><span class="mtab-lbl">Tareas</span>
+      </button>
+      <button type="button" class="mtab" data-view="agenda">
+        <span class="mtab-ico">🗓️</span><span class="mtab-lbl">Agenda</span>
+      </button>
+      <button type="button" class="mtab" data-more="1" aria-haspopup="true">
+        <span class="mtab-ico">•••</span><span class="mtab-lbl">Más</span>
+      </button>
+    </nav>
 
+    <!-- Botón de creación rápida (solo móvil) -->
+    <button type="button" class="fab" id="fab-btn" aria-label="Crear">+</button>
+
+    <!-- Menú "Más": el resto de pestañas (solo móvil) -->
+    <div class="more-menu" id="more-menu" hidden>
+      <div class="more-menu-head">
+        <h2>Más</h2>
+        <button type="button" class="more-menu-close" id="more-close" aria-label="Cerrar">✕</button>
+      </div>
+      <div class="more-menu-list">
+        <button type="button" class="menu-item" data-view="tareas">
+          <span class="menu-item-ico">✅</span> Tareas
+        </button>
+        <button type="button" class="menu-item" data-view="recados">
+          <span class="menu-item-ico">🛒</span> Recados
+        </button>
+        <button type="button" class="menu-item" data-view="planificadas">
+          <span class="menu-item-ico">🔁</span> Rutinas
+        </button>
+        <button type="button" class="menu-item" data-view="pendientes">
+          <span class="menu-item-ico">⏳</span> Pendientes
+        </button>
+        <button type="button" class="menu-item" data-action="settings">
+          <span class="menu-item-ico">⚙️</span> Ajustes
+        </button>
+      </div>
+    </div>
+
+    <!-- Qué crear (botón +) -->
+    <div class="fab-overlay" id="fab-overlay" hidden>
+      <div class="fab-box" role="dialog" aria-modal="true" aria-label="Crear">
+        <h2 class="fab-title">¿Qué quieres crear?</h2>
+        <div class="fab-choices">
+          <button type="button" class="fab-choice" data-create="tareas">
+            <span class="fab-choice-ico">✅</span><span>Tarea</span>
+          </button>
+          <button type="button" class="fab-choice" data-create="recados">
+            <span class="fab-choice-ico">🛒</span><span>Recado</span>
+          </button>
+          <button type="button" class="fab-choice" data-create="planificadas">
+            <span class="fab-choice-ico">🔁</span><span>Rutina</span>
+          </button>
+          <button type="button" class="fab-choice" data-create="pendientes">
+            <span class="fab-choice-ico">⏳</span><span>Pendiente</span>
+          </button>
+        </div>
+        <button type="button" class="fab-cancel" id="fab-cancel">Cancelar</button>
+      </div>
+    </div>
+
+    <div class="app-main">
       <!-- Vista: Hoy -->
       <section class="view" id="view-hoy" hidden>
         <header class="app-header">
@@ -71,12 +133,24 @@
         <div id="hoy-view-sections"></div>
       </section>
 
+      <!-- Vista: Agenda (de momento vacía) -->
+      <section class="view" id="view-agenda" hidden>
+        <header class="app-header">
+          <div class="header-top">
+            <h1>Agenda</h1>
+          </div>
+        </header>
+
+        <p class="empty-state">Todavía no hay nada aquí.</p>
+      </section>
+
       <!-- Vista: "Cuanto antes" (interna: rutinas). Tareas automáticas:
            planificadas + lactancia. El id/hash sigue siendo `rutinas`. -->
       <section class="view" id="view-rutinas" hidden>
         <header class="app-header">
           <div class="header-top">
-            <h1>Cuanto antes</h1>
+            <!-- En móvil esta vista se llega desde el botón "Tareas" -->
+            <h1><span class="only-mobile">Tareas</span><span class="only-desktop">Cuanto antes</span></h1>
           </div>
           <p class="subtitle" id="rutinas-summary">Sin tareas todavía</p>
         </header>
@@ -273,6 +347,7 @@
         <div class="detail-date">
           <select id="detail-date-mode" class="date-mode" aria-label="Tipo de fecha">
             <option value="none">Sin fecha</option>
+            <option value="on">En fecha</option>
             <option value="before">Antes de</option>
             <option value="from">A partir de</option>
             <option value="between">Entre</option>

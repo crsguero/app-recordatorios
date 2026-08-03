@@ -999,6 +999,7 @@
     dateEnd.value = task.dateEnd || "";
     // Muestra los campos según el modo:
     //  none    → ninguno
+    //  on      → una fecha (el día exacto)
     //  before  → una fecha (límite máximo)
     //  from    → una fecha (a partir de)
     //  between → dos fechas
@@ -1418,6 +1419,10 @@
             ? "Completada " + rel
             : "Completada el " + rel;
       }
+    } else if (task.dateMode === "on" && task.dateStart) {
+      // Día concreto: se muestra la fecha tal cual (hoy / mañana / 5 sept 2026)
+      const rel = formatDateRel(task.dateStart);
+      dateLabel = rel.charAt(0).toUpperCase() + rel.slice(1);
     } else if (
       task.dateMode === "from" &&
       task.dateStart &&
@@ -1941,31 +1946,27 @@
   );
 
   /* ---------- Navegación principal ---------- */
-  const appNav = document.getElementById("app-nav");
-  const navToggle = document.getElementById("nav-toggle");
-  const navClose = document.getElementById("nav-close");
-
-  function openNav() {
-    appNav.classList.add("is-open");
-    document.body.classList.add("no-scroll");
-  }
-  function closeNav() {
-    appNav.classList.remove("is-open");
-    document.body.classList.remove("no-scroll");
-  }
-
-  navToggle.addEventListener("click", openNav);
-  navClose.addEventListener("click", closeNav);
-
   // Cada vista tiene su propio hash en la URL (#hoy, #tareas, …), para poder
   // enlazar/guardar un acceso directo que abra siempre esa pestaña.
-  const VIEWS = ["hoy", "rutinas", "tareas", "recados", "pendientes", "planificadas"];
+  const VIEWS = [
+    "hoy",
+    "rutinas",
+    "agenda",
+    "tareas",
+    "recados",
+    "pendientes",
+    "planificadas",
+  ];
+
+  let currentView = "tareas";
 
   function activateView(view) {
     if (VIEWS.indexOf(view) === -1) view = "tareas"; // por defecto
+    currentView = view;
     document
       .querySelectorAll(".app-nav-item")
       .forEach((n) => n.classList.toggle("is-active", n.dataset.view === view));
+    syncMobileTabs();
     VIEWS.forEach((v) => {
       const el = document.getElementById("view-" + v);
       if (el) el.hidden = v !== view;
@@ -1982,18 +1983,132 @@
     return (location.hash || "").replace(/^#/, "");
   }
 
+  // Abre una vista: deja el hash como estado y la activa ya (sin esperar al
+  // evento hashchange, que es asíncrono).
+  function goToView(view) {
+    const target = "#" + view;
+    if (location.hash !== target) location.hash = target;
+    activateView(view);
+  }
+
   document.querySelectorAll(".app-nav-item").forEach((item) => {
     item.addEventListener("click", () => {
       const view = item.dataset.view;
       if (!view) return; // p. ej. el botón de Ajustes (no es una vista)
-      const target = "#" + view;
-      if (location.hash === target) activateView(view);
-      else location.hash = target; // cambia el hash → dispara hashchange
-      closeNav(); // en móvil, cierra el menú al elegir
+      goToView(view);
     });
   });
 
   window.addEventListener("hashchange", () => activateView(viewFromHash()));
+
+  /* ---------- Navegación móvil: barra inferior + menú "Más" + botón ＋ ----------
+     La barra tiene Hoy / Tareas / Agenda y un "Más" con el resto de vistas
+     (Ajustes incluido). El botón "Tareas" abre la vista Cuanto antes; la lista
+     completa de Mis tareas queda en "Más". El botón ＋ pregunta qué crear y lleva a esa lista con
+     el campo de añadir enfocado. */
+  const mobileTabbar = document.getElementById("mobile-tabbar");
+  const moreMenu = document.getElementById("more-menu");
+  const moreClose = document.getElementById("more-close");
+  // Vistas que tienen botón propio en la barra ("Tareas" abre Cuanto antes)
+  const BAR_VIEWS = ["hoy", "rutinas", "agenda"];
+
+  // Resalta la pestaña activa; si la vista no está en la barra (o el menú está
+  // abierto), el resaltado va en "Más".
+  function syncMobileTabs() {
+    if (!mobileTabbar) return;
+    const moreOpen = moreMenu && !moreMenu.hidden;
+    const inBar = BAR_VIEWS.indexOf(currentView) !== -1;
+    mobileTabbar.querySelectorAll(".mtab").forEach((b) => {
+      const active = b.dataset.more
+        ? moreOpen || !inBar
+        : !moreOpen && b.dataset.view === currentView;
+      b.classList.toggle("is-active", active);
+    });
+  }
+
+  function openMoreMenu() {
+    moreMenu.hidden = false;
+    syncMobileTabs();
+  }
+  function closeMoreMenu() {
+    if (!moreMenu || moreMenu.hidden) return;
+    moreMenu.hidden = true;
+    syncMobileTabs();
+  }
+
+  if (mobileTabbar) {
+    mobileTabbar.addEventListener("click", (e) => {
+      const btn = e.target.closest(".mtab");
+      if (!btn) return;
+      if (btn.dataset.more) {
+        if (moreMenu.hidden) openMoreMenu();
+        else closeMoreMenu();
+        return;
+      }
+      closeMoreMenu();
+      goToView(btn.dataset.view);
+    });
+  }
+
+  if (moreMenu) {
+    moreClose.addEventListener("click", closeMoreMenu);
+    moreMenu.addEventListener("click", (e) => {
+      const item = e.target.closest(".menu-item");
+      if (!item) return;
+      closeMoreMenu();
+      if (item.dataset.action === "settings") {
+        openSettings();
+        return;
+      }
+      goToView(item.dataset.view);
+    });
+  }
+
+  /* ---------- Botón ＋ (crear) ---------- */
+  const fabBtn = document.getElementById("fab-btn");
+  const fabOverlay = document.getElementById("fab-overlay");
+  const fabCancel = document.getElementById("fab-cancel");
+  // Qué vista y qué campo de texto corresponde a cada opción
+  const CREATE_INPUTS = {
+    tareas: "task-input",
+    recados: "recados-input",
+    planificadas: "planned-input",
+    pendientes: "pendientes-input",
+  };
+
+  function openFab() {
+    fabOverlay.hidden = false;
+  }
+  function closeFab() {
+    fabOverlay.hidden = true;
+  }
+
+  if (fabBtn) {
+    fabBtn.addEventListener("click", openFab);
+    fabCancel.addEventListener("click", closeFab);
+    fabOverlay.addEventListener("click", (e) => {
+      if (e.target === fabOverlay) {
+        closeFab();
+        return;
+      }
+      const choice = e.target.closest(".fab-choice");
+      if (!choice) return;
+      const view = choice.dataset.create;
+      closeFab();
+      closeMoreMenu();
+      goToView(view);
+      // El campo ya es visible (activateView es síncrona): enfocarlo abre el
+      // teclado, al venir de un toque del usuario.
+      const el = document.getElementById(CREATE_INPUTS[view]);
+      if (el) el.focus();
+    });
+  }
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape") return;
+    if (fabOverlay && !fabOverlay.hidden) closeFab();
+    else closeMoreMenu();
+  });
 
   /* ---------- Ajustes ---------- */
   const settingsBtn = document.getElementById("settings-btn");
@@ -2023,10 +2138,7 @@
     plannedInput.focus();
   });
 
-  settingsBtn.addEventListener("click", () => {
-    closeNav(); // en móvil, cierra el menú a pantalla completa antes de abrir
-    openSettings();
-  });
+  settingsBtn.addEventListener("click", openSettings);
   settingsClose.addEventListener("click", closeSettings);
   settingsOverlay.addEventListener("click", (e) => {
     if (e.target === settingsOverlay) closeSettings();
