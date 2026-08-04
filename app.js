@@ -62,10 +62,15 @@
     summaryEl: summary,
     doneVisible: false,
     plannedRank: false,
-    // Filtro de las tabs: "all" | "starred" (destacadas) | "unstarred"
+    // Tabs: "all" | "starred" (destacadas) | "unstarred"
     tabsEl: document.getElementById("tareas-tabs"),
-    starFilter: "all",
-    emptyDefault: "No hay tareas aquí. ¡Añade una arriba! 🎉",
+    tabFilter: "all",
+    tabMatch: (t, v) => (v === "starred" ? !!t.starred : !t.starred),
+    emptyTexts: {
+      all: "No hay tareas aquí. ¡Añade una arriba! 🎉",
+      starred: "Nada urgente ahora mismo. 🎉",
+      unstarred: "Nada que dejar para luego. 🎉",
+    },
   };
   const ctxRutinas = {
     noun: "tarea",
@@ -94,6 +99,24 @@
       if (t._lact || t._at || t.sourcePlannedId) return null;
       return recados.indexOf(t) !== -1 ? "Recados" : "Tareas";
     },
+    // Tabs por procedencia: "all" | "rutinas" | "tareas" | "recados"
+    tabsEl: document.getElementById("rutinas-tabs"),
+    tabFilter: "all",
+    tabMatch: (t, v) => {
+      const grupo =
+        t.sourcePlannedId || t._lact || t._at
+          ? "rutinas"
+          : recados.indexOf(t) !== -1
+          ? "recados"
+          : "tareas";
+      return grupo === v;
+    },
+    emptyTexts: {
+      all: "No hay nada ahora mismo.",
+      rutinas: "No hay rutinas ahora mismo.",
+      tareas: "No hay tareas destacadas.",
+      recados: "No hay recados destacados.",
+    },
   };
   const ctxRecados = {
     noun: "recado",
@@ -109,8 +132,13 @@
     doneVisible: false,
     plannedRank: false,
     tabsEl: document.getElementById("recados-tabs"),
-    starFilter: "all",
-    emptyDefault: "No hay recados aquí. ¡Añade uno arriba! 🎉",
+    tabFilter: "all",
+    tabMatch: (t, v) => (v === "starred" ? !!t.starred : !t.starred),
+    emptyTexts: {
+      all: "No hay recados aquí. ¡Añade uno arriba! 🎉",
+      starred: "Nada urgente ahora mismo. 🎉",
+      unstarred: "Nada que dejar para luego. 🎉",
+    },
   };
   const ctxPendientes = {
     noun: "tarea",
@@ -163,6 +191,7 @@
   const FB_KEY_RECADOS = "recados"; // recordatorios/recados = segunda lista
   const FB_KEY_PENDIENTES = "pendientes"; // recordatorios/pendientes = tercera lista
   const FB_KEY_HOY = "hoy"; // recordatorios/hoy = tareas del día (mañana/tarde)
+  const FB_KEY_AGENDA = "agenda"; // recordatorios/agenda = tareas por día de la semana
 
   /* ---------- Integración con App lactancia (misma base de datos) ----------
      Mostramos en la lista "Tareas" las tareas de App lactancia (Mamá › Tareas),
@@ -196,6 +225,7 @@
   const IDB_KEY_RECADOS = "recados";
   const IDB_KEY_PENDIENTES = "pendientes";
   const IDB_KEY_HOY = "hoy";
+  const IDB_KEY_AGENDA = "agenda";
   let db = null;
   let fbReady = false; // true cuando Firebase está autenticado y escuchando
   let appStarted = false; // evita arrancar la app dos veces
@@ -203,15 +233,45 @@
   let tasks = [];
   let recados = []; // segunda lista (misma funcionalidad, sin planificadas auto)
   let pendientes = []; // tercera lista (igual que recados)
+  // Agenda: tareas fijas por día de la semana {id, text, day: 1-7, done}
+  let agenda = [];
+  const AGENDA_DAYS = [
+    { day: 1, name: "Lunes" },
+    { day: 2, name: "Martes" },
+    { day: 3, name: "Miércoles" },
+    { day: 4, name: "Jueves" },
+    { day: 5, name: "Viernes" },
+    { day: 6, name: "Sábado" },
+    { day: 7, name: "Domingo" },
+  ];
   let hoy = []; // tareas del día {id, text, section: <id sección>, done}
   // Secciones de Hoy. Las por defecto usan ids "manana"/"tarde" para no perder
   // los datos actuales (las tareas ya guardan esos ids en `section`).
+  // Sección automática: se rellena sola con las tareas/recados con fecha de
+  // hoy. Vive en `hoySections` solo para poder colocarla donde se quiera.
+  const HOY_AUTO_ID = "auto-dia";
+  const HOY_AUTO_NAME = "Durante el día";
   const HOY_DEFAULT_SECTIONS = [
     { id: "manana", name: "Mañana" },
     { id: "tarde", name: "Tarde" },
+    { id: HOY_AUTO_ID, name: HOY_AUTO_NAME, auto: true },
   ];
   const hoyDefaultSections = () =>
-    HOY_DEFAULT_SECTIONS.map((s) => ({ id: s.id, name: s.name }));
+    HOY_DEFAULT_SECTIONS.map((s) =>
+      s.auto ? { id: s.id, name: s.name, auto: true } : { id: s.id, name: s.name }
+    );
+  // Las configuraciones guardadas antes no la tienen: se añade al final.
+  function withAutoSection(secs) {
+    if (secs.some((s) => s.id === HOY_AUTO_ID)) {
+      // Normaliza nombre/marca por si vino de una versión anterior
+      return secs.map((s) =>
+        s.id === HOY_AUTO_ID
+          ? { id: HOY_AUTO_ID, name: HOY_AUTO_NAME, auto: true }
+          : s
+      );
+    }
+    return secs.concat([{ id: HOY_AUTO_ID, name: HOY_AUTO_NAME, auto: true }]);
+  }
   let hoySections = hoyDefaultSections();
   // Categorías de las tareas temporales (el color va en el CSS: .cat-<id>)
   const HOY_CATEGORIES = [
@@ -308,6 +368,18 @@
     }
   }
 
+  function saveAgenda() {
+    if (db) idbSet(IDB_KEY_AGENDA, agenda).catch(() => {});
+    if (fbReady) {
+      fdb
+        .ref(FB_ROOT + "/" + FB_KEY_AGENDA)
+        .set(agenda && agenda.length ? agenda : null)
+        .catch((e) =>
+          showError("Al sincronizar: " + (e && e.message ? e.message : e))
+        );
+    }
+  }
+
   // ¿Hoy está "vacío"? (sin tareas y con las secciones por defecto). Sirve para
   // no persistir un objeto vacío y para el "first upload".
   function hoyIsEmpty() {
@@ -348,7 +420,7 @@
       return {
         items: asArray(raw.items),
         day: raw.day || null,
-        sections: secs.length ? secs : hoyDefaultSections(),
+        sections: secs.length ? withAutoSection(secs) : hoyDefaultSections(),
       };
     }
     return { items: [], day: null, sections: hoyDefaultSections() };
@@ -721,6 +793,8 @@
   const detailDelete = document.getElementById("detail-delete");
   const detailNoteLabel = document.querySelector(".detail-note-label");
   const detailTaskFields = document.getElementById("detail-task-fields");
+  const detailTypeWrap = document.getElementById("detail-type-wrap");
+  const detailType = document.getElementById("detail-type");
   const detailSubtasks = document.getElementById("detail-subtasks");
   const subtaskForm = document.getElementById("subtask-form");
   const subtaskInput = document.getElementById("subtask-input");
@@ -754,6 +828,10 @@
   function renderOpenTask() {
     const e = findTaskEntry(openTaskId);
     if (e) renderList(e.ctx);
+    // La fecha "En fecha" coloca la tarea en un día de la Agenda y, si es hoy,
+    // en la sección "Durante el día" de Hoy.
+    renderAgenda();
+    renderHoyView();
   }
 
   // Entidad abierta en el modal: tarea (de cualquier lista) o planificada
@@ -1141,6 +1219,7 @@
     detailTitle.value = item.text;
     detailTitle.classList.remove("is-done");
     renderRepeat(item);
+    renderDetailType();
     detailRepeatSection.hidden = false; // "Repetir" solo en planificadas
     detailNote.value = item.note || "";
     overlay.hidden = false;
@@ -1161,6 +1240,7 @@
     detailTitle.readOnly = true; // el texto se edita en App lactancia
     detailTaskFields.hidden = true; // sin fecha ni subtareas
     detailRepeatSection.hidden = true;
+    detailTypeWrap.hidden = true; // no se puede mover de lista
     detailNote.hidden = true; // sin nota
     if (detailNoteLabel) detailNoteLabel.hidden = true;
     detailDelete.hidden = false;
@@ -1182,6 +1262,7 @@
     detailTitle.readOnly = true; // el texto se edita en App tareas
     detailTaskFields.hidden = true; // sin fecha ni subtareas
     detailRepeatSection.hidden = true;
+    detailTypeWrap.hidden = true; // no se puede mover de lista
     detailNote.hidden = true; // sin nota
     if (detailNoteLabel) detailNoteLabel.hidden = true;
     detailDelete.hidden = false;
@@ -1211,12 +1292,113 @@
     detailCheck.checked = task.done;
     renderDate(task);
     renderSubtasks(task);
+    renderDetailType();
     subtaskInput.value = "";
     overlay.hidden = false;
     document.body.classList.add("no-scroll");
     // Ajusta la altura del título ya con el modal visible (si no, scrollHeight es 0)
     autoGrow(detailTitle);
   }
+
+  /* ---------- "Tipo": mover la tarea de lista ----------
+     Tareas / Recados / Pendientes comparten formato: se mueve el objeto de un
+     array a otro. Rutinas (planificadas) es otro modelo: al convertir se crea
+     la entrada nueva con el texto y la nota, y se borra la de origen. */
+  const CTX_BY_TYPE = {
+    tareas: () => ctxTareas,
+    recados: () => ctxRecados,
+    pendientes: () => ctxPendientes,
+  };
+
+  // Tipo actual de lo que hay abierto en el panel (null = no aplica)
+  function detailTypeOf() {
+    if (openPlannedId !== null) return "rutinas";
+    if (openTaskId === null) return null;
+    const e = findTaskEntry(openTaskId);
+    if (!e || e.item.sourcePlannedId) return null; // copia de una rutina
+    if (e.ctx === ctxRecados) return "recados";
+    if (e.ctx === ctxPendientes) return "pendientes";
+    if (e.ctx === ctxTareas) return "tareas";
+    return null;
+  }
+
+  // Muestra el selector con el valor actual (o lo oculta si no aplica)
+  function renderDetailType() {
+    const type = detailTypeOf();
+    detailTypeWrap.hidden = !type;
+    if (type) detailType.value = type;
+  }
+
+  function moveTaskToList(target) {
+    const e = findTaskEntry(openTaskId);
+    if (!e) return;
+    const task = e.item;
+    e.ctx.setItems(e.ctx.items().filter((t) => t.id !== task.id));
+    e.ctx.save();
+    const ctx = CTX_BY_TYPE[target]();
+    ctx.items().unshift(task);
+    ctx.save();
+    renderAllLists();
+    renderDetailType();
+  }
+
+  // Tarea → rutina: la fecha y las subtareas no existen en una rutina
+  function taskToPlanned() {
+    const e = findTaskEntry(openTaskId);
+    if (!e) return false;
+    const task = e.item;
+    const pierde =
+      (task.subtasks && task.subtasks.length) ||
+      (task.dateMode && task.dateMode !== "none");
+    if (
+      pierde &&
+      !confirm(
+        "Al convertirla en rutina se pierden la fecha y las subtareas. ¿Continuar?"
+      )
+    )
+      return false;
+    const p = { id: newId(), text: task.text, createdAt: todayISO() };
+    if (task.note && task.note.trim()) p.note = task.note;
+    planned.unshift(p);
+    savePlanned();
+    e.ctx.setItems(e.ctx.items().filter((t) => t.id !== task.id));
+    e.ctx.save();
+    renderAllLists();
+    renderPlanned();
+    openPlannedNote(p.id); // el panel pasa a los campos de rutina
+    return true;
+  }
+
+  // Rutina → tarea: se descarta la repetición y la copia pendiente que hubiera
+  function plannedToTask(target) {
+    const p = planned.find((x) => x.id === openPlannedId);
+    if (!p) return;
+    const task = { id: newId(), text: p.text, done: false, starred: false };
+    if (p.note && p.note.trim()) task.note = p.note;
+    const ctx = CTX_BY_TYPE[target]();
+    ctx.items().unshift(task);
+    ctx.save();
+    // La copia de esta rutina que estuviera pendiente deja de tener sentido
+    if (p.currentInstanceId) {
+      tasks = tasks.filter((t) => t.id !== p.currentInstanceId);
+      save();
+    }
+    planned = planned.filter((x) => x.id !== p.id);
+    savePlanned();
+    renderAllLists();
+    renderPlanned();
+    openDetail(task.id); // el panel pasa a los campos de tarea
+  }
+
+  detailType.addEventListener("change", () => {
+    const from = detailTypeOf();
+    const target = detailType.value;
+    if (!from || from === target) return;
+    if (from === "rutinas") plannedToTask(target);
+    else if (target === "rutinas") {
+      if (!taskToPlanned()) renderDetailType(); // cancelado: vuelve al valor
+    } else moveTaskToList(target);
+  });
 
   function closeDetail() {
     // Guarda la nota al cerrar
@@ -1391,7 +1573,10 @@
   // Construye el <li> de una tarea (se usa en la lista de pendientes y en la
   // de completadas). `origin` (opcional): etiqueta de procedencia, p. ej.
   // "Tareas" o "Recados", para las destacadas que se agrupan en Cuanto antes.
-  function createTaskItem(task, origin) {
+  // `opts` (opcional): { hideDate, hideStar } — en la Agenda la fecha y el
+  // destacado sobran, porque la tarea ya está colocada en su día.
+  function createTaskItem(task, origin, opts) {
+    const o = opts || {};
     const li = document.createElement("li");
     li.className =
       "task-item" +
@@ -1486,7 +1671,8 @@
     main.appendChild(span);
 
     // 2ª línea: procedencia (Tareas / Recados) primero, luego la fecha
-    const dateText = dateLabel ? (showClock ? "🕑 " : "") + dateLabel : "";
+    const dateText =
+      dateLabel && !o.hideDate ? (showClock ? "🕑 " : "") + dateLabel : "";
     if (origin || dateText) {
       const dateLine = document.createElement("span");
       dateLine.className = "task-date";
@@ -1522,7 +1708,7 @@
       trailing.textContent = "🔁";
       trailing.setAttribute("aria-label", "Rutina");
       trailing.setAttribute("title", "Rutina");
-    } else {
+    } else if (!o.hideStar) {
       trailing = document.createElement("button");
       trailing.className = "star-btn";
       trailing.type = "button";
@@ -1535,7 +1721,8 @@
       trailing.addEventListener("click", () => toggleStar(task.id));
     }
 
-    li.append(control, main, trailing);
+    li.append(control, main);
+    if (trailing) li.appendChild(trailing);
     return li;
   }
 
@@ -1624,13 +1811,12 @@
     // Items de otra lista que se muestran aquí (recados destacados), al final.
     const extraPending = ctx.extraPending ? ctx.extraPending() : [];
     const pendingAll = extPending.concat(pendingNativas, extraPending);
-    // Tabs (solo Mis tareas): filtran la lista de pendientes por destacada.
-    // El resumen y las completadas siguen contando la lista entera.
+    // Tabs: filtran la lista de pendientes. El resumen y las completadas
+    // siguen contando la lista entera.
+    const tabValue = ctx.tabFilter || "all";
     const pending =
-      ctx.starFilter === "starred"
-        ? pendingAll.filter((t) => !!t.starred)
-        : ctx.starFilter === "unstarred"
-        ? pendingAll.filter((t) => !t.starred)
+      ctx.tabMatch && tabValue !== "all"
+        ? pendingAll.filter((t) => ctx.tabMatch(t, tabValue))
         : pendingAll;
     // Completadas: por fecha de completado, la más reciente primero.
     const done = items
@@ -1657,24 +1843,19 @@
     );
 
     ctx.emptyEl.hidden = pending.length !== 0;
-    if (ctx.starFilter === "starred")
-      ctx.emptyEl.textContent = "Nada urgente ahora mismo. 🎉";
-    else if (ctx.starFilter === "unstarred")
-      ctx.emptyEl.textContent = "Nada que dejar para luego. 🎉";
-    else if (ctx.emptyDefault) ctx.emptyEl.textContent = ctx.emptyDefault;
+    if (ctx.emptyTexts && ctx.emptyTexts[tabValue])
+      ctx.emptyEl.textContent = ctx.emptyTexts[tabValue];
 
-    // Contador en cada tab (sobre las pendientes, sin filtrar)
+    // Estado y contador de cada tab (sobre las pendientes, sin filtrar)
     if (ctx.tabsEl) {
-      const starred = pendingAll.filter((t) => !!t.starred).length;
-      const counts = {
-        all: pendingAll.length,
-        starred: starred,
-        unstarred: pendingAll.length - starred,
-      };
       ctx.tabsEl.querySelectorAll(".task-tab").forEach((tab) => {
-        const n = counts[tab.dataset.star] || 0;
+        const v = tab.dataset.tab;
+        const n =
+          v === "all" || !ctx.tabMatch
+            ? pendingAll.length
+            : pendingAll.filter((t) => ctx.tabMatch(t, v)).length;
         tab.textContent = tab.dataset.label + (n ? " (" + n + ")" : "");
-        const active = tab.dataset.star === ctx.starFilter;
+        const active = v === tabValue;
         tab.classList.toggle("is-active", active);
         tab.setAttribute("aria-selected", active ? "true" : "false");
       });
@@ -1715,6 +1896,10 @@
     renderList(ctxRutinas);
     renderList(ctxRecados);
     renderList(ctxPendientes);
+    // Ambas muestran tareas/recados con fecha: la Agenda los de la semana y
+    // Hoy los del día.
+    renderAgenda();
+    renderHoyView();
   }
   function renderRutinas() {
     renderList(ctxRutinas);
@@ -1732,13 +1917,13 @@
   }
 
   /* ---------- Eventos ---------- */
-  // Tabs de Mis tareas y Recados (Todo / Cuanto antes / Cuando se pueda)
-  [ctxTareas, ctxRecados].forEach((ctx) => {
+  // Tabs de filtro (Mis tareas, Recados y Cuanto antes)
+  [ctxTareas, ctxRecados, ctxRutinas].forEach((ctx) => {
     if (!ctx.tabsEl) return;
     ctx.tabsEl.addEventListener("click", (e) => {
       const tab = e.target.closest(".task-tab");
       if (!tab) return;
-      ctx.starFilter = tab.dataset.star;
+      ctx.tabFilter = tab.dataset.tab;
       renderList(ctx);
     });
   });
@@ -1972,6 +2157,7 @@
       if (el) el.hidden = v !== view;
     });
     if (view === "hoy") renderHoy();
+    else if (view === "agenda") renderAgenda();
     else if (view === "tareas") render();
     else if (view === "rutinas") renderRutinas();
     else if (view === "recados") renderRecados();
@@ -2247,11 +2433,7 @@
     reader.readAsText(file);
   });
 
-  /* ---------- Modal de Hoy (secciones dinámicas) ---------- */
-  const hoyOverlay = document.getElementById("hoy-overlay");
-  const hoySettingsBtn = document.getElementById("hoy-settings-btn");
-  const hoyClose = document.getElementById("hoy-close");
-  const hoySectionsEl = document.getElementById("hoy-sections");
+  /* ---------- Vista de Hoy (secciones dinámicas, edición en la propia vista) ---------- */
   const hoyAddSectionBtn = document.getElementById("hoy-add-section");
   const hoyViewSectionsEl = document.getElementById("hoy-view-sections");
 
@@ -2260,251 +2442,147 @@
     return item.temporal && item.category ? " cat-" + item.category : "";
   }
 
-  // Fila de tarea del modal: texto editable + toggle "Temporal" + categoría
-  function hoyModalItem(item) {
-    const li = document.createElement("li");
-    li.className = "hoy-item" + hoyCatClass(item);
-    li.dataset.id = item.id;
+  /* ---------- Modo edición ---------- */
+  // No se persiste: al recargar, la vista vuelve al modo normal.
+  let hoyEditMode = false;
 
-    const row = document.createElement("div");
-    row.className = "hoy-item-row";
-
-    const handle = document.createElement("span");
-    handle.className = "hoy-item-handle";
-    handle.textContent = "⠿";
-    handle.setAttribute("aria-label", "Reordenar tarea");
-    handle.title = "Arrastra para reordenar";
-
-    const input = document.createElement("input");
-    input.type = "text";
-    input.className = "hoy-item-input";
-    input.value = item.text;
-    input.setAttribute("aria-label", "Editar tarea");
-    // Al escribir: solo memoria + vista (no guardar, para no reconstruir el
-    // modal por el eco de Firebase y perder el foco). Se persiste al salir.
-    input.addEventListener("input", () => {
-      const v = input.value.trim();
-      if (v) {
-        item.text = v;
-        renderHoyView();
-      }
-    });
-    input.addEventListener("blur", () => {
-      const v = input.value.trim();
-      if (v) {
-        item.text = v;
-        saveHoy();
-      } else {
-        input.value = item.text;
-      }
-    });
-
-    // Selector de categoría (visible solo cuando es temporal)
-    const cat = document.createElement("select");
-    cat.className = "hoy-cat-select";
-    cat.setAttribute("aria-label", "Categoría");
-    cat.hidden = !item.temporal;
-    const none = document.createElement("option");
-    none.value = "";
-    none.textContent = "Sin categoría";
-    cat.appendChild(none);
-    HOY_CATEGORIES.forEach((c) => {
-      const opt = document.createElement("option");
-      opt.value = c.id;
-      opt.textContent = c.name;
-      cat.appendChild(opt);
-    });
-    cat.value = item.category || "";
-    cat.addEventListener("change", () => {
-      item.category = cat.value || undefined;
-      li.className = "hoy-item" + hoyCatClass(item);
-      saveHoy();
-      renderHoyView();
-    });
-
-    // Toggle "Temporal"
-    const toggle = document.createElement("label");
-    toggle.className = "hoy-switch";
-    const tlabel = document.createElement("span");
-    tlabel.className = "hoy-switch-text";
-    tlabel.textContent = "Temporal";
-    const cb = document.createElement("input");
-    cb.type = "checkbox";
-    cb.checked = !!item.temporal;
-    cb.setAttribute("aria-label", "Temporal");
-    cb.addEventListener("change", () => {
-      item.temporal = cb.checked;
-      cat.hidden = !cb.checked;
-      li.className = "hoy-item" + hoyCatClass(item);
-      saveHoy();
-      renderHoyView();
-    });
-    const slider = document.createElement("span");
-    slider.className = "hoy-switch-slider";
-    toggle.append(tlabel, cb, slider);
-
-    const del = document.createElement("button");
-    del.type = "button";
-    del.className = "hoy-del";
-    del.textContent = "🗑";
-    del.setAttribute("aria-label", "Eliminar");
-    del.addEventListener("click", () => deleteHoy(item.id));
-
-    // Toggle "Mostrar última fecha de completado" (2ª línea en la vista Hoy)
-    const lastToggle = document.createElement("label");
-    lastToggle.className = "hoy-switch hoy-switch-wide";
-    const llabel = document.createElement("span");
-    llabel.className = "hoy-switch-text";
-    llabel.textContent = "Mostrar última fecha de completado";
-    const lcb = document.createElement("input");
-    lcb.type = "checkbox";
-    lcb.checked = !!item.showLastDone;
-    lcb.setAttribute("aria-label", "Mostrar última fecha de completado");
-    lcb.addEventListener("change", () => {
-      item.showLastDone = lcb.checked;
-      saveHoy();
-      renderHoyView();
-    });
-    const lslider = document.createElement("span");
-    lslider.className = "hoy-switch-slider";
-    lastToggle.append(llabel, lcb, lslider);
-
-    row.append(handle, input, toggle, del);
-    li.append(row, cat, lastToggle);
-    return li;
-  }
-
-  // Recuerda/restaura el foco al reconstruir el modal (para no perderlo al
-  // añadir una tarea, cuyo repintado recrea los campos).
+  // Recuerda/restaura el foco al repintar (al añadir una tarea se reconstruyen
+  // los campos y se perdería).
   function hoyCaptureFocus() {
     const a = document.activeElement;
-    if (!a || !hoySectionsEl.contains(a)) return null;
+    if (!a || !hoyViewSectionsEl.contains(a)) return null;
     const caret = typeof a.selectionStart === "number" ? a.selectionStart : null;
     if (a.classList.contains("hoy-section-name"))
       return { type: "name", section: a.dataset.section, caret: caret };
     if (a.classList.contains("hoy-add-input"))
       return { type: "add", section: a.dataset.section, caret: caret };
-    if (a.classList.contains("hoy-item-input")) {
-      const li = a.closest(".hoy-item");
-      return { type: "item", id: li && li.dataset.id, caret: caret };
-    }
     return null;
   }
+
   function hoyRestoreFocus(key) {
     if (!key) return;
-    let el = null;
-    if (key.type === "name")
-      el = hoySectionsEl.querySelector(
-        '.hoy-section-name[data-section="' + key.section + '"]'
-      );
-    else if (key.type === "add")
-      el = hoySectionsEl.querySelector(
-        '.hoy-add-input[data-section="' + key.section + '"]'
-      );
-    else if (key.type === "item") {
-      const li = hoySectionsEl.querySelector(
-        '.hoy-item[data-id="' + key.id + '"]'
-      );
-      el = li && li.querySelector(".hoy-item-input");
-    }
-    if (el) {
-      el.focus();
-      if (key.caret != null) {
-        try {
-          el.setSelectionRange(key.caret, key.caret);
-        } catch (e) {
-          /* algunos inputs no lo soportan */
-        }
+    const sel =
+      key.type === "name"
+        ? '.hoy-section-name[data-section="' + key.section + '"]'
+        : '.hoy-add-input[data-section="' + key.section + '"]';
+    const el = hoyViewSectionsEl.querySelector(sel);
+    if (!el) return;
+    el.focus();
+    if (key.caret != null) {
+      try {
+        el.setSelectionRange(key.caret, key.caret);
+      } catch (e) {
+        /* algunos inputs no lo soportan */
       }
     }
   }
 
-  // Modal: una sección por cada elemento de `hoySections` (nombre editable,
-  // añadir/eliminar tareas, eliminar sección y reordenar).
-  function renderHoyModal() {
-    if (!hoySectionsEl) return;
-    const focusKey = hoyCaptureFocus();
-    hoySectionsEl.innerHTML = "";
-    hoySections.forEach((sec) => {
-      const wrap = document.createElement("section");
-      wrap.className = "hoy-section";
-      wrap.dataset.id = sec.id;
+  // Cabecera de sección (modo edición): asa + nombre editable + eliminar
+  function hoySectionHead(sec, addInput) {
+    const head = document.createElement("div");
+    head.className = "hoy-section-head";
 
-      const form = document.createElement("form");
-      form.className = "new-task hoy-add-form";
-      form.autocomplete = "off";
-      const addInput = document.createElement("input");
-      addInput.type = "text";
-      addInput.className = "task-input hoy-add-input";
-      addInput.dataset.section = sec.id;
-      addInput.maxLength = 200;
-      addInput.placeholder = "Añadir a " + sec.name + "…";
-      addInput.setAttribute("aria-label", "Nueva tarea");
-      const addBtn = document.createElement("button");
-      addBtn.type = "submit";
-      addBtn.className = "add-btn";
-      addBtn.textContent = "+";
-      addBtn.setAttribute("aria-label", "Añadir");
-      form.append(addInput, addBtn);
-      form.addEventListener("submit", (e) => {
-        e.preventDefault();
-        addHoy(sec.id, addInput.value);
-        addInput.value = "";
-        addInput.focus();
-      });
+    const handle = document.createElement("span");
+    handle.className = "hoy-section-handle";
+    handle.textContent = "⠿";
+    handle.setAttribute("aria-label", "Reordenar sección");
+    handle.title = "Arrastra para reordenar";
 
-      const head = document.createElement("div");
-      head.className = "hoy-section-head";
-      const handle = document.createElement("span");
-      handle.className = "hoy-section-handle";
-      handle.textContent = "⠿";
-      handle.setAttribute("aria-label", "Reordenar sección");
-      handle.title = "Arrastra para reordenar";
-      const name = document.createElement("input");
-      name.type = "text";
-      name.className = "hoy-section-name";
-      name.dataset.section = sec.id;
-      name.value = sec.name;
-      name.maxLength = 60;
-      name.setAttribute("aria-label", "Nombre de la sección");
-      name.addEventListener("input", () => {
-        const v = name.value.trim();
-        if (v) {
-          sec.name = v;
-          addInput.placeholder = "Añadir a " + v + "…";
-          renderHoyView();
-        }
-      });
-      name.addEventListener("blur", () => {
-        const v = name.value.trim();
-        if (v) {
-          sec.name = v;
-          saveHoy();
-        } else {
-          name.value = sec.name;
-        }
-      });
-      const delSec = document.createElement("button");
-      delSec.type = "button";
-      delSec.className = "hoy-section-del";
-      delSec.textContent = "🗑";
-      delSec.setAttribute("aria-label", "Eliminar sección");
-      delSec.addEventListener("click", () => deleteSection(sec.id));
-      head.append(handle, name, delSec);
-
-      const ul = document.createElement("ul");
-      ul.className = "hoy-list";
-      hoy
-        .filter((it) => it.section === sec.id)
-        .forEach((it) => ul.appendChild(hoyModalItem(it)));
-
-      wrap.append(head, form, ul);
-      hoySectionsEl.appendChild(wrap);
-
-      // Reordenar las tareas de la sección desde su asa (solo afecta a sus ítems)
-      enableReorder(ul, "hoy-item", () => hoy, saveHoy, "hoy-item-handle");
+    const name = document.createElement("input");
+    name.type = "text";
+    name.className = "hoy-section-name";
+    name.dataset.section = sec.id;
+    name.value = sec.name;
+    name.maxLength = 60;
+    name.setAttribute("aria-label", "Nombre de la sección");
+    // Al escribir solo se toca la memoria (repintar aquí perdería el foco);
+    // se persiste al salir del campo.
+    name.addEventListener("input", () => {
+      const v = name.value.trim();
+      if (!v) return;
+      sec.name = v;
+      if (addInput) addInput.placeholder = "Añadir a " + v + "…";
     });
-    hoyRestoreFocus(focusKey);
+    name.addEventListener("blur", () => {
+      const v = name.value.trim();
+      if (v) {
+        sec.name = v;
+        saveHoy();
+      } else {
+        name.value = sec.name;
+      }
+    });
+
+    const del = document.createElement("button");
+    del.type = "button";
+    del.className = "hoy-section-del";
+    del.textContent = "🗑";
+    del.setAttribute("aria-label", "Eliminar sección");
+    del.addEventListener("click", () => deleteSection(sec.id));
+
+    head.append(handle, name, del);
+    return head;
+  }
+
+  // Cabecera de la sección automática: en edición lleva asa (para colocarla
+  // donde se quiera) pero no se renombra ni se elimina.
+  function hoyAutoHead(sec) {
+    if (!hoyEditMode) {
+      const title = document.createElement("h2");
+      title.className = "hoy-view-title";
+      title.textContent = sec.name;
+      return title;
+    }
+    const head = document.createElement("div");
+    head.className = "hoy-section-head";
+
+    const handle = document.createElement("span");
+    handle.className = "hoy-section-handle";
+    handle.textContent = "⠿";
+    handle.setAttribute("aria-label", "Reordenar sección");
+    handle.title = "Arrastra para reordenar";
+
+    const name = document.createElement("span");
+    name.className = "hoy-section-name is-auto";
+    name.textContent = sec.name;
+
+    head.append(handle, name);
+    return head;
+  }
+
+  // Formulario para añadir tareas a una sección (solo en modo edición)
+  function hoyAddForm(sec) {
+    const form = document.createElement("form");
+    form.className = "new-task hoy-add-form";
+    form.autocomplete = "off";
+
+    const addInput = document.createElement("input");
+    addInput.type = "text";
+    addInput.className = "task-input hoy-add-input";
+    addInput.dataset.section = sec.id;
+    addInput.maxLength = 200;
+    addInput.placeholder = "Añadir a " + sec.name + "…";
+    addInput.setAttribute("aria-label", "Nueva tarea");
+
+    const addBtn = document.createElement("button");
+    addBtn.type = "submit";
+    addBtn.className = "add-btn";
+    addBtn.textContent = "+";
+    addBtn.setAttribute("aria-label", "Añadir");
+
+    form.append(addInput, addBtn);
+    form.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const value = addInput.value;
+      addInput.value = "";
+      addHoy(sec.id, value);
+      // El repintado recrea el campo: hay que volver a enfocar el nuevo
+      const fresh = hoyViewSectionsEl.querySelector(
+        '.hoy-add-input[data-section="' + sec.id + '"]'
+      );
+      if (fresh) fresh.focus();
+    });
+    return form;
   }
 
   // Byline "Hace N días" a partir de la última fecha de completado.
@@ -2515,54 +2593,122 @@
     return d === 1 ? "Hace 1 día" : "Hace " + d + " días";
   }
 
-  // Vista "Hoy": una sección por cada `hoySections`, con checkbox. Las
-  // completadas NO se ocultan.
+  // <li> de una tarea de Hoy. En modo normal lleva checkbox; en modo edición,
+  // el asa de arrastre, y al tocarla se abren sus ajustes en el panel lateral.
+  function hoyViewItem(item) {
+    const li = document.createElement("li");
+    li.className =
+      "hoy-view-item" +
+      // En edición no se distingue lo completado de lo pendiente
+      (item.done && !hoyEditMode ? " is-done" : "") +
+      (hoyEditMode ? " is-editing" : "") +
+      hoyCatClass(item);
+    li.dataset.id = item.id;
+
+    let lead;
+    if (hoyEditMode) {
+      lead = document.createElement("span");
+      lead.className = "hoy-item-handle";
+      lead.textContent = "⠿";
+      lead.setAttribute("aria-label", "Reordenar tarea");
+      lead.title = "Arrastra para reordenar";
+    } else {
+      lead = document.createElement("input");
+      lead.type = "checkbox";
+      lead.className = "task-check";
+      lead.checked = !!item.done;
+      lead.setAttribute("aria-label", "Marcar como completada");
+      lead.addEventListener("change", () => toggleHoy(item.id));
+    }
+
+    const main = document.createElement("div");
+    main.className = "hoy-view-main";
+
+    const text = document.createElement("span");
+    text.className = "hoy-view-text";
+    text.textContent = item.text;
+    main.appendChild(text);
+
+    // 2ª línea opcional: "Hace N días" desde la última compleción (en edición
+    // no se muestra: ahí no se distingue lo completado de lo pendiente)
+    if (item.showLastDone && !hoyEditMode) {
+      const last = document.createElement("span");
+      last.className = "hoy-view-date";
+      last.textContent = hoyLastDoneLabel(item.lastDoneAt);
+      main.appendChild(last);
+    }
+
+    li.append(lead, main);
+
+    if (hoyEditMode) {
+      main.addEventListener("click", () => openHoyDetail(item.id));
+      const more = document.createElement("span");
+      more.className = "hoy-item-more";
+      more.textContent = "›";
+      more.setAttribute("aria-hidden", "true");
+      li.appendChild(more);
+    }
+    return li;
+  }
+
+  // Vista "Hoy": una sección por cada `hoySections`. Las completadas NO se
+  // ocultan. En modo edición aparecen las cabeceras de sección editables y el
+  // formulario de creación.
   function renderHoyView() {
     if (!hoyViewSectionsEl) return;
+    const focusKey = hoyEditMode ? hoyCaptureFocus() : null;
     hoyViewSectionsEl.innerHTML = "";
     hoySections.forEach((sec) => {
       const wrap = document.createElement("section");
-      wrap.className = "hoy-view-section";
+      wrap.className = "hoy-view-section" + (hoyEditMode ? " is-editing" : "");
+      wrap.dataset.id = sec.id;
 
-      const title = document.createElement("h2");
-      title.className = "hoy-view-title";
-      title.textContent = sec.name;
-      wrap.appendChild(title);
+      // Sección automática: se rellena sola con las tareas/recados de hoy. No
+      // se edita, pero sí se puede colocar donde se quiera.
+      if (sec.auto) {
+        const dated = agendaDatedFor(todayISO());
+        if (!hoyEditMode && dated.length === 0) return; // vacía: no se muestra
+
+        wrap.appendChild(hoyAutoHead(sec));
+
+        if (hoyEditMode) {
+          const hint = document.createElement("p");
+          hint.className = "hoy-view-empty";
+          hint.textContent =
+            "Automática: las tareas y recados con fecha de hoy.";
+          wrap.appendChild(hint);
+        } else {
+          const ul = document.createElement("ul");
+          ul.className = "task-list";
+          dated.forEach((e) =>
+            ul.appendChild(
+              createTaskItem(e.task, e.origin, {
+                hideDate: true,
+                hideStar: true,
+              })
+            )
+          );
+          wrap.appendChild(ul);
+        }
+        hoyViewSectionsEl.appendChild(wrap);
+        return;
+      }
+
+      if (hoyEditMode) {
+        const form = hoyAddForm(sec);
+        wrap.appendChild(hoySectionHead(sec, form.querySelector("input")));
+        wrap.appendChild(form);
+      } else {
+        const title = document.createElement("h2");
+        title.className = "hoy-view-title";
+        title.textContent = sec.name;
+        wrap.appendChild(title);
+      }
 
       const ul = document.createElement("ul");
       ul.className = "task-list";
       const secItems = hoy.filter((it) => it.section === sec.id);
-      secItems.forEach((item) => {
-        const li = document.createElement("li");
-        li.className =
-          "hoy-view-item" + (item.done ? " is-done" : "") + hoyCatClass(item);
-
-        const check = document.createElement("input");
-        check.type = "checkbox";
-        check.className = "task-check";
-        check.checked = !!item.done;
-        check.setAttribute("aria-label", "Marcar como completada");
-        check.addEventListener("change", () => toggleHoy(item.id));
-
-        const main = document.createElement("div");
-        main.className = "hoy-view-main";
-
-        const text = document.createElement("span");
-        text.className = "hoy-view-text";
-        text.textContent = item.text;
-        main.appendChild(text);
-
-        // 2ª línea opcional: "Hace N días" desde la última compleción
-        if (item.showLastDone) {
-          const last = document.createElement("span");
-          last.className = "hoy-view-date";
-          last.textContent = hoyLastDoneLabel(item.lastDoneAt);
-          main.appendChild(last);
-        }
-
-        li.append(check, main);
-        ul.appendChild(li);
-      });
+      secItems.forEach((item) => ul.appendChild(hoyViewItem(item)));
       wrap.appendChild(ul);
 
       if (secItems.length === 0) {
@@ -2572,11 +2718,22 @@
         wrap.appendChild(empty);
       }
       hoyViewSectionsEl.appendChild(wrap);
+
+      // Reordenar las tareas de la sección desde su asa (solo sus ítems)
+      if (hoyEditMode)
+        enableReorder(
+          ul,
+          "hoy-view-item",
+          () => hoy,
+          saveHoy,
+          "hoy-item-handle"
+        );
     });
+    if (hoyAddSectionBtn) hoyAddSectionBtn.hidden = !hoyEditMode;
+    hoyRestoreFocus(focusKey);
   }
 
   function renderHoy() {
-    renderHoyModal();
     renderHoyView();
   }
 
@@ -2641,36 +2798,410 @@
     renderHoy();
   }
 
-  function openHoy() {
-    renderHoy();
-    hoyOverlay.hidden = false;
-    document.body.classList.add("no-scroll");
-  }
-  function closeHoy() {
-    hoyOverlay.hidden = true;
-    document.body.classList.remove("no-scroll");
-    renderHoy(); // refleja en la vista los cambios/orden del modal
+  /* ---------- Modo edición y ajustes de una tarea de Hoy ---------- */
+  const hoyEditBtn = document.getElementById("hoy-edit-btn");
+  const hoyDetailOverlay = document.getElementById("hoy-detail-overlay");
+  const hoyDetailClose = document.getElementById("hoy-detail-close");
+  const hoyDetailTitle = document.getElementById("hoy-detail-title");
+  const hoyDetailTemporal = document.getElementById("hoy-detail-temporal");
+  const hoyDetailCatWrap = document.getElementById("hoy-detail-cat-wrap");
+  const hoyDetailCat = document.getElementById("hoy-detail-cat");
+  const hoyDetailLastDone = document.getElementById("hoy-detail-lastdone");
+  const hoyDetailDelete = document.getElementById("hoy-detail-delete");
+  let hoyDetailId = null; // tarea abierta en el panel lateral
+
+  // Opciones del selector de categoría (fijas)
+  (function fillHoyCategories() {
+    const none = document.createElement("option");
+    none.value = "";
+    none.textContent = "Sin categoría";
+    hoyDetailCat.appendChild(none);
+    HOY_CATEGORIES.forEach((c) => {
+      const opt = document.createElement("option");
+      opt.value = c.id;
+      opt.textContent = c.name;
+      hoyDetailCat.appendChild(opt);
+    });
+  })();
+
+  function getHoyDetailItem() {
+    return hoyDetailId ? hoy.find((h) => h.id === hoyDetailId) : null;
   }
 
-  hoySettingsBtn.addEventListener("click", openHoy);
-  hoyClose.addEventListener("click", closeHoy);
-  hoyOverlay.addEventListener("click", (e) => {
-    if (e.target === hoyOverlay) closeHoy();
+  function setHoyEditMode(on) {
+    hoyEditMode = on;
+    hoyEditBtn.textContent = on ? "✓ Listo" : "✏️ Editar";
+    hoyEditBtn.classList.toggle("is-active", on);
+    hoyEditBtn.setAttribute("aria-pressed", on ? "true" : "false");
+    if (!on) closeHoyDetail();
+    renderHoyView();
+  }
+
+  function openHoyDetail(id) {
+    const item = hoy.find((h) => h.id === id);
+    if (!item) return;
+    hoyDetailId = id;
+    hoyDetailTitle.value = item.text;
+    hoyDetailTemporal.checked = !!item.temporal;
+    hoyDetailCat.value = item.category || "";
+    hoyDetailCatWrap.hidden = !item.temporal;
+    hoyDetailLastDone.checked = !!item.showLastDone;
+    hoyDetailOverlay.hidden = false;
+    document.body.classList.add("no-scroll");
+    // Con el panel ya visible (si no, scrollHeight es 0)
+    autoGrow(hoyDetailTitle);
+  }
+
+  function closeHoyDetail() {
+    if (hoyDetailOverlay.hidden) return;
+    hoyDetailOverlay.hidden = true;
+    hoyDetailId = null;
+    document.body.classList.remove("no-scroll");
+  }
+
+  hoyEditBtn.addEventListener("click", () => setHoyEditMode(!hoyEditMode));
+  hoyDetailClose.addEventListener("click", closeHoyDetail);
+  hoyDetailOverlay.addEventListener("click", (e) => {
+    if (e.target === hoyDetailOverlay) closeHoyDetail();
   });
   document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && !hoyOverlay.hidden) closeHoy();
+    if (e.key === "Escape" && !hoyDetailOverlay.hidden) closeHoyDetail();
   });
+
+  // Texto: mientras se escribe solo memoria + la línea de la lista (repintar
+  // entero perdería el foco); se persiste al salir del campo.
+  hoyDetailTitle.addEventListener("input", () => {
+    autoGrow(hoyDetailTitle);
+    const item = getHoyDetailItem();
+    const v = hoyDetailTitle.value.trim();
+    if (!item || !v) return;
+    item.text = v;
+    const el = hoyViewSectionsEl.querySelector(
+      '.hoy-view-item[data-id="' + item.id + '"] .hoy-view-text'
+    );
+    if (el) el.textContent = v;
+  });
+  hoyDetailTitle.addEventListener("blur", () => {
+    const item = getHoyDetailItem();
+    if (!item) return;
+    const v = hoyDetailTitle.value.trim();
+    if (v) {
+      item.text = v;
+      saveHoy();
+    } else {
+      hoyDetailTitle.value = item.text;
+    }
+  });
+
+  hoyDetailTemporal.addEventListener("change", () => {
+    const item = getHoyDetailItem();
+    if (!item) return;
+    item.temporal = hoyDetailTemporal.checked;
+    hoyDetailCatWrap.hidden = !item.temporal;
+    saveHoy();
+    renderHoyView();
+  });
+
+  hoyDetailCat.addEventListener("change", () => {
+    const item = getHoyDetailItem();
+    if (!item) return;
+    if (hoyDetailCat.value) item.category = hoyDetailCat.value;
+    else delete item.category;
+    saveHoy();
+    renderHoyView();
+  });
+
+  hoyDetailLastDone.addEventListener("change", () => {
+    const item = getHoyDetailItem();
+    if (!item) return;
+    item.showLastDone = hoyDetailLastDone.checked;
+    saveHoy();
+    renderHoyView();
+  });
+
+  hoyDetailDelete.addEventListener("click", () => {
+    const item = getHoyDetailItem();
+    if (!item) return;
+    const id = item.id;
+    closeHoyDetail();
+    deleteHoy(id);
+  });
+
   hoyAddSectionBtn.addEventListener("click", addSection);
 
-  // Reordenar las secciones (solo desde el asa, para no chocar con el arrastre
-  // de las tareas de dentro). El contenedor es estable → se engancha una vez.
+  // Reordenar las secciones desde su asa (solo existe en modo edición). El
+  // contenedor es estable → se engancha una vez.
   enableReorder(
-    hoySectionsEl,
-    "hoy-section",
+    hoyViewSectionsEl,
+    "hoy-view-section",
     () => hoySections,
     saveHoy,
     "hoy-section-handle"
   );
+
+  /* ---------- Agenda (una sección por día de la semana en curso) ---------- */
+  const agendaSectionsEl = document.getElementById("agenda-sections");
+
+  // Lunes de la semana actual: la Agenda siempre muestra la semana en curso.
+  function agendaWeekStart() {
+    const today = todayISO();
+    return addDaysISO(today, -(dowOf(today) - 1));
+  }
+
+  // Tareas de Tareas/Recados con fecha exacta ("En fecha") en ese día
+  function agendaDatedFor(iso) {
+    const out = [];
+    tasks.forEach((t) => {
+      if (!t.sourcePlannedId && t.dateMode === "on" && t.dateStart === iso)
+        out.push({ task: t, origin: "Tareas" });
+    });
+    recados.forEach((t) => {
+      if (t.dateMode === "on" && t.dateStart === iso)
+        out.push({ task: t, origin: "Recados" });
+    });
+    return out;
+  }
+
+  // "4 ago" para la cabecera de cada día
+  function agendaShortDate(iso) {
+    const p = iso.split("-").map(Number);
+    const d = new Date(p[0], p[1] - 1, p[2]);
+    return d.toLocaleDateString("es-ES", { day: "numeric", month: "short" });
+  }
+
+  function addAgenda(day, text) {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    agenda.push({ id: newId(), text: trimmed, day: day, done: false });
+    saveAgenda();
+    renderAgenda();
+  }
+
+  function deleteAgenda(id) {
+    agenda = agenda.filter((a) => a.id !== id);
+    saveAgenda();
+    renderAgenda();
+  }
+
+  function toggleAgenda(id) {
+    const item = agenda.find((a) => a.id === id);
+    if (!item) return;
+    item.done = !item.done;
+    saveAgenda();
+    renderAgenda();
+  }
+
+  // Fila de una tarea: asa + checkbox + texto (abre sus ajustes al tocarlo)
+  function agendaItem(item) {
+    const li = document.createElement("li");
+    li.className = "agenda-item" + (item.done ? " is-done" : "");
+    li.dataset.id = item.id;
+
+    const handle = document.createElement("span");
+    handle.className = "agenda-handle";
+    handle.textContent = "⠿";
+    handle.setAttribute("aria-label", "Reordenar tarea");
+    handle.title = "Arrastra para reordenar";
+
+    const check = document.createElement("input");
+    check.type = "checkbox";
+    check.className = "task-check";
+    check.checked = !!item.done;
+    check.setAttribute("aria-label", "Marcar como completada");
+    check.addEventListener("change", () => toggleAgenda(item.id));
+
+    const text = document.createElement("span");
+    text.className = "agenda-item-text";
+    text.textContent = item.text;
+    text.addEventListener("click", () => openAgendaDetail(item.id));
+
+    const more = document.createElement("span");
+    more.className = "hoy-item-more";
+    more.textContent = "›";
+    more.setAttribute("aria-hidden", "true");
+
+    li.append(handle, check, text, more);
+    return li;
+  }
+
+  function renderAgenda() {
+    if (!agendaSectionsEl) return;
+    // Al repintar (p. ej. tras añadir) se recrea el DOM: hay que devolver el
+    // foco al campo de añadir del día en el que se estaba escribiendo.
+    const active = document.activeElement;
+    const focusDay =
+      active && active.classList.contains("agenda-add-input")
+        ? active.dataset.day
+        : null;
+    const today = dowOf(todayISO());
+    const monday = agendaWeekStart();
+
+    agendaSectionsEl.innerHTML = "";
+    AGENDA_DAYS.forEach((d, i) => {
+      const iso = addDaysISO(monday, i); // fecha real de ese día esta semana
+      const wrap = document.createElement("section");
+      wrap.className = "agenda-section" + (d.day === today ? " is-today" : "");
+
+      const title = document.createElement("h2");
+      title.className = "agenda-title";
+      title.textContent = d.name;
+      const date = document.createElement("span");
+      date.className = "agenda-date";
+      date.textContent = agendaShortDate(iso);
+      title.appendChild(date);
+      if (d.day === today) {
+        const badge = document.createElement("span");
+        badge.className = "agenda-today-badge";
+        badge.textContent = "Hoy";
+        title.appendChild(badge);
+      }
+      wrap.appendChild(title);
+
+      const ul = document.createElement("ul");
+      ul.className = "task-list";
+      const items = agenda.filter((a) => a.day === d.day);
+      items.forEach((item) => ul.appendChild(agendaItem(item)));
+      // Tareas y recados con fecha exacta en ese día de la semana en curso
+      agendaDatedFor(iso).forEach((e) =>
+        ul.appendChild(
+          createTaskItem(e.task, e.origin, { hideDate: true, hideStar: true })
+        )
+      );
+      wrap.appendChild(ul);
+
+      const form = document.createElement("form");
+      form.className = "new-task agenda-add-form";
+      form.autocomplete = "off";
+      const addInput = document.createElement("input");
+      addInput.type = "text";
+      addInput.className = "task-input agenda-add-input";
+      addInput.dataset.day = d.day;
+      addInput.maxLength = 200;
+      addInput.placeholder = "Añadir a " + d.name + "…";
+      addInput.setAttribute("aria-label", "Nueva tarea de " + d.name);
+      const addBtn = document.createElement("button");
+      addBtn.type = "submit";
+      addBtn.className = "add-btn";
+      addBtn.textContent = "+";
+      addBtn.setAttribute("aria-label", "Añadir");
+      form.append(addInput, addBtn);
+      form.addEventListener("submit", (e) => {
+        e.preventDefault();
+        const value = addInput.value;
+        addInput.value = "";
+        addAgenda(d.day, value);
+        const fresh = agendaSectionsEl.querySelector(
+          '.agenda-add-input[data-day="' + d.day + '"]'
+        );
+        if (fresh) fresh.focus();
+      });
+      wrap.appendChild(form);
+
+      agendaSectionsEl.appendChild(wrap);
+
+      // Reordenar dentro del día, solo desde el asa (el texto es editable)
+      enableReorder(ul, "agenda-item", () => agenda, saveAgenda, "agenda-handle");
+    });
+
+    if (focusDay) {
+      const el = agendaSectionsEl.querySelector(
+        '.agenda-add-input[data-day="' + focusDay + '"]'
+      );
+      if (el) el.focus();
+    }
+  }
+
+  /* ---------- Ajustes de una tarea de la Agenda ---------- */
+  const agendaDetailOverlay = document.getElementById("agenda-detail-overlay");
+  const agendaDetailClose = document.getElementById("agenda-detail-close");
+  const agendaDetailTitle = document.getElementById("agenda-detail-title");
+  const agendaDetailDate = document.getElementById("agenda-detail-date");
+  const agendaDetailDelete = document.getElementById("agenda-detail-delete");
+  let agendaDetailId = null;
+
+  function getAgendaDetailItem() {
+    return agendaDetailId ? agenda.find((a) => a.id === agendaDetailId) : null;
+  }
+
+  // Fecha de esta semana que corresponde al día de la tarea
+  function agendaDateOf(item) {
+    const idx = AGENDA_DAYS.findIndex((d) => d.day === item.day);
+    return addDaysISO(agendaWeekStart(), idx === -1 ? 0 : idx);
+  }
+
+  function openAgendaDetail(id) {
+    const item = agenda.find((a) => a.id === id);
+    if (!item) return;
+    agendaDetailId = id;
+    agendaDetailTitle.value = item.text;
+    // Prerellenada con la fecha del día de la semana en curso
+    agendaDetailDate.value = agendaDateOf(item);
+    agendaDetailOverlay.hidden = false;
+    document.body.classList.add("no-scroll");
+    autoGrow(agendaDetailTitle);
+  }
+
+  function closeAgendaDetail() {
+    if (agendaDetailOverlay.hidden) return;
+    agendaDetailOverlay.hidden = true;
+    agendaDetailId = null;
+    document.body.classList.remove("no-scroll");
+  }
+
+  agendaDetailClose.addEventListener("click", closeAgendaDetail);
+  agendaDetailOverlay.addEventListener("click", (e) => {
+    if (e.target === agendaDetailOverlay) closeAgendaDetail();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !agendaDetailOverlay.hidden) closeAgendaDetail();
+  });
+
+  // Texto: en memoria mientras se escribe; se persiste al salir del campo.
+  agendaDetailTitle.addEventListener("input", () => {
+    autoGrow(agendaDetailTitle);
+    const item = getAgendaDetailItem();
+    const v = agendaDetailTitle.value.trim();
+    if (!item || !v) return;
+    item.text = v;
+    const el = agendaSectionsEl.querySelector(
+      '.agenda-item[data-id="' + item.id + '"] .agenda-item-text'
+    );
+    if (el) el.textContent = v;
+  });
+  agendaDetailTitle.addEventListener("blur", () => {
+    const item = getAgendaDetailItem();
+    if (!item) return;
+    const v = agendaDetailTitle.value.trim();
+    if (v) {
+      item.text = v;
+      saveAgenda();
+    } else {
+      agendaDetailTitle.value = item.text;
+    }
+  });
+
+  // Cambiar la fecha mueve la tarea al día de la semana correspondiente
+  agendaDetailDate.addEventListener("change", () => {
+    const item = getAgendaDetailItem();
+    if (!item) return;
+    const v = agendaDetailDate.value;
+    if (!v) {
+      agendaDetailDate.value = agendaDateOf(item);
+      return;
+    }
+    item.day = dowOf(v);
+    saveAgenda();
+    renderAgenda();
+    agendaDetailDate.value = agendaDateOf(item);
+  });
+
+  agendaDetailDelete.addEventListener("click", () => {
+    const item = getAgendaDetailItem();
+    if (!item) return;
+    const id = item.id;
+    closeAgendaDetail();
+    deleteAgenda(id);
+  });
 
   /* ---------- Arranque tras iniciar sesión ---------- */
   function loadLegacy() {
@@ -2716,6 +3247,10 @@
     hoyDay = parsedHoy.day;
     hoySections = parsedHoy.sections;
 
+    let localAgenda = [];
+    if (db) localAgenda = await idbGet(IDB_KEY_AGENDA);
+    agenda = Array.isArray(localAgenda) ? localAgenda : [];
+
     let localPlanned = [];
     if (db) localPlanned = await idbGet(IDB_KEY_PLANNED);
     planned = Array.isArray(localPlanned) ? localPlanned : [];
@@ -2724,6 +3259,7 @@
     renderRecados();
     renderPendientes();
     renderHoy();
+    renderAgenda();
     renderPlanned();
   }
 
@@ -2840,6 +3376,29 @@
         if (db) idbSet(IDB_KEY_PENDIENTES, pendientes).catch(() => {});
         clearError();
         renderPendientes();
+      },
+      (err) =>
+        showError("Al leer la nube: " + (err && err.message ? err.message : err))
+    );
+
+    // Listener: agenda (tareas por día de la semana)
+    let firstAg = true;
+    const refAg = fdb.ref(FB_ROOT + "/" + FB_KEY_AGENDA);
+    refAg.on(
+      "value",
+      (snap) => {
+        const raw = snap.val();
+        const remote = Array.isArray(raw) ? raw : raw ? Object.values(raw) : [];
+        if (firstAg && remote.length === 0 && agenda.length > 0) {
+          firstAg = false;
+          refAg.set(agenda).catch(() => {});
+          return;
+        }
+        firstAg = false;
+        agenda = remote;
+        if (db) idbSet(IDB_KEY_AGENDA, agenda).catch(() => {});
+        clearError();
+        renderAgenda();
       },
       (err) =>
         showError("Al leer la nube: " + (err && err.message ? err.message : err))

@@ -126,14 +126,17 @@
         <header class="app-header">
           <div class="header-top">
             <h1>Hoy</h1>
-            <button type="button" class="settings-btn" id="hoy-settings-btn" aria-label="Planificar el día">⚙️</button>
+            <button type="button" class="hoy-edit-btn" id="hoy-edit-btn" aria-pressed="false">✏️ Editar</button>
           </div>
         </header>
 
         <div id="hoy-view-sections"></div>
+
+        <!-- Solo en modo edición -->
+        <button type="button" class="hoy-add-section" id="hoy-add-section" hidden>＋ Añadir sección</button>
       </section>
 
-      <!-- Vista: Agenda (de momento vacía) -->
+      <!-- Vista: Agenda (una sección por día de la semana) -->
       <section class="view" id="view-agenda" hidden>
         <header class="app-header">
           <div class="header-top">
@@ -141,7 +144,7 @@
           </div>
         </header>
 
-        <p class="empty-state">Todavía no hay nada aquí.</p>
+        <div id="agenda-sections"></div>
       </section>
 
       <!-- Vista: "Cuanto antes" (interna: rutinas). Tareas automáticas:
@@ -154,6 +157,14 @@
           </div>
           <p class="subtitle" id="rutinas-summary">Sin tareas todavía</p>
         </header>
+
+        <!-- Filtro por procedencia: Todo / Rutinas / Tareas / Recados -->
+        <div class="task-tabs" id="rutinas-tabs" role="tablist" aria-label="Filtrar">
+          <button type="button" class="task-tab is-active" data-tab="all" data-label="Todo" role="tab" aria-selected="true">Todo</button>
+          <button type="button" class="task-tab" data-tab="rutinas" data-label="Rutinas" role="tab" aria-selected="false">Rutinas</button>
+          <button type="button" class="task-tab" data-tab="tareas" data-label="Tareas" role="tab" aria-selected="false">Tareas</button>
+          <button type="button" class="task-tab" data-tab="recados" data-label="Recados" role="tab" aria-selected="false">Recados</button>
+        </div>
 
         <ul class="task-list" id="rutinas-list"></ul>
 
@@ -193,9 +204,9 @@
 
         <!-- Filtro por destacadas: Todo / Cuanto antes / Cuando se pueda -->
         <div class="task-tabs" id="tareas-tabs" role="tablist" aria-label="Filtrar tareas">
-          <button type="button" class="task-tab is-active" data-star="all" data-label="Todo" role="tab" aria-selected="true">Todo</button>
-          <button type="button" class="task-tab" data-star="starred" data-label="Cuanto antes" role="tab" aria-selected="false">Cuanto antes</button>
-          <button type="button" class="task-tab" data-star="unstarred" data-label="Cuando se pueda" role="tab" aria-selected="false">Cuando se pueda</button>
+          <button type="button" class="task-tab is-active" data-tab="all" data-label="Todo" role="tab" aria-selected="true">Todo</button>
+          <button type="button" class="task-tab" data-tab="starred" data-label="Cuanto antes" role="tab" aria-selected="false">Cuanto antes</button>
+          <button type="button" class="task-tab" data-tab="unstarred" data-label="Cuando se pueda" role="tab" aria-selected="false">Cuando se pueda</button>
         </div>
 
         <ul class="task-list" id="task-list"></ul>
@@ -236,9 +247,9 @@
 
         <!-- Filtro por destacados: Todo / Cuanto antes / Cuando se pueda -->
         <div class="task-tabs" id="recados-tabs" role="tablist" aria-label="Filtrar recados">
-          <button type="button" class="task-tab is-active" data-star="all" data-label="Todo" role="tab" aria-selected="true">Todo</button>
-          <button type="button" class="task-tab" data-star="starred" data-label="Cuanto antes" role="tab" aria-selected="false">Cuanto antes</button>
-          <button type="button" class="task-tab" data-star="unstarred" data-label="Cuando se pueda" role="tab" aria-selected="false">Cuando se pueda</button>
+          <button type="button" class="task-tab is-active" data-tab="all" data-label="Todo" role="tab" aria-selected="true">Todo</button>
+          <button type="button" class="task-tab" data-tab="starred" data-label="Cuanto antes" role="tab" aria-selected="false">Cuanto antes</button>
+          <button type="button" class="task-tab" data-tab="unstarred" data-label="Cuando se pueda" role="tab" aria-selected="false">Cuando se pueda</button>
         </div>
 
         <ul class="task-list" id="recados-list"></ul>
@@ -342,6 +353,17 @@
           ></textarea>
         </div>
 
+        <!-- Lista a la que pertenece: cambiarla mueve la tarea -->
+        <div id="detail-type-wrap" hidden>
+          <h3 class="detail-section-label">Tipo</h3>
+          <select id="detail-type" class="date-mode" aria-label="Tipo">
+            <option value="tareas">Tareas</option>
+            <option value="recados">Recados</option>
+            <option value="rutinas">Rutinas</option>
+            <option value="pendientes">Pendientes</option>
+          </select>
+        </div>
+
         <div id="detail-task-fields">
         <h3 class="detail-section-label">Fecha</h3>
         <div class="detail-date">
@@ -436,6 +458,32 @@
     </div>
   </div>
 
+  <!-- Ajustes de una tarea de la Agenda -->
+  <div class="detail-overlay" id="agenda-detail-overlay" hidden>
+    <div class="detail-panel" role="dialog" aria-modal="true" aria-label="Ajustes de la tarea">
+      <header class="detail-header">
+        <button class="detail-close" id="agenda-detail-close" type="button" aria-label="Cerrar">‹ Volver</button>
+      </header>
+
+      <div class="detail-body">
+        <textarea
+          class="detail-title"
+          id="agenda-detail-title"
+          rows="1"
+          maxlength="200"
+          aria-label="Editar tarea"
+        ></textarea>
+
+        <h3 class="detail-section-label">Fecha</h3>
+        <input type="date" id="agenda-detail-date" class="date-input" aria-label="Fecha" />
+
+        <button class="detail-delete" id="agenda-detail-delete" type="button">
+          🗑 Eliminar tarea
+        </button>
+      </div>
+    </div>
+  </div>
+
   <!-- Ajustes -->
   <div class="settings-overlay" id="settings-overlay" hidden>
     <div class="settings-panel" role="dialog" aria-modal="true" aria-label="Ajustes">
@@ -469,17 +517,42 @@
     </div>
   </div>
 
-  <!-- Modal de "Hoy": crear tareas en secciones Mañana / Tarde -->
-  <div class="hoymodal-overlay" id="hoy-overlay" hidden>
-    <div class="hoymodal-panel" role="dialog" aria-modal="true" aria-label="Planificar el día">
-      <header class="hoymodal-head">
-        <h2 class="hoymodal-title">Hoy</h2>
-        <button class="settings-close" id="hoy-close" type="button" aria-label="Cerrar">✕</button>
+  <!-- Ajustes de una tarea de "Hoy" (modo edición) -->
+  <div class="detail-overlay" id="hoy-detail-overlay" hidden>
+    <div class="detail-panel" role="dialog" aria-modal="true" aria-label="Ajustes de la tarea">
+      <header class="detail-header">
+        <button class="detail-close" id="hoy-detail-close" type="button" aria-label="Cerrar">‹ Volver</button>
       </header>
 
-      <div class="hoymodal-body">
-        <div id="hoy-sections"></div>
-        <button type="button" class="hoy-add-section" id="hoy-add-section">＋ Añadir sección</button>
+      <div class="detail-body">
+        <textarea
+          class="detail-title"
+          id="hoy-detail-title"
+          rows="1"
+          maxlength="200"
+          aria-label="Editar tarea"
+        ></textarea>
+
+        <label class="hoy-switch hoy-switch-wide">
+          <span class="hoy-switch-text">Temporal</span>
+          <input type="checkbox" id="hoy-detail-temporal" aria-label="Temporal" />
+          <span class="hoy-switch-slider"></span>
+        </label>
+
+        <div id="hoy-detail-cat-wrap" hidden>
+          <h3 class="detail-section-label">Categoría</h3>
+          <select id="hoy-detail-cat" class="hoy-cat-select" aria-label="Categoría"></select>
+        </div>
+
+        <label class="hoy-switch hoy-switch-wide">
+          <span class="hoy-switch-text">Mostrar última fecha de completado</span>
+          <input type="checkbox" id="hoy-detail-lastdone" aria-label="Mostrar última fecha de completado" />
+          <span class="hoy-switch-slider"></span>
+        </label>
+
+        <button class="detail-delete" id="hoy-detail-delete" type="button">
+          🗑 Eliminar tarea
+        </button>
       </div>
     </div>
   </div>
