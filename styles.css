@@ -266,7 +266,9 @@ body {
 
 .fab-box {
   width: 100%;
-  max-width: 380px;
+  max-width: 420px;
+  max-height: 85vh;
+  overflow-y: auto;
   padding: 20px;
   background: var(--card);
   border-radius: 18px;
@@ -274,15 +276,19 @@ body {
 }
 
 .fab-title {
-  font-size: 1.05rem;
-  margin-bottom: 14px;
+  font-size: 1.15rem;
+  margin-bottom: 16px;
+}
+
+/* Paso 1: qué crear */
+.fab-choices[hidden] {
+  display: none;
 }
 
 .fab-choices {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 10px;
-  margin-bottom: 14px;
 }
 
 .fab-choice {
@@ -299,8 +305,10 @@ body {
   border: 1px solid var(--border);
   border-radius: 14px;
   cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
 }
 
+.fab-choice:hover,
 .fab-choice:active {
   border-color: var(--primary);
   background: var(--star-bg);
@@ -311,17 +319,82 @@ body {
   line-height: 1;
 }
 
-.fab-cancel {
+/* Paso 2: datos */
+#fab-form[hidden] {
+  display: none;
+}
+
+.fab-label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-soft);
+}
+
+/* Separación entre campos del formulario de creación */
+#fab-form .date-mode,
+#fab-form .task-input {
+  margin-bottom: 16px;
+}
+
+#fab-form .date-fields {
+  margin-bottom: 16px;
+}
+
+#fab-form .task-input {
   width: 100%;
+}
+
+.fab-star {
+  width: 100%;
+  padding: 2px 0 16px;
+}
+
+.fab-star .hoy-switch-text {
+  font-size: 0.95rem;
+  color: var(--text);
+}
+
+.fab-hint {
+  font-size: 0.85rem;
+  color: var(--text-soft);
+  margin-bottom: 8px;
+}
+
+.fab-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.fab-cancel,
+.fab-submit {
+  flex: 1;
   padding: 12px;
   font-family: inherit;
   font-size: 0.95rem;
   font-weight: 600;
+  border-radius: 12px;
+  cursor: pointer;
+}
+
+.fab-cancel {
   color: var(--text-soft);
   background: transparent;
   border: 1px solid var(--border);
-  border-radius: 12px;
-  cursor: pointer;
+}
+
+.fab-submit {
+  color: #fff;
+  background: var(--primary);
+  border: none;
+}
+
+.fab-submit:hover {
+  background: var(--primary-dark);
 }
 
 /* Desktop: la navegación es una barra lateral fija a la izquierda */
@@ -349,11 +422,19 @@ body {
     display: inline;
   }
 
-  /* La navegación móvil (barra inferior, botón + y menú "Más") no se usa */
+  /* La navegación móvil (barra inferior y menú "Más") no se usa */
   .mobile-tabbar,
-  .fab,
   .more-menu {
     display: none !important;
+  }
+
+  /* El botón + sí: flotando en la esquina, sin barra a la que alinearse */
+  .fab {
+    right: 24px;
+    bottom: 24px;
+    width: 60px;
+    height: 60px;
+    font-size: 2rem;
   }
 
   .app-main {

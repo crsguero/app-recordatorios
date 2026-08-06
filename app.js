@@ -2190,8 +2190,7 @@
   /* ---------- Navegación móvil: barra inferior + menú "Más" + botón ＋ ----------
      La barra tiene Hoy / Tareas / Agenda y un "Más" con el resto de vistas
      (Ajustes incluido). El botón "Tareas" abre la vista Cuanto antes; la lista
-     completa de Mis tareas queda en "Más". El botón ＋ pregunta qué crear y lleva a esa lista con
-     el campo de añadir enfocado. */
+     completa de Mis tareas queda en "Más". */
   const mobileTabbar = document.getElementById("mobile-tabbar");
   const moreMenu = document.getElementById("more-menu");
   const moreClose = document.getElementById("more-close");
@@ -2250,19 +2249,66 @@
     });
   }
 
-  /* ---------- Botón ＋ (crear) ---------- */
+  /* ---------- Botón ＋: creación en dos pasos ----------
+     Paso 1: qué crear. Paso 2: sus datos (nombre, destacada, fecha, según el
+     tipo). Crea en el sitio, sin salir de la vista actual. Las rutinas no
+     tienen fecha ni destacado: su repetición se configura al abrirlas. */
   const fabBtn = document.getElementById("fab-btn");
   const fabOverlay = document.getElementById("fab-overlay");
-  const fabCancel = document.getElementById("fab-cancel");
-  // Qué vista y qué campo de texto corresponde a cada opción
-  const CREATE_INPUTS = {
-    tareas: "task-input",
-    recados: "recados-input",
-    planificadas: "planned-input",
-    pendientes: "pendientes-input",
+  const fabTitle = document.getElementById("fab-title");
+  const fabStepType = document.getElementById("fab-step-type");
+  const fabBack = document.getElementById("fab-back");
+  const fabForm = document.getElementById("fab-form");
+  const fabText = document.getElementById("fab-text");
+  const fabTaskFields = document.getElementById("fab-task-fields");
+  const fabDateMode = document.getElementById("fab-date-mode");
+  const fabDateFields = document.getElementById("fab-date-fields");
+  const fabDateStart = document.getElementById("fab-date-start");
+  const fabDateEnd = document.getElementById("fab-date-end");
+  const fabDateSep = document.getElementById("fab-date-sep");
+  const fabStar = document.getElementById("fab-star");
+  const fabHint = document.getElementById("fab-hint");
+
+  const FAB_TITLES = {
+    tareas: "Nueva tarea",
+    recados: "Nuevo recado",
+    rutinas: "Nueva rutina",
+    pendientes: "Nuevo pendiente",
   };
+  let fabTypeValue = "tareas"; // elegido en el paso 1
+
+  // Campos visibles según el tipo y el modo de fecha elegidos
+  function renderFabFields() {
+    const esRutina = fabTypeValue === "rutinas";
+    fabTaskFields.hidden = esRutina;
+    fabHint.hidden = !esRutina;
+    const mode = fabDateMode.value;
+    fabDateFields.hidden = mode === "none";
+    fabDateEnd.hidden = mode !== "between";
+    fabDateSep.hidden = mode !== "between";
+  }
+
+  // Paso 1: elegir tipo
+  function fabShowTypeStep() {
+    fabTitle.textContent = "¿Qué quieres crear?";
+    fabStepType.hidden = false;
+    fabForm.hidden = true;
+  }
+
+  // Paso 2: datos del tipo elegido
+  function fabShowFormStep(type) {
+    fabTypeValue = type;
+    fabTitle.textContent = FAB_TITLES[type] || "Crear";
+    fabForm.reset();
+    fabDateMode.value = "none";
+    renderFabFields();
+    fabStepType.hidden = true;
+    fabForm.hidden = false;
+    fabText.focus();
+  }
 
   function openFab() {
+    fabShowTypeStep();
     fabOverlay.hidden = false;
   }
   function closeFab() {
@@ -2271,22 +2317,48 @@
 
   if (fabBtn) {
     fabBtn.addEventListener("click", openFab);
-    fabCancel.addEventListener("click", closeFab);
+    fabBack.addEventListener("click", fabShowTypeStep);
+    fabDateMode.addEventListener("change", renderFabFields);
+    fabStepType.addEventListener("click", (e) => {
+      const choice = e.target.closest(".fab-choice");
+      if (choice) fabShowFormStep(choice.dataset.create);
+    });
     fabOverlay.addEventListener("click", (e) => {
-      if (e.target === fabOverlay) {
-        closeFab();
+      if (e.target === fabOverlay) closeFab();
+    });
+
+    fabForm.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const text = fabText.value.trim();
+      if (!text) {
+        fabText.focus();
         return;
       }
-      const choice = e.target.closest(".fab-choice");
-      if (!choice) return;
-      const view = choice.dataset.create;
+      if (fabTypeValue === "rutinas") {
+        planned.unshift({ id: newId(), text: text, createdAt: todayISO() });
+        savePlanned();
+        renderPlanned();
+      } else {
+        const task = {
+          id: newId(),
+          text: text,
+          done: false,
+          starred: fabStar.checked,
+        };
+        const mode = fabDateMode.value;
+        if (mode !== "none" && fabDateStart.value) {
+          task.dateMode = mode;
+          task.dateStart = fabDateStart.value;
+          if (mode === "between" && fabDateEnd.value)
+            task.dateEnd = fabDateEnd.value;
+        }
+        const ctx = CTX_BY_TYPE[fabTypeValue]();
+        ctx.items().unshift(task);
+        ctx.save();
+        renderAllLists();
+      }
       closeFab();
       closeMoreMenu();
-      goToView(view);
-      // El campo ya es visible (activateView es síncrona): enfocarlo abre el
-      // teclado, al venir de un toque del usuario.
-      const el = document.getElementById(CREATE_INPUTS[view]);
-      if (el) el.focus();
     });
   }
 

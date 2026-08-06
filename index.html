@@ -98,25 +98,69 @@
       </div>
     </div>
 
-    <!-- Qué crear (botón +) -->
+    <!-- Crear (botón +): tipo, nombre, destacada y fecha -->
     <div class="fab-overlay" id="fab-overlay" hidden>
-      <div class="fab-box" role="dialog" aria-modal="true" aria-label="Crear">
-        <h2 class="fab-title">¿Qué quieres crear?</h2>
-        <div class="fab-choices">
+      <div class="fab-box" role="dialog" aria-modal="true" aria-labelledby="fab-title">
+        <h2 class="fab-title" id="fab-title">¿Qué quieres crear?</h2>
+
+        <!-- Paso 1: tipo -->
+        <div class="fab-choices" id="fab-step-type">
           <button type="button" class="fab-choice" data-create="tareas">
             <span class="fab-choice-ico">✅</span><span>Tarea</span>
           </button>
           <button type="button" class="fab-choice" data-create="recados">
             <span class="fab-choice-ico">🛒</span><span>Recado</span>
           </button>
-          <button type="button" class="fab-choice" data-create="planificadas">
+          <button type="button" class="fab-choice" data-create="rutinas">
             <span class="fab-choice-ico">🔁</span><span>Rutina</span>
           </button>
           <button type="button" class="fab-choice" data-create="pendientes">
             <span class="fab-choice-ico">⏳</span><span>Pendiente</span>
           </button>
         </div>
-        <button type="button" class="fab-cancel" id="fab-cancel">Cancelar</button>
+
+        <!-- Paso 2: datos -->
+        <form id="fab-form" autocomplete="off" hidden>
+          <label class="fab-label" for="fab-text">Nombre</label>
+          <input
+            type="text"
+            id="fab-text"
+            class="task-input"
+            maxlength="200"
+            placeholder="¿Qué hay que hacer?"
+          />
+
+          <div id="fab-task-fields">
+            <label class="hoy-switch hoy-switch-wide fab-star">
+              <span class="hoy-switch-text">Destacada (cuanto antes)</span>
+              <input type="checkbox" id="fab-star" />
+              <span class="hoy-switch-slider"></span>
+            </label>
+
+            <label class="fab-label" for="fab-date-mode">Fecha</label>
+            <select id="fab-date-mode" class="date-mode">
+              <option value="none">Sin fecha</option>
+              <option value="on">En fecha</option>
+              <option value="before">Antes de</option>
+              <option value="from">A partir de</option>
+              <option value="between">Entre</option>
+            </select>
+            <div class="date-fields" id="fab-date-fields" hidden>
+              <input type="date" id="fab-date-start" class="date-input" aria-label="Fecha" />
+              <span class="date-sep" id="fab-date-sep" hidden>y</span>
+              <input type="date" id="fab-date-end" class="date-input" aria-label="Fecha fin" hidden />
+            </div>
+          </div>
+
+          <p class="fab-hint" id="fab-hint" hidden>
+            La repetición se configura al abrir la rutina.
+          </p>
+
+          <div class="fab-actions">
+            <button type="button" class="fab-cancel" id="fab-back">‹ Atrás</button>
+            <button type="submit" class="fab-submit">Crear</button>
+          </div>
+        </form>
       </div>
     </div>
 
