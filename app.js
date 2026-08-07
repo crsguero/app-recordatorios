@@ -1787,6 +1787,7 @@
       container.appendChild(li);
     });
     if (empty) empty.hidden = planned.length !== 0;
+    updateNavCounts();
   }
 
   function renderList(ctx) {
@@ -1884,6 +1885,39 @@
         (remaining === 1 ? ctx.noun : plural) +
         (remaining === 1 ? " pendiente" : " pendientes");
     }
+
+    updateNavCounts();
+  }
+
+  /* ---------- Contadores de la navegación ----------
+     Número de pendientes de cada lista, junto a su entrada del menú (barra
+     lateral en escritorio y menú "Más" en móvil). */
+  function navCounts() {
+    const pend = (arr) => arr.filter((t) => !t.done).length;
+    return {
+      tareas: tasks.filter((t) => !t.sourcePlannedId && !t.done).length,
+      recados: pend(recados),
+      pendientes: pend(pendientes),
+      planificadas: planned.length, // las rutinas no se completan
+    };
+  }
+
+  function updateNavCounts() {
+    const counts = navCounts();
+    document
+      .querySelectorAll(".app-nav-item[data-view], .menu-item[data-view]")
+      .forEach((el) => {
+        const n = counts[el.dataset.view];
+        if (n === undefined) return;
+        let badge = el.querySelector(".nav-count");
+        if (!badge) {
+          badge = document.createElement("span");
+          badge.className = "nav-count";
+          el.appendChild(badge);
+        }
+        badge.textContent = n ? String(n) : "";
+        badge.hidden = !n;
+      });
   }
 
   function render() {
@@ -2741,71 +2775,115 @@
         const dated = agendaDatedFor(todayISO());
         if (!hoyEditMode && dated.length === 0) return; // vacía: no se muestra
 
-        wrap.appendChild(hoyAutoHead(sec));
-
         if (hoyEditMode) {
+          wrap.appendChild(hoyAutoHead(sec));
           const hint = document.createElement("p");
           hint.className = "hoy-view-empty";
           hint.textContent =
             "Automática: las tareas y recados con fecha de hoy.";
           wrap.appendChild(hint);
         } else {
-          const ul = document.createElement("ul");
-          ul.className = "task-list";
-          dated.forEach((e) =>
-            ul.appendChild(
-              createTaskItem(e.task, e.origin, {
-                hideDate: true,
-                hideStar: true,
-              })
-            )
-          );
-          wrap.appendChild(ul);
+          // Cabecera con progreso y colapsable (igual que las manuales)
+          const doneCount = dated.filter((e) => e.task && e.task.done).length;
+          const head = document.createElement("div");
+          head.className =
+            "hoy-view-head" + (sec.collapsed ? " is-collapsed" : "");
+          const title = document.createElement("h2");
+          title.className = "hoy-view-title";
+          title.textContent = sec.name;
+          const count = document.createElement("span");
+          count.className = "hoy-view-count";
+          count.textContent = doneCount + "/" + dated.length;
+          const chevron = document.createElement("span");
+          chevron.className = "hoy-view-chevron";
+          chevron.textContent = sec.collapsed ? "▸" : "▾";
+          head.append(title, count, chevron);
+          head.addEventListener("click", () => toggleSectionCollapse(sec.id));
+          wrap.appendChild(head);
+
+          if (!sec.collapsed) {
+            const ul = document.createElement("ul");
+            ul.className = "task-list";
+            dated.forEach((e) =>
+              ul.appendChild(
+                createTaskItem(e.task, e.origin, {
+                  hideDate: true,
+                  hideStar: true,
+                })
+              )
+            );
+            wrap.appendChild(ul);
+          }
         }
         hoyViewSectionsEl.appendChild(wrap);
         return;
       }
+
+      const secItems = hoy.filter((it) => it.section === sec.id);
+      const doneCount = secItems.filter((it) => it.done).length;
+
+      // En visualización, la sección puede estar colapsada (estado persistente)
+      const showBody = hoyEditMode || !sec.collapsed;
 
       if (hoyEditMode) {
         const form = hoyAddForm(sec);
         wrap.appendChild(hoySectionHead(sec, form.querySelector("input")));
         wrap.appendChild(form);
       } else {
+        const head = document.createElement("div");
+        head.className = "hoy-view-head" + (sec.collapsed ? " is-collapsed" : "");
+        const chevron = document.createElement("span");
+        chevron.className = "hoy-view-chevron";
+        chevron.textContent = sec.collapsed ? "▸" : "▾";
         const title = document.createElement("h2");
         title.className = "hoy-view-title";
         title.textContent = sec.name;
-        wrap.appendChild(title);
+        const count = document.createElement("span");
+        count.className = "hoy-view-count";
+        count.textContent = doneCount + "/" + secItems.length;
+        head.append(title, count, chevron);
+        head.addEventListener("click", () => toggleSectionCollapse(sec.id));
+        wrap.appendChild(head);
       }
 
-      const ul = document.createElement("ul");
-      ul.className = "task-list";
-      const secItems = hoy.filter((it) => it.section === sec.id);
-      secItems.forEach((item) => ul.appendChild(hoyViewItem(item)));
-      wrap.appendChild(ul);
+      if (showBody) {
+        const ul = document.createElement("ul");
+        ul.className = "task-list";
+        secItems.forEach((item) => ul.appendChild(hoyViewItem(item)));
+        wrap.appendChild(ul);
 
-      if (secItems.length === 0) {
-        const empty = document.createElement("p");
-        empty.className = "hoy-view-empty";
-        empty.textContent = "Nada por ahora.";
-        wrap.appendChild(empty);
+        if (secItems.length === 0) {
+          const empty = document.createElement("p");
+          empty.className = "hoy-view-empty";
+          empty.textContent = "Nada por ahora.";
+          wrap.appendChild(empty);
+        }
+
+        // Reordenar las tareas de la sección desde su asa (solo sus ítems)
+        if (hoyEditMode)
+          enableReorder(
+            ul,
+            "hoy-view-item",
+            () => hoy,
+            saveHoy,
+            "hoy-item-handle"
+          );
       }
       hoyViewSectionsEl.appendChild(wrap);
-
-      // Reordenar las tareas de la sección desde su asa (solo sus ítems)
-      if (hoyEditMode)
-        enableReorder(
-          ul,
-          "hoy-view-item",
-          () => hoy,
-          saveHoy,
-          "hoy-item-handle"
-        );
     });
     if (hoyAddSectionBtn) hoyAddSectionBtn.hidden = !hoyEditMode;
     hoyRestoreFocus(focusKey);
   }
 
   function renderHoy() {
+    renderHoyView();
+  }
+
+  function toggleSectionCollapse(id) {
+    const sec = hoySections.find((s) => s.id === id);
+    if (!sec) return;
+    sec.collapsed = !sec.collapsed;
+    saveHoy(); // el estado colapsado persiste (y se sincroniza)
     renderHoyView();
   }
 
