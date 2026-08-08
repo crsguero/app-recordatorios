@@ -1101,8 +1101,12 @@ body {
   box-shadow: var(--shadow);
 }
 
-.agenda-handle {
+/* Asa de arrastre de las listas por día (Agenda y "Durante el día") */
+.day-handle {
   flex: 0 0 auto;
+  /* Área táctil más amplia sin mover el resto de la fila */
+  padding: 8px 6px;
+  margin: -8px -6px;
   color: var(--text-soft);
   font-size: 1rem;
   line-height: 1;
@@ -1118,13 +1122,20 @@ body {
   box-shadow: 0 8px 20px rgba(0, 0, 0, 0.18);
 }
 
-.agenda-item-text {
+/* Texto + 2ª línea de procedencia (como .task-main) */
+.agenda-item-main {
   flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  cursor: pointer;
+}
+
+.agenda-item-text {
   min-width: 0;
   font-size: 1rem;
   color: var(--text);
   word-break: break-word;
-  cursor: pointer;
 }
 
 .agenda-item.is-done .agenda-item-text {

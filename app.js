@@ -192,6 +192,9 @@
   const FB_KEY_PENDIENTES = "pendientes"; // recordatorios/pendientes = tercera lista
   const FB_KEY_HOY = "hoy"; // recordatorios/hoy = tareas del día (mañana/tarde)
   const FB_KEY_AGENDA = "agenda"; // recordatorios/agenda = tareas por día de la semana
+  // recordatorios/dayOrder = orden manual de cada día de la semana (1-7),
+  // común a la sección "Durante el día" de Hoy y a la pestaña Agenda.
+  const FB_KEY_DAY_ORDER = "dayOrder";
 
   /* ---------- Integración con App lactancia (misma base de datos) ----------
      Mostramos en la lista "Tareas" las tareas de App lactancia (Mamá › Tareas),
@@ -226,6 +229,7 @@
   const IDB_KEY_PENDIENTES = "pendientes";
   const IDB_KEY_HOY = "hoy";
   const IDB_KEY_AGENDA = "agenda";
+  const IDB_KEY_DAY_ORDER = "dayOrder";
   let db = null;
   let fbReady = false; // true cuando Firebase está autenticado y escuchando
   let appStarted = false; // evita arrancar la app dos veces
@@ -235,6 +239,11 @@
   let pendientes = []; // tercera lista (igual que recados)
   // Agenda: tareas fijas por día de la semana {id, text, day: 1-7, done}
   let agenda = [];
+  // Orden manual de cada día: { "1": [id, id, …], … 1=Lunes … 7=Domingo }.
+  // Mezcla ids de Agenda y de tareas/recados con fecha exacta, de modo que la
+  // sección "Durante el día" (Hoy) y el día correspondiente de Agenda comparten
+  // el mismo orden. Los ids que no estén aquí van al final (orden por defecto).
+  let dayOrder = {};
   const AGENDA_DAYS = [
     { day: 1, name: "Lunes" },
     { day: 2, name: "Martes" },
@@ -263,12 +272,14 @@
   // Las configuraciones guardadas antes no la tienen: se añade al final.
   function withAutoSection(secs) {
     if (secs.some((s) => s.id === HOY_AUTO_ID)) {
-      // Normaliza nombre/marca por si vino de una versión anterior
-      return secs.map((s) =>
-        s.id === HOY_AUTO_ID
-          ? { id: HOY_AUTO_ID, name: HOY_AUTO_NAME, auto: true }
-          : s
-      );
+      // Normaliza nombre/marca por si vino de una versión anterior, pero
+      // conservando lo que sí es del usuario (si está colapsada).
+      return secs.map((s) => {
+        if (s.id !== HOY_AUTO_ID) return s;
+        const auto = { id: HOY_AUTO_ID, name: HOY_AUTO_NAME, auto: true };
+        if (s.collapsed) auto.collapsed = true;
+        return auto;
+      });
     }
     return secs.concat([{ id: HOY_AUTO_ID, name: HOY_AUTO_NAME, auto: true }]);
   }
@@ -380,6 +391,37 @@
     }
   }
 
+  function saveDayOrder() {
+    const payload = Object.keys(dayOrder).length ? dayOrder : null;
+    if (db) idbSet(IDB_KEY_DAY_ORDER, payload).catch(() => {});
+    if (fbReady) {
+      fdb
+        .ref(FB_ROOT + "/" + FB_KEY_DAY_ORDER)
+        .set(payload)
+        .catch((e) =>
+          showError("Al sincronizar: " + (e && e.message ? e.message : e))
+        );
+    }
+  }
+
+  // Normaliza el nodo de orden: Firebase puede devolver los arrays como objetos
+  // (y el propio nodo como array, porque las claves son 1-7).
+  function parseDayOrder(raw) {
+    const out = {};
+    if (!raw || typeof raw !== "object") return out;
+    Object.keys(raw).forEach((k) => {
+      const v = raw[k];
+      const arr = Array.isArray(v)
+        ? v
+        : v && typeof v === "object"
+        ? Object.values(v)
+        : [];
+      const ids = arr.filter((id) => typeof id === "string" && id);
+      if (ids.length) out[String(k)] = ids;
+    });
+    return out;
+  }
+
   // ¿Hoy está "vacío"? (sin tareas y con las secciones por defecto). Sirve para
   // no persistir un objeto vacío y para el "first upload".
   function hoyIsEmpty() {
@@ -388,7 +430,8 @@
     return hoySections.every(
       (s, i) =>
         s.id === HOY_DEFAULT_SECTIONS[i].id &&
-        s.name === HOY_DEFAULT_SECTIONS[i].name
+        s.name === HOY_DEFAULT_SECTIONS[i].name &&
+        !s.collapsed // colapsar una sección ya es un ajuste que hay que guardar
     );
   }
 
@@ -1570,11 +1613,23 @@
     return today.getTime() >= d.getTime();
   }
 
+  // Asa de arrastre de las listas por día (Agenda y "Durante el día"): la
+  // comparten las tareas de Agenda y las de Tareas/Recados con fecha.
+  function dayHandleEl() {
+    const handle = document.createElement("span");
+    handle.className = "day-handle";
+    handle.textContent = "⠿";
+    handle.setAttribute("aria-label", "Reordenar tarea");
+    handle.title = "Arrastra para reordenar";
+    return handle;
+  }
+
   // Construye el <li> de una tarea (se usa en la lista de pendientes y en la
   // de completadas). `origin` (opcional): etiqueta de procedencia, p. ej.
   // "Tareas" o "Recados", para las destacadas que se agrupan en Cuanto antes.
-  // `opts` (opcional): { hideDate, hideStar } — en la Agenda la fecha y el
-  // destacado sobran, porque la tarea ya está colocada en su día.
+  // `opts` (opcional): { hideDate, hideStar, dragHandle } — en la Agenda la
+  // fecha y el destacado sobran, porque la tarea ya está colocada en su día, y
+  // `dragHandle` añade el asa para reordenarla dentro del día.
   function createTaskItem(task, origin, opts) {
     const o = opts || {};
     const li = document.createElement("li");
@@ -1721,6 +1776,8 @@
       trailing.addEventListener("click", () => toggleStar(task.id));
     }
 
+    // En las listas por día se arrastra desde el asa (como las de Agenda)
+    if (o.dragHandle) li.appendChild(dayHandleEl());
     li.append(control, main);
     if (trailing) li.appendChild(trailing);
     return li;
@@ -2016,10 +2073,21 @@
   //  getItems  → devuelve el array real a reordenar
   //  saveFn    → persiste tras reordenar
   // handleClass (opcional): si se pasa, el arrastre solo empieza desde ese "asa".
-  function enableReorder(container, itemClass, getItems, saveFn, handleClass) {
+  // onCommit (opcional): recibe los ids en el orden del DOM y se encarga de
+  // persistir. Para listas mixtas, que no salen de un único array (getItems y
+  // saveFn se ignoran en ese caso).
+  function enableReorder(
+    container,
+    itemClass,
+    getItems,
+    saveFn,
+    handleClass,
+    onCommit
+  ) {
     let pressTimer = null;
     let dragEl = null;
     let dragging = false;
+    let moved = false; // el arrastre ha cambiado el orden (si no, no se guarda)
     let startX = 0;
     let startY = 0;
 
@@ -2046,6 +2114,7 @@
     function startDrag(pointerId) {
       if (!dragEl) return;
       dragging = true;
+      moved = false;
       reorderDragging = true;
       dragEl.classList.add("dragging");
       try {
@@ -2056,14 +2125,19 @@
     }
 
     function commitOrder() {
+      const allIds = [...container.querySelectorAll("." + itemClass)].map(
+        (li) => li.dataset.id
+      );
+      if (onCommit) {
+        onCommit(allIds);
+        return;
+      }
       // Reordena el array real según el orden del DOM (solo elementos visibles),
       // dejando en su sitio los que no estén en el DOM (por filtro).
       const items = getItems();
       const byId = {};
       items.forEach((t) => (byId[t.id] = t));
-      const domIds = [...container.querySelectorAll("." + itemClass)]
-        .map((li) => li.dataset.id)
-        .filter((id) => byId[id]); // ignora tareas externas (no están en el array real)
+      const domIds = allIds.filter((id) => byId[id]); // ignora tareas externas (no están en el array real)
       const domSet = new Set(domIds);
       const slots = [];
       items.forEach((t, i) => {
@@ -2086,7 +2160,7 @@
         dragging = false;
         reorderDragging = false;
         if (dragEl) dragEl.classList.remove("dragging");
-        commitOrder();
+        if (moved) commitOrder(); // un toque en el asa no reescribe nada
         // Anula el "click" que el navegador dispara tras soltar (abriría el
         // detalle). Se auto-elimina al primer click o tras un breve margen.
         container.addEventListener("click", consumeClick, {
@@ -2116,7 +2190,15 @@
       startX = e.clientX;
       startY = e.clientY;
       cancelPress();
-      pressTimer = setTimeout(() => startDrag(e.pointerId), LONG_PRESS_MS);
+      if (handleClass) {
+        // Desde un asa el arrastre empieza al momento: el asa ya distingue el
+        // gesto del scroll o del toque en la tarea. Esperar al long-press lo
+        // cancelaba, porque al agarrar el asa ya se mueve el dedo.
+        e.preventDefault();
+        startDrag(e.pointerId);
+      } else {
+        pressTimer = setTimeout(() => startDrag(e.pointerId), LONG_PRESS_MS);
+      }
     });
 
     container.addEventListener("pointermove", (e) => {
@@ -2134,9 +2216,13 @@
       e.preventDefault();
       const after = getDragAfterElement(e.clientY);
       if (after == null) {
-        container.appendChild(dragEl);
-      } else if (after !== dragEl) {
+        if (container.lastElementChild !== dragEl) {
+          container.appendChild(dragEl);
+          moved = true;
+        }
+      } else if (after !== dragEl && dragEl.nextElementSibling !== after) {
         container.insertBefore(dragEl, after);
+        moved = true;
       }
     });
 
@@ -2772,19 +2858,23 @@
       // Sección automática: se rellena sola con las tareas/recados de hoy. No
       // se edita, pero sí se puede colocar donde se quiera.
       if (sec.auto) {
-        const dated = agendaDatedFor(todayISO());
-        if (!hoyEditMode && dated.length === 0) return; // vacía: no se muestra
+        // Contenido: tareas de Agenda del día + tareas/recados con fecha exacta
+        // de hoy, en el orden manual compartido con la pestaña Agenda.
+        const dow = dowOf(todayISO());
+        const entries = dayEntries(dow, todayISO());
+        const total = entries.length;
+        if (!hoyEditMode && total === 0) return; // vacía: no se muestra
 
         if (hoyEditMode) {
           wrap.appendChild(hoyAutoHead(sec));
           const hint = document.createElement("p");
           hint.className = "hoy-view-empty";
           hint.textContent =
-            "Automática: las tareas y recados con fecha de hoy.";
+            "Automática: Agenda de hoy + tareas y recados con fecha de hoy.";
           wrap.appendChild(hint);
         } else {
           // Cabecera con progreso y colapsable (igual que las manuales)
-          const doneCount = dated.filter((e) => e.task && e.task.done).length;
+          const doneCount = entries.filter(dayEntryDone).length;
           const head = document.createElement("div");
           head.className =
             "hoy-view-head" + (sec.collapsed ? " is-collapsed" : "");
@@ -2793,7 +2883,7 @@
           title.textContent = sec.name;
           const count = document.createElement("span");
           count.className = "hoy-view-count";
-          count.textContent = doneCount + "/" + dated.length;
+          count.textContent = doneCount + "/" + total;
           const chevron = document.createElement("span");
           chevron.className = "hoy-view-chevron";
           chevron.textContent = sec.collapsed ? "▸" : "▾";
@@ -2804,15 +2894,9 @@
           if (!sec.collapsed) {
             const ul = document.createElement("ul");
             ul.className = "task-list";
-            dated.forEach((e) =>
-              ul.appendChild(
-                createTaskItem(e.task, e.origin, {
-                  hideDate: true,
-                  hideStar: true,
-                })
-              )
-            );
             wrap.appendChild(ul);
+            // Reordenar desde el asa; el orden se comparte con Agenda
+            renderDayList(ul, dow, entries, "hoy");
           }
         }
         hoyViewSectionsEl.appendChild(wrap);
@@ -3112,6 +3196,72 @@
     return out;
   }
 
+  /* ---------- Lista combinada de un día (Agenda + tareas con fecha) ----------
+     La misma lista se pinta en la pestaña Agenda (un día por sección) y en la
+     sección automática "Durante el día" de Hoy (el día de hoy). El orden manual
+     vive en `dayOrder[dow]` (ids mezclados), así que arrastrar en cualquiera de
+     las dos pestañas mueve la tarea también en la otra. */
+
+  // Entradas de ese día ya ordenadas: {id, agenda} o {id, task, origin}.
+  // Lo que no esté en `dayOrder` va al final, en el orden por defecto.
+  function dayEntries(dow, iso) {
+    const entries = agenda
+      .filter((a) => a.day === dow)
+      .map((a) => ({ id: a.id, agenda: a }));
+    agendaDatedFor(iso).forEach((e) =>
+      entries.push({ id: e.task.id, task: e.task, origin: e.origin })
+    );
+    const order = dayOrder[String(dow)] || [];
+    const pos = {};
+    order.forEach((id, i) => (pos[id] = i));
+    return entries
+      .map((e, i) => ({ e: e, i: i }))
+      .sort((a, b) => {
+        const pa = pos[a.e.id] === undefined ? Infinity : pos[a.e.id];
+        const pb = pos[b.e.id] === undefined ? Infinity : pos[b.e.id];
+        return pa === pb ? a.i - b.i : pa - pb;
+      })
+      .map((x) => x.e);
+  }
+
+  function dayEntryDone(e) {
+    return e.agenda ? !!e.agenda.done : !!e.task.done;
+  }
+
+  // En Hoy conviven las tres procedencias, así que cada tarea lleva la suya en
+  // la 2ª línea. En la Agenda la procedencia "Agenda" sería redundante.
+  function dayEntryEl(e, from) {
+    const li = e.agenda
+      ? agendaItem(e.agenda, from === "hoy" ? "Agenda" : null)
+      : createTaskItem(e.task, e.origin, {
+          hideDate: true,
+          hideStar: true,
+          dragHandle: true,
+        });
+    li.classList.add("day-item"); // clase común: el arrastre las mezcla
+    return li;
+  }
+
+  // Pinta la lista de un día y habilita el arrastre. `from` es la pestaña que
+  // la pinta ("hoy" / "agenda"), para refrescar solo la otra al soltar.
+  function renderDayList(ul, dow, entries, from) {
+    entries.forEach((e) => ul.appendChild(dayEntryEl(e, from)));
+    enableReorder(ul, "day-item", null, null, "day-handle", (ids) =>
+      setDayOrder(dow, ids, from)
+    );
+  }
+
+  function setDayOrder(dow, ids, from) {
+    if (ids.length) dayOrder[String(dow)] = ids;
+    else delete dayOrder[String(dow)];
+    saveDayOrder();
+    // La pestaña desde la que se arrastra ya tiene el DOM en su sitio; se
+    // repinta solo la otra (repintar la de origen se cargaría el "click" que
+    // se anula tras soltar y abriría el detalle de la tarea).
+    if (from === "hoy") renderAgenda();
+    else renderHoyView();
+  }
+
   // "4 ago" para la cabecera de cada día
   function agendaShortDate(iso) {
     const p = iso.split("-").map(Number);
@@ -3139,19 +3289,18 @@
     item.done = !item.done;
     saveAgenda();
     renderAgenda();
+    renderHoy(); // "Durante el día" muestra estas tareas
   }
 
-  // Fila de una tarea: asa + checkbox + texto (abre sus ajustes al tocarlo)
-  function agendaItem(item) {
+  // Fila de una tarea: asa + checkbox + texto (abre sus ajustes al tocarlo).
+  // `origin` (opcional): procedencia en la 2ª línea. En Hoy se pasa "Agenda",
+  // para distinguirlas de las de Tareas/Recados; en la propia Agenda sobra.
+  function agendaItem(item, origin) {
     const li = document.createElement("li");
     li.className = "agenda-item" + (item.done ? " is-done" : "");
     li.dataset.id = item.id;
 
-    const handle = document.createElement("span");
-    handle.className = "agenda-handle";
-    handle.textContent = "⠿";
-    handle.setAttribute("aria-label", "Reordenar tarea");
-    handle.title = "Arrastra para reordenar";
+    const handle = dayHandleEl();
 
     const check = document.createElement("input");
     check.type = "checkbox";
@@ -3160,17 +3309,31 @@
     check.setAttribute("aria-label", "Marcar como completada");
     check.addEventListener("change", () => toggleAgenda(item.id));
 
+    const main = document.createElement("div");
+    main.className = "agenda-item-main";
+    main.addEventListener("click", () => openAgendaDetail(item.id));
+
     const text = document.createElement("span");
     text.className = "agenda-item-text";
     text.textContent = item.text;
-    text.addEventListener("click", () => openAgendaDetail(item.id));
+    main.appendChild(text);
+
+    if (origin) {
+      const dateLine = document.createElement("span");
+      dateLine.className = "task-date";
+      const originEl = document.createElement("span");
+      originEl.className = "task-origin";
+      originEl.textContent = origin;
+      dateLine.appendChild(originEl);
+      main.appendChild(dateLine);
+    }
 
     const more = document.createElement("span");
     more.className = "hoy-item-more";
     more.textContent = "›";
     more.setAttribute("aria-hidden", "true");
 
-    li.append(handle, check, text, more);
+    li.append(handle, check, main, more);
     return li;
   }
 
@@ -3207,17 +3370,12 @@
       }
       wrap.appendChild(title);
 
+      // Tareas de Agenda de ese día + tareas y recados con fecha exacta en ese
+      // día de la semana en curso, en el orden manual común con Hoy.
       const ul = document.createElement("ul");
       ul.className = "task-list";
-      const items = agenda.filter((a) => a.day === d.day);
-      items.forEach((item) => ul.appendChild(agendaItem(item)));
-      // Tareas y recados con fecha exacta en ese día de la semana en curso
-      agendaDatedFor(iso).forEach((e) =>
-        ul.appendChild(
-          createTaskItem(e.task, e.origin, { hideDate: true, hideStar: true })
-        )
-      );
       wrap.appendChild(ul);
+      renderDayList(ul, d.day, dayEntries(d.day, iso), "agenda");
 
       const form = document.createElement("form");
       form.className = "new-task agenda-add-form";
@@ -3248,9 +3406,6 @@
       wrap.appendChild(form);
 
       agendaSectionsEl.appendChild(wrap);
-
-      // Reordenar dentro del día, solo desde el asa (el texto es editable)
-      enableReorder(ul, "agenda-item", () => agenda, saveAgenda, "agenda-handle");
     });
 
     if (focusDay) {
@@ -3401,6 +3556,10 @@
     if (db) localAgenda = await idbGet(IDB_KEY_AGENDA);
     agenda = Array.isArray(localAgenda) ? localAgenda : [];
 
+    let localDayOrder;
+    if (db) localDayOrder = await idbGet(IDB_KEY_DAY_ORDER);
+    dayOrder = parseDayOrder(localDayOrder);
+
     let localPlanned = [];
     if (db) localPlanned = await idbGet(IDB_KEY_PLANNED);
     planned = Array.isArray(localPlanned) ? localPlanned : [];
@@ -3549,6 +3708,34 @@
         if (db) idbSet(IDB_KEY_AGENDA, agenda).catch(() => {});
         clearError();
         renderAgenda();
+        renderHoyView(); // "Durante el día" muestra estas tareas
+      },
+      (err) =>
+        showError("Al leer la nube: " + (err && err.message ? err.message : err))
+    );
+
+    // Listener: orden manual de cada día (común a Agenda y "Durante el día")
+    let firstDo = true;
+    const refDo = fdb.ref(FB_ROOT + "/" + FB_KEY_DAY_ORDER);
+    refDo.on(
+      "value",
+      (snap) => {
+        const remote = parseDayOrder(snap.val());
+        if (
+          firstDo &&
+          !Object.keys(remote).length &&
+          Object.keys(dayOrder).length
+        ) {
+          firstDo = false;
+          refDo.set(dayOrder).catch(() => {});
+          return;
+        }
+        firstDo = false;
+        dayOrder = remote;
+        if (db) idbSet(IDB_KEY_DAY_ORDER, dayOrder).catch(() => {});
+        clearError();
+        renderAgenda();
+        renderHoyView();
       },
       (err) =>
         showError("Al leer la nube: " + (err && err.message ? err.message : err))
