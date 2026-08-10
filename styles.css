@@ -970,6 +970,11 @@ body {
   font-weight: 600;
 }
 
+/* Proyecto asignado, también en la 2ª línea */
+.task-project {
+  font-weight: 600;
+}
+
 .task-item.is-starred {
   background: var(--star-bg);
 }
@@ -1278,6 +1283,18 @@ body {
   margin-top: 2px;
 }
 
+/* Icono ⓘ del byline: abre el resumen por semanas */
+.hoy-info-btn {
+  border: 0;
+  background: none;
+  padding: 2px 6px;
+  margin-left: 2px;
+  font-size: 0.95rem;
+  line-height: 1;
+  color: var(--primary);
+  cursor: pointer;
+}
+
 .hoy-view-item.is-done .hoy-view-text {
   color: var(--done);
   text-decoration: line-through;
@@ -1416,6 +1433,26 @@ body {
   background: #fce7f3;
 }
 
+/* Las rutinas usan las mismas categorías y los mismos colores */
+.planned-item.cat-hogar {
+  background: #fff8e1;
+}
+.planned-item.cat-personal {
+  background: #f3e8ff;
+}
+.planned-item.cat-salud {
+  background: #eaf7ef;
+}
+.planned-item.cat-profesional {
+  background: #eaf2ff;
+}
+.planned-item.cat-relaciones {
+  background: #fff0e0;
+}
+.planned-item.cat-maternidad {
+  background: #fce7f3;
+}
+
 /* En las tareas con color de fondo, el círculo (sin marcar) en blanco */
 .hoy-view-item.cat-hogar .task-check:not(:checked),
 .hoy-view-item.cat-personal .task-check:not(:checked),
@@ -1495,6 +1532,55 @@ body {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+/* ---------- Proyectos: título + botón que abre el enlace en Notion ---------- */
+.proyecto-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.proyecto-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+}
+
+.proyecto-main {
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.proyecto-text {
+  min-width: 0;
+  font-size: 1rem;
+  color: var(--text);
+  word-break: break-word;
+}
+
+.proyecto-link {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  color: var(--text);
+  text-decoration: none;
+}
+
+.proyecto-link:hover {
+  background: var(--star-bg);
+  color: var(--primary);
 }
 
 .planned-empty {
@@ -1717,6 +1803,67 @@ body {
   margin-top: 24px;
 }
 
+/* Resumen de veces completada por semana */
+.hoy-stats-title {
+  font-size: 1.15rem;
+  font-weight: 600;
+  margin-bottom: 20px;
+  word-break: break-word;
+}
+
+.hoy-stats-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.hoy-stats-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+}
+
+.hoy-stats-row.is-current {
+  border-color: var(--primary);
+}
+
+.hoy-stats-week {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.95rem;
+}
+
+.hoy-stats-badge {
+  margin-left: 8px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--primary);
+}
+
+.hoy-stats-count {
+  flex: 0 0 auto;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-soft);
+}
+
+.hoy-stats-empty {
+  color: var(--text-soft);
+  font-size: 0.9rem;
+}
+
+.hoy-stats-note {
+  margin-top: 16px;
+  color: var(--text-soft);
+  font-size: 0.78rem;
+}
+
 /* Fecha dentro del detalle */
 .detail-date {
   display: flex;
@@ -1726,11 +1873,13 @@ body {
 }
 
 /* Selector "Tipo": lista a la que pertenece la tarea */
-#detail-type-wrap {
+#detail-type-wrap,
+#detail-cat-wrap {
   margin-bottom: 24px;
 }
 
-#detail-type-wrap[hidden] {
+#detail-type-wrap[hidden],
+#detail-cat-wrap[hidden] {
   display: none;
 }
 

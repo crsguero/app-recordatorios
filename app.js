@@ -33,6 +33,13 @@
   const pendientesClearDone = document.getElementById("pendientes-clear-done");
   const pendientesSummary = document.getElementById("pendientes-summary");
 
+  // Vista Proyectos: no son tareas (no se completan). Título + enlace a Notion.
+  const proyectosForm = document.getElementById("proyectos-form");
+  const proyectosInput = document.getElementById("proyectos-input");
+  const proyectosListEl = document.getElementById("proyectos-list");
+  const proyectosEmpty = document.getElementById("proyectos-empty");
+  const proyectosSummary = document.getElementById("proyectos-summary");
+
   // Vista Rutinas: tareas automáticas (planificadas + lactancia)
   const rutinasList = document.getElementById("rutinas-list");
   const rutinasEmpty = document.getElementById("rutinas-empty");
@@ -79,7 +86,8 @@
     save: () => save(),
     // "Cuanto antes" reúne: copias de rutinas + las tareas destacadas (★).
     // Las completadas pierden el destacado, así que salen solas de aquí.
-    filter: (t) => !!t.sourcePlannedId || !!t.starred,
+    // Las de rutinas con "Añadir a Hoy" no: esas viven en "Durante el día".
+    filter: (t) => !t.hoyDia && (!!t.sourcePlannedId || !!t.starred),
     listEl: rutinasList,
     doneListEl: rutinasDoneList,
     emptyEl: rutinasEmpty,
@@ -190,6 +198,7 @@
   const FB_KEY_PLANNED = "planned"; // recordatorios/planned = tareas planificadas
   const FB_KEY_RECADOS = "recados"; // recordatorios/recados = segunda lista
   const FB_KEY_PENDIENTES = "pendientes"; // recordatorios/pendientes = tercera lista
+  const FB_KEY_PROYECTOS = "proyectos"; // recordatorios/proyectos = proyectos (título + enlace)
   const FB_KEY_HOY = "hoy"; // recordatorios/hoy = tareas del día (mañana/tarde)
   const FB_KEY_AGENDA = "agenda"; // recordatorios/agenda = tareas por día de la semana
   // recordatorios/dayOrder = orden manual de cada día de la semana (1-7),
@@ -227,6 +236,7 @@
   const IDB_KEY_PLANNED = "planned";
   const IDB_KEY_RECADOS = "recados";
   const IDB_KEY_PENDIENTES = "pendientes";
+  const IDB_KEY_PROYECTOS = "proyectos";
   const IDB_KEY_HOY = "hoy";
   const IDB_KEY_AGENDA = "agenda";
   const IDB_KEY_DAY_ORDER = "dayOrder";
@@ -237,6 +247,8 @@
   let tasks = [];
   let recados = []; // segunda lista (misma funcionalidad, sin planificadas auto)
   let pendientes = []; // tercera lista (igual que recados)
+  // Proyectos: {id, text, url}. No se completan ni se reordenan.
+  let proyectos = [];
   // Agenda: tareas fijas por día de la semana {id, text, day: 1-7, done}
   let agenda = [];
   // Orden manual de cada día: { "1": [id, id, …], … 1=Lunes … 7=Domingo }.
@@ -256,32 +268,46 @@
   let hoy = []; // tareas del día {id, text, section: <id sección>, done}
   // Secciones de Hoy. Las por defecto usan ids "manana"/"tarde" para no perder
   // los datos actuales (las tareas ya guardan esos ids en `section`).
-  // Sección automática: se rellena sola con las tareas/recados con fecha de
-  // hoy. Vive en `hoySections` solo para poder colocarla donde se quiera.
+  // Secciones automáticas: se rellenan solas (no se renombran ni se les añaden
+  // tareas). Viven en `hoySections` solo para poder colocarlas donde se quiera.
+  //  - "Durante el día": Agenda de hoy + tareas/recados con fecha de hoy.
+  //  - "Antes de la próxima extracción": las tareas que App lactancia genera al
+  //    registrar una extracción (el resto de lactancia sigue en Cuanto antes).
   const HOY_AUTO_ID = "auto-dia";
   const HOY_AUTO_NAME = "Durante el día";
+  const HOY_LACT_ID = "auto-extraccion";
+  const HOY_LACT_NAME = "Antes de la próxima extracción";
+  const HOY_AUTO_IDS = [HOY_AUTO_ID, HOY_LACT_ID];
+  // Inicio del registro de "veces completada por semana": lo anterior queda
+  // fuera de las estadísticas (es un lunes, así que corta por semana entera).
+  const HOY_STATS_START = "2026-08-10";
   const HOY_DEFAULT_SECTIONS = [
     { id: "manana", name: "Mañana" },
     { id: "tarde", name: "Tarde" },
     { id: HOY_AUTO_ID, name: HOY_AUTO_NAME, auto: true },
+    { id: HOY_LACT_ID, name: HOY_LACT_NAME, auto: true },
   ];
   const hoyDefaultSections = () =>
     HOY_DEFAULT_SECTIONS.map((s) =>
       s.auto ? { id: s.id, name: s.name, auto: true } : { id: s.id, name: s.name }
     );
-  // Las configuraciones guardadas antes no la tienen: se añade al final.
+  // Las configuraciones guardadas antes no las tienen: se añaden al final.
   function withAutoSection(secs) {
-    if (secs.some((s) => s.id === HOY_AUTO_ID)) {
-      // Normaliza nombre/marca por si vino de una versión anterior, pero
-      // conservando lo que sí es del usuario (si está colapsada).
-      return secs.map((s) => {
-        if (s.id !== HOY_AUTO_ID) return s;
-        const auto = { id: HOY_AUTO_ID, name: HOY_AUTO_NAME, auto: true };
-        if (s.collapsed) auto.collapsed = true;
-        return auto;
-      });
-    }
-    return secs.concat([{ id: HOY_AUTO_ID, name: HOY_AUTO_NAME, auto: true }]);
+    // Normaliza nombre/marca por si vinieron de una versión anterior, pero
+    // conservando lo que sí es del usuario (si está colapsada).
+    let out = secs.map((s) => {
+      const def = HOY_DEFAULT_SECTIONS.find((d) => d.auto && d.id === s.id);
+      if (!def) return s;
+      const auto = { id: def.id, name: def.name, auto: true };
+      if (s.collapsed) auto.collapsed = true;
+      return auto;
+    });
+    HOY_AUTO_IDS.forEach((id) => {
+      if (out.some((s) => s.id === id)) return;
+      const def = HOY_DEFAULT_SECTIONS.find((d) => d.id === id);
+      out = out.concat([{ id: def.id, name: def.name, auto: true }]);
+    });
+    return out;
   }
   let hoySections = hoyDefaultSections();
   // Categorías de las tareas temporales (el color va en el CSS: .cat-<id>)
@@ -379,6 +405,18 @@
     }
   }
 
+  function saveProyectos() {
+    if (db) idbSet(IDB_KEY_PROYECTOS, proyectos).catch(() => {});
+    if (fbReady) {
+      fdb
+        .ref(FB_ROOT + "/" + FB_KEY_PROYECTOS)
+        .set(proyectos && proyectos.length ? proyectos : null)
+        .catch((e) =>
+          showError("Al sincronizar: " + (e && e.message ? e.message : e))
+        );
+    }
+  }
+
   function saveAgenda() {
     if (db) idbSet(IDB_KEY_AGENDA, agenda).catch(() => {});
     if (fbReady) {
@@ -469,24 +507,25 @@
     return { items: [], day: null, sections: hoyDefaultSections() };
   }
 
-  // Resetea los estados "done" al cambiar de día (idempotente, sincronizado por
-  // `hoyDay` para no pisar los checks hechos hoy en otro dispositivo).
+  // Resetea al cambiar de día los estados "done" y las secciones colapsadas
+  // (idempotente, sincronizado por `hoyDay` para no pisar los checks hechos hoy
+  // en otro dispositivo). Devuelve si el día ha cambiado: al cruzar la
+  // medianoche siempre hay que repintar, aunque no hubiera nada marcado ni
+  // colapsado (cambian las listas del día, la de extracción y los bylines).
   function resetHoyIfNewDay() {
     if (!hoyReady) return false;
     const today = todayISO();
     if (hoyDay === today) return false;
-    let changed = false;
     hoy.forEach((h) => {
       // `lastDoneAt` NO se toca: es el histórico de la última compleción.
       delete h.prevDoneAt;
-      if (h.done) {
-        h.done = false;
-        changed = true;
-      }
+      h.done = false;
     });
+    // Día nuevo: todas las secciones vuelven a verse desplegadas
+    hoySections.forEach((s) => delete s.collapsed);
     hoyDay = today;
     saveHoy();
-    return changed;
+    return true;
   }
 
   function savePlanned() {
@@ -505,7 +544,14 @@
   function addPlanned(text) {
     const trimmed = text.trim();
     if (!trimmed) return;
-    planned.unshift({ id: newId(), text: trimmed, createdAt: todayISO() });
+    // `category: ""` de entrada: sin él, la migración a "Personal" adoptaría
+    // la rutina recién creada en la siguiente sincronización.
+    planned.unshift({
+      id: newId(),
+      text: trimmed,
+      createdAt: todayISO(),
+      category: "",
+    });
     savePlanned();
     renderPlanned();
   }
@@ -598,6 +644,9 @@
           occurrenceDate: nextOcc, // fecha de la ocurrencia (2ª línea)
         };
         if (p.note && p.note.trim()) inst.note = p.note; // instantánea de la nota
+        // Instantánea también del destino: esta copia va a "Durante el día"
+        // (Hoy) en vez de a Cuanto antes.
+        if (p.addToHoy) inst.hoyDia = true;
         tasks.unshift(inst);
         p.currentInstanceId = inst.id;
         tasksChanged = true;
@@ -608,7 +657,8 @@
     if (plannedChanged) savePlanned();
     if (tasksChanged) {
       save();
-      renderTasksViews(); // las copias creadas viven en Rutinas
+      renderTasksViews(); // las copias creadas viven en Cuanto antes…
+      renderHoyView(); // …o en "Durante el día", si la rutina va a Hoy
     }
   }
 
@@ -688,6 +738,16 @@
   // Traduce una tarea de lactancia al formato que usa esta app para pintar.
   // Horas de las 5 extracciones (mismo esquema que App lactancia).
   const TE_HORAS = ["3:00", "7:50", "12:40", "17:30", "22:10"];
+  // Milisegundos → fecha ISO en hora local. `toISOString()` no vale aquí: da
+  // UTC y de madrugada (la extracción 1 es a las 3:00) caería en el día
+  // anterior.
+  function msToISO(ms) {
+    const d = new Date(ms);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return y + "-" + m + "-" + day;
+  }
   // Helpers de fecha equivalentes a los de lactancia (para los bylines).
   function diffDiasLact(isoA, isoB) {
     const a = new Date(isoA + "T00:00:00");
@@ -735,27 +795,30 @@
       _lact: { node: node, id: x.id }, // marca de origen + enrutado de escritura
     };
   }
-  // Pendientes de lactancia: "antes de la extracción" primero, luego "durante el día"
-  // (mismo criterio de visibilidad que la propia app lactancia).
+  // Tareas que lactancia genera al registrar una extracción. No salen en Cuanto
+  // antes: tienen su propia sección automática en Hoy, completadas incluidas
+  // (como el resto de secciones de Hoy, que no las ocultan).
+  // Solo las de las extracciones de hoy: lactancia nunca borra las de días
+  // anteriores, y `creada` (ms del registro) es su única marca de tiempo.
+  const LACT_NODE_EXTRA = "tareas-antes-extraccion";
+  function lactAntesExtraccion() {
+    return (lactRaw[LACT_NODE_EXTRA] || [])
+      .filter((x) => x.creada && msToISO(x.creada) === todayISO())
+      .map((x) => lactToItem(x, LACT_NODE_EXTRA));
+  }
+  // Pendientes de lactancia para Cuanto antes: "durante el día" (tareas-mama),
+  // con el mismo criterio de visibilidad que la propia app lactancia.
   function lactPending() {
     const hoy = todayISO();
-    const antes = (lactRaw["tareas-antes-extraccion"] || [])
-      .filter((x) => !x.hecha)
-      .map((x) => lactToItem(x, "tareas-antes-extraccion"));
-    const mama = (lactRaw["tareas-mama"] || [])
+    return (lactRaw["tareas-mama"] || [])
       .filter((x) => !x.hecha && (!x.desde || x.desde <= hoy))
       .map((x) => lactToItem(x, "tareas-mama"));
-    return antes.concat(mama);
   }
-  // Completadas de lactancia (para la sección Completadas).
+  // Completadas de lactancia (para la sección Completadas de Cuanto antes).
   function lactDone() {
-    const out = [];
-    LACT_NODES.forEach((node) =>
-      (lactRaw[node] || [])
-        .filter((x) => x.hecha)
-        .forEach((x) => out.push(lactToItem(x, node)))
-    );
-    return out;
+    return (lactRaw["tareas-mama"] || [])
+      .filter((x) => x.hecha)
+      .map((x) => lactToItem(x, "tareas-mama"));
   }
   // Escribe de vuelta el array completo de un nodo de lactancia (optimista + nube).
   function writeLact(node, arr) {
@@ -769,6 +832,7 @@
         );
     }
     renderRutinas();
+    renderHoyView(); // la sección de la extracción también las muestra
   }
   function toggleLactDone(ref) {
     const arr = (lactRaw[ref.node] || []).map((x) => x); // copia superficial del array
@@ -838,6 +902,26 @@
   const detailTaskFields = document.getElementById("detail-task-fields");
   const detailTypeWrap = document.getElementById("detail-type-wrap");
   const detailType = document.getElementById("detail-type");
+  const detailProjectWrap = document.getElementById("detail-project-wrap");
+  const detailProject = document.getElementById("detail-project");
+  const detailCatWrap = document.getElementById("detail-cat-wrap");
+  const detailCat = document.getElementById("detail-cat");
+  const detailAddHoyWrap = document.getElementById("detail-addhoy-wrap");
+  const detailAddHoy = document.getElementById("detail-addhoy");
+  // Categorías de las rutinas: las mismas que las de las tareas de Hoy
+  (function fillDetailCategories() {
+    if (!detailCat) return;
+    const none = document.createElement("option");
+    none.value = "";
+    none.textContent = "Sin categoría";
+    detailCat.appendChild(none);
+    HOY_CATEGORIES.forEach((c) => {
+      const opt = document.createElement("option");
+      opt.value = c.id;
+      opt.textContent = c.name;
+      detailCat.appendChild(opt);
+    });
+  })();
   const detailSubtasks = document.getElementById("detail-subtasks");
   const subtaskForm = document.getElementById("subtask-form");
   const subtaskInput = document.getElementById("subtask-input");
@@ -1045,6 +1129,20 @@
     return changed;
   }
 
+  // Migración puntual: las rutinas anteriores a las categorías pasan a
+  // "Personal". Idempotente: solo afecta a las que no tienen el campo, así que
+  // dejar una en "Sin categoría" (que guarda "") no la reasigna.
+  function backfillPlannedCategory() {
+    let changed = false;
+    planned.forEach((p) => {
+      if (typeof p.category !== "string") {
+        p.category = "personal";
+        changed = true;
+      }
+    });
+    return changed;
+  }
+
   /* ---------- Subtareas ---------- */
   function renderSubtasks(task) {
     detailSubtasks.innerHTML = "";
@@ -1193,6 +1291,29 @@
     repeatBiennialWrap.hidden = !(mode === "biennial" || mode === "quarterly");
   }
 
+  // Categoría de la rutina abierta. Se guarda siempre como texto ("" = sin
+  // categoría) para que la migración distinga "nunca asignada" de "quitada".
+  detailCat.addEventListener("change", () => {
+    const entity = getOpenEntity();
+    if (!entity) return;
+    entity.category = detailCat.value;
+    saveOpen();
+    renderPlanned();
+  });
+
+  // "Añadir a Hoy": las repeticiones de esta rutina se crean en la sección
+  // "Durante el día" de Hoy en vez de en Cuanto antes. Como el resto de la
+  // configuración, solo afecta a las ocurrencias futuras: la copia que ya
+  // exista se queda donde nació.
+  detailAddHoy.addEventListener("change", () => {
+    const entity = getOpenEntity();
+    if (!entity) return;
+    if (detailAddHoy.checked) entity.addToHoy = true;
+    else delete entity.addToHoy;
+    saveOpen();
+    renderPlanned();
+  });
+
   repeatMode.addEventListener("change", () => {
     const entity = getOpenEntity();
     if (!entity) return;
@@ -1264,6 +1385,11 @@
     renderRepeat(item);
     renderDetailType();
     detailRepeatSection.hidden = false; // "Repetir" solo en planificadas
+    detailProjectWrap.hidden = true; // "Proyecto" solo en tareas
+    detailCatWrap.hidden = false; // "Categoría" solo en planificadas
+    detailCat.value = item.category || "";
+    detailAddHoyWrap.hidden = false; // "Añadir a Hoy" solo en planificadas
+    detailAddHoy.checked = !!item.addToHoy;
     detailNote.value = item.note || "";
     overlay.hidden = false;
     document.body.classList.add("no-scroll");
@@ -1283,6 +1409,9 @@
     detailTitle.readOnly = true; // el texto se edita en App lactancia
     detailTaskFields.hidden = true; // sin fecha ni subtareas
     detailRepeatSection.hidden = true;
+    detailProjectWrap.hidden = true;
+    detailCatWrap.hidden = true;
+    detailAddHoyWrap.hidden = true;
     detailTypeWrap.hidden = true; // no se puede mover de lista
     detailNote.hidden = true; // sin nota
     if (detailNoteLabel) detailNoteLabel.hidden = true;
@@ -1305,6 +1434,9 @@
     detailTitle.readOnly = true; // el texto se edita en App tareas
     detailTaskFields.hidden = true; // sin fecha ni subtareas
     detailRepeatSection.hidden = true;
+    detailProjectWrap.hidden = true;
+    detailCatWrap.hidden = true;
+    detailAddHoyWrap.hidden = true;
     detailTypeWrap.hidden = true; // no se puede mover de lista
     detailNote.hidden = true; // sin nota
     if (detailNoteLabel) detailNoteLabel.hidden = true;
@@ -1326,7 +1458,10 @@
     detailNote.hidden = false; // restaura la nota
     if (detailNoteLabel) detailNoteLabel.hidden = false;
     detailTaskFields.hidden = false; // restaura los campos de tarea
-    detailRepeatSection.hidden = true; // "Repetir" solo en planificadas
+    detailRepeatSection.hidden = true; // "Repetir" y "Categoría" solo en rutinas
+    detailProjectWrap.hidden = true;
+    detailCatWrap.hidden = true;
+    detailAddHoyWrap.hidden = true;
     detailDelete.hidden = false;
     openTaskId = id;
     detailTitle.value = task.text;
@@ -1336,6 +1471,7 @@
     renderDate(task);
     renderSubtasks(task);
     renderDetailType();
+    renderDetailProject(task);
     subtaskInput.value = "";
     overlay.hidden = false;
     document.body.classList.add("no-scroll");
@@ -1400,7 +1536,12 @@
       )
     )
       return false;
-    const p = { id: newId(), text: task.text, createdAt: todayISO() };
+    const p = {
+      id: newId(),
+      text: task.text,
+      createdAt: todayISO(),
+      category: "",
+    };
     if (task.note && task.note.trim()) p.note = task.note;
     planned.unshift(p);
     savePlanned();
@@ -1432,6 +1573,44 @@
     renderPlanned();
     openDetail(task.id); // el panel pasa a los campos de tarea
   }
+
+  /* ---------- "Proyecto": a qué proyecto pertenece la tarea ----------
+     Solo para las tareas de Tareas / Recados / Pendientes. Si el proyecto se
+     elimina, la referencia deja de resolver y el byline no muestra nada. */
+  function taskProjectName(task) {
+    if (!task || !task.projectId) return "";
+    const p = proyectos.find((x) => x.id === task.projectId);
+    return p ? p.text : "";
+  }
+
+  // Rellena el selector (los proyectos cambian) y marca el de la tarea abierta
+  function renderDetailProject(task) {
+    // Las copias de rutinas se regeneran cada ciclo: no se les asigna proyecto
+    const show = !!task && !task.sourcePlannedId && !task._lact && !task._at;
+    detailProjectWrap.hidden = !show;
+    if (!show) return;
+    detailProject.innerHTML = "";
+    const none = document.createElement("option");
+    none.value = "";
+    none.textContent = "Sin proyecto";
+    detailProject.appendChild(none);
+    proyectos.forEach((p) => {
+      const opt = document.createElement("option");
+      opt.value = p.id;
+      opt.textContent = p.text;
+      detailProject.appendChild(opt);
+    });
+    detailProject.value = taskProjectName(task) ? task.projectId : "";
+  }
+
+  detailProject.addEventListener("change", () => {
+    const task = getOpenTask();
+    if (!task) return;
+    if (detailProject.value) task.projectId = detailProject.value;
+    else delete task.projectId;
+    saveOpenTask();
+    renderAllLists();
+  });
 
   detailType.addEventListener("change", () => {
     const from = detailTypeOf();
@@ -1725,21 +1904,38 @@
 
     main.appendChild(span);
 
-    // 2ª línea: procedencia (Tareas / Recados) primero, luego la fecha
+    // 2ª línea: procedencia (Tareas / Recados), proyecto asignado y fecha,
+    // separados por " · ".
     const dateText =
       dateLabel && !o.hideDate ? (showClock ? "🕑 " : "") + dateLabel : "";
-    if (origin || dateText) {
+    const projectName = taskProjectName(task);
+    if (origin || projectName || dateText) {
       const dateLine = document.createElement("span");
       dateLine.className = "task-date";
+      let first = true;
+      const addSep = () => {
+        if (!first) dateLine.appendChild(document.createTextNode(" · "));
+        first = false;
+      };
       if (origin) {
         // La procedencia va en el color de acento
+        addSep();
         const originEl = document.createElement("span");
         originEl.className = "task-origin";
         originEl.textContent = origin;
         dateLine.appendChild(originEl);
-        if (dateText) dateLine.appendChild(document.createTextNode(" · "));
       }
-      if (dateText) dateLine.appendChild(document.createTextNode(dateText));
+      if (projectName) {
+        addSep();
+        const projectEl = document.createElement("span");
+        projectEl.className = "task-project";
+        projectEl.textContent = "📁 " + projectName;
+        dateLine.appendChild(projectEl);
+      }
+      if (dateText) {
+        addSep();
+        dateLine.appendChild(document.createTextNode(dateText));
+      }
       main.appendChild(dateLine);
     }
 
@@ -1805,7 +2001,8 @@
     container.innerHTML = "";
     planned.forEach((item) => {
       const li = document.createElement("li");
-      li.className = "planned-item";
+      li.className =
+        "planned-item" + (item.category ? " cat-" + item.category : "");
       li.dataset.id = item.id;
       // Pulsar la fila abre el modal (título + nota)
       li.addEventListener("click", () => openPlannedNote(item.id));
@@ -1955,6 +2152,7 @@
       tareas: tasks.filter((t) => !t.sourcePlannedId && !t.done).length,
       recados: pend(recados),
       pendientes: pend(pendientes),
+      proyectos: proyectos.length, // los proyectos no se completan
       planificadas: planned.length, // las rutinas no se completan
     };
   }
@@ -2261,6 +2459,7 @@
     "recados",
     "pendientes",
     "planificadas",
+    "proyectos",
   ];
 
   let currentView = "tareas";
@@ -2282,6 +2481,7 @@
     else if (view === "rutinas") renderRutinas();
     else if (view === "recados") renderRecados();
     else if (view === "pendientes") renderPendientes();
+    else if (view === "proyectos") renderProyectos();
     else if (view === "planificadas") renderPlanned();
   }
 
@@ -2394,14 +2594,22 @@
     recados: "Nuevo recado",
     rutinas: "Nueva rutina",
     pendientes: "Nuevo pendiente",
+    proyectos: "Nuevo proyecto",
+  };
+  // Lo que no es una tarea se crea solo con el nombre; el resto se configura
+  // después, al abrirlo.
+  const FAB_HINTS = {
+    rutinas: "La repetición se configura al abrir la rutina.",
+    proyectos: "El enlace se añade al abrir el proyecto.",
   };
   let fabTypeValue = "tareas"; // elegido en el paso 1
 
   // Campos visibles según el tipo y el modo de fecha elegidos
   function renderFabFields() {
-    const esRutina = fabTypeValue === "rutinas";
-    fabTaskFields.hidden = esRutina;
-    fabHint.hidden = !esRutina;
+    const hint = FAB_HINTS[fabTypeValue] || "";
+    fabTaskFields.hidden = !!hint; // destacada y fecha: solo en tareas
+    fabHint.hidden = !hint;
+    if (hint) fabHint.textContent = hint;
     const mode = fabDateMode.value;
     fabDateFields.hidden = mode === "none";
     fabDateEnd.hidden = mode !== "between";
@@ -2455,9 +2663,16 @@
         return;
       }
       if (fabTypeValue === "rutinas") {
-        planned.unshift({ id: newId(), text: text, createdAt: todayISO() });
+        planned.unshift({
+          id: newId(),
+          text: text,
+          createdAt: todayISO(),
+          category: "",
+        });
         savePlanned();
         renderPlanned();
+      } else if (fabTypeValue === "proyectos") {
+        addProyecto(text);
       } else {
         const task = {
           id: newId(),
@@ -2546,7 +2761,7 @@
   // Exportar: descarga un JSON con todas las tareas
   // Exportar: descarga un JSON con las tres listas y las planificadas
   exportBtn.addEventListener("click", () => {
-    const payload = { tasks, recados, pendientes, planned };
+    const payload = { tasks, recados, pendientes, proyectos, planned };
     const data = JSON.stringify(payload, null, 2);
     const blob = new Blob([data], { type: "application/json" });
     const url = URL.createObjectURL(blob);
@@ -2574,6 +2789,7 @@
         let inTasks = null;
         let inRecados = null;
         let inPendientes = null;
+        let inProyectos = null;
         let inPlanned = null;
         if (Array.isArray(parsed)) {
           inTasks = parsed;
@@ -2582,6 +2798,9 @@
           inRecados = Array.isArray(parsed.recados) ? parsed.recados : null;
           inPendientes = Array.isArray(parsed.pendientes)
             ? parsed.pendientes
+            : null;
+          inProyectos = Array.isArray(parsed.proyectos)
+            ? parsed.proyectos
             : null;
           inPlanned = Array.isArray(parsed.planned) ? parsed.planned : null;
         } else {
@@ -2609,6 +2828,11 @@
           pendientes = inPendientes.map(ensureId);
           savePendientes();
           renderPendientes();
+        }
+        if (inProyectos) {
+          proyectos = inProyectos.map(ensureId);
+          saveProyectos();
+          renderProyectos();
         }
         if (inPlanned) {
           planned = inPlanned.map(ensureId);
@@ -2785,6 +3009,53 @@
     return d === 1 ? "Hace 1 día" : "Hace " + d + " días";
   }
 
+  // Registro de compleciones (fechas ISO, una por cada vez que se ha marcado).
+  // Las tareas anteriores al registro solo guardaban la última compleción: esa
+  // fecha se toma como la única entrada conocida.
+  function hoyDoneLog(item) {
+    const raw = item.doneLog;
+    const arr = Array.isArray(raw)
+      ? raw
+      : raw && typeof raw === "object"
+      ? Object.values(raw)
+      : [];
+    const log = arr.filter((d) => typeof d === "string" && d);
+    if (!log.length && item.lastDoneAt) return [item.lastDoneAt];
+    return log;
+  }
+
+  // Compleciones agrupadas por semana (de lunes a domingo), de la más reciente
+  // a la más antigua. Solo salen las semanas con datos y desde HOY_STATS_START.
+  function hoyDoneByWeek(item) {
+    const counts = {};
+    hoyDoneLog(item).forEach((iso) => {
+      if (iso < HOY_STATS_START) return; // anterior al inicio del registro
+      const monday = addDaysISO(iso, -(dowOf(iso) - 1));
+      counts[monday] = (counts[monday] || 0) + 1;
+    });
+    return Object.keys(counts)
+      .sort()
+      .reverse()
+      .map((monday) => ({ monday: monday, count: counts[monday] }));
+  }
+
+  // "4 – 10 ago" (o "28 jul – 3 ago"), con el año si no es el actual
+  function hoyWeekLabel(monday) {
+    const sunday = addDaysISO(monday, 6);
+    const p = monday.split("-").map(Number);
+    const q = sunday.split("-").map(Number);
+    const from = new Date(p[0], p[1] - 1, p[2]);
+    const to = new Date(q[0], q[1] - 1, q[2]);
+    const long = { day: "numeric", month: "short" };
+    const start = from.toLocaleDateString(
+      "es-ES",
+      p[1] === q[1] ? { day: "numeric" } : long
+    );
+    const end = to.toLocaleDateString("es-ES", long);
+    const year = q[0] !== new Date().getFullYear() ? " " + q[0] : "";
+    return start + " – " + end + year;
+  }
+
   // <li> de una tarea de Hoy. En modo normal lleva checkbox; en modo edición,
   // el asa de arrastre, y al tocarla se abren sus ajustes en el panel lateral.
   function hoyViewItem(item) {
@@ -2827,6 +3098,18 @@
       const last = document.createElement("span");
       last.className = "hoy-view-date";
       last.textContent = hoyLastDoneLabel(item.lastDoneAt);
+      // Icono de información: abre el resumen de veces completada por semana
+      const info = document.createElement("button");
+      info.type = "button";
+      info.className = "hoy-info-btn";
+      info.textContent = "ⓘ";
+      info.setAttribute("aria-label", "Ver veces completada por semana");
+      info.title = "Veces completada por semana";
+      info.addEventListener("click", (e) => {
+        e.stopPropagation();
+        openHoyStats(item.id);
+      });
+      last.appendChild(info);
       main.appendChild(last);
     }
 
@@ -2855,26 +3138,35 @@
       wrap.className = "hoy-view-section" + (hoyEditMode ? " is-editing" : "");
       wrap.dataset.id = sec.id;
 
-      // Sección automática: se rellena sola con las tareas/recados de hoy. No
-      // se edita, pero sí se puede colocar donde se quiera.
+      // Secciones automáticas: se rellenan solas. No se editan, pero sí se
+      // pueden colocar donde se quiera.
       if (sec.auto) {
-        // Contenido: tareas de Agenda del día + tareas/recados con fecha exacta
-        // de hoy, en el orden manual compartido con la pestaña Agenda.
+        // "Durante el día": Agenda de hoy + tareas/recados con fecha exacta de
+        // hoy, en el orden manual compartido con la pestaña Agenda.
+        // "Antes de la próxima extracción": las tareas de App lactancia.
+        const isDia = sec.id === HOY_AUTO_ID;
         const dow = dowOf(todayISO());
-        const entries = dayEntries(dow, todayISO());
-        const total = entries.length;
+        const entries = isDia
+          ? dayEntries(dow, todayISO())
+          : lactAntesExtraccion();
+        // Rutinas con "Añadir a Hoy": fijas arriba de "Durante el día"
+        const pinned = isDia ? hoyRoutineTasks() : [];
+        const total = entries.length + pinned.length;
         if (!hoyEditMode && total === 0) return; // vacía: no se muestra
 
         if (hoyEditMode) {
           wrap.appendChild(hoyAutoHead(sec));
           const hint = document.createElement("p");
           hint.className = "hoy-view-empty";
-          hint.textContent =
-            "Automática: Agenda de hoy + tareas y recados con fecha de hoy.";
+          hint.textContent = isDia
+            ? "Automática: Agenda de hoy + tareas y recados con fecha de hoy."
+            : "Automática: las tareas de App lactancia de las extracciones de hoy.";
           wrap.appendChild(hint);
         } else {
           // Cabecera con progreso y colapsable (igual que las manuales)
-          const doneCount = entries.filter(dayEntryDone).length;
+          const doneCount =
+            entries.filter((e) => (isDia ? dayEntryDone(e) : !!e.done)).length +
+            pinned.filter((t) => t.done).length;
           const head = document.createElement("div");
           head.className =
             "hoy-view-head" + (sec.collapsed ? " is-collapsed" : "");
@@ -2895,8 +3187,19 @@
             const ul = document.createElement("ul");
             ul.className = "task-list";
             wrap.appendChild(ul);
-            // Reordenar desde el asa; el orden se comparte con Agenda
-            renderDayList(ul, dow, entries, "hoy");
+            if (isDia) {
+              // Las fijas van primero y sin la clase `day-item` ni asa, así que
+              // quedan fuera del arrastre: no se pueden mover ni se puede
+              // colocar nada por encima de ellas.
+              pinned.forEach((t) => ul.appendChild(createTaskItem(t)));
+              // Reordenar desde el asa; el orden se comparte con Agenda
+              renderDayList(ul, dow, entries, "hoy");
+            } else {
+              // Las de lactancia mantienen el orden que les da su app
+              entries.forEach((t) =>
+                ul.appendChild(createTaskItem(t, null, { hideStar: true }))
+              );
+            }
           }
         }
         hoyViewSectionsEl.appendChild(wrap);
@@ -3002,10 +3305,16 @@
       if (item.lastDoneAt) item.prevDoneAt = item.lastDoneAt;
       else delete item.prevDoneAt;
       item.lastDoneAt = todayISO();
+      // Registro completo, para el resumen por semanas
+      item.doneLog = hoyDoneLog(item).concat([item.lastDoneAt]);
     } else {
       if (item.prevDoneAt) item.lastDoneAt = item.prevDoneAt;
       else delete item.lastDoneAt;
       delete item.prevDoneAt;
+      const log = hoyDoneLog(item);
+      log.pop(); // deshace el último check, igual que con `lastDoneAt`
+      if (log.length) item.doneLog = log;
+      else delete item.doneLog;
     }
     saveHoy();
     renderHoy();
@@ -3161,6 +3470,58 @@
     deleteHoy(id);
   });
 
+  /* ---------- Veces completada por semana (icono ⓘ del byline) ---------- */
+  const hoyStatsOverlay = document.getElementById("hoy-stats-overlay");
+  const hoyStatsClose = document.getElementById("hoy-stats-close");
+  const hoyStatsTitle = document.getElementById("hoy-stats-title");
+  const hoyStatsList = document.getElementById("hoy-stats-list");
+  const hoyStatsEmpty = document.getElementById("hoy-stats-empty");
+
+  function openHoyStats(id) {
+    const item = hoy.find((h) => h.id === id);
+    if (!item) return;
+    hoyStatsTitle.textContent = item.text;
+    hoyStatsList.innerHTML = "";
+    const weeks = hoyDoneByWeek(item);
+    const thisMonday = addDaysISO(todayISO(), -(dowOf(todayISO()) - 1));
+    hoyStatsEmpty.hidden = weeks.length > 0;
+    weeks.forEach((w) => {
+      const li = document.createElement("li");
+      li.className =
+        "hoy-stats-row" + (w.monday === thisMonday ? " is-current" : "");
+      const label = document.createElement("span");
+      label.className = "hoy-stats-week";
+      label.textContent = hoyWeekLabel(w.monday);
+      if (w.monday === thisMonday) {
+        const badge = document.createElement("span");
+        badge.className = "hoy-stats-badge";
+        badge.textContent = "Esta semana";
+        label.appendChild(badge);
+      }
+      const count = document.createElement("span");
+      count.className = "hoy-stats-count";
+      count.textContent = w.count === 1 ? "1 vez" : w.count + " veces";
+      li.append(label, count);
+      hoyStatsList.appendChild(li);
+    });
+    hoyStatsOverlay.hidden = false;
+    document.body.classList.add("no-scroll");
+  }
+
+  function closeHoyStats() {
+    if (hoyStatsOverlay.hidden) return;
+    hoyStatsOverlay.hidden = true;
+    document.body.classList.remove("no-scroll");
+  }
+
+  hoyStatsClose.addEventListener("click", closeHoyStats);
+  hoyStatsOverlay.addEventListener("click", (e) => {
+    if (e.target === hoyStatsOverlay) closeHoyStats();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !hoyStatsOverlay.hidden) closeHoyStats();
+  });
+
   hoyAddSectionBtn.addEventListener("click", addSection);
 
   // Reordenar las secciones desde su asa (solo existe en modo edición). El
@@ -3226,6 +3587,15 @@
 
   function dayEntryDone(e) {
     return e.agenda ? !!e.agenda.done : !!e.task.done;
+  }
+
+  // Copias de rutinas con "Añadir a Hoy": van fijas arriba de "Durante el día"
+  // y no se reordenan. Las completadas solo se ven el día en que se marcaron,
+  // para que la lista amanezca limpia.
+  function hoyRoutineTasks() {
+    return tasks.filter(
+      (t) => t.hoyDia && (!t.done || t.completedAt === todayISO())
+    );
   }
 
   // En Hoy conviven las tres procedencias, así que cada tarea lleva la suya en
@@ -3508,6 +3878,192 @@
     deleteAgenda(id);
   });
 
+  /* ---------- Proyectos (título + enlace, sin completar) ---------- */
+  // Marca de Notion: una "N" en un cuadrado redondeado. Va en línea (currentColor)
+  // para que funcione sin conexión y se adapte al tema.
+  const NOTION_ICON =
+    '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false">' +
+    '<rect x="2.5" y="2.5" width="19" height="19" rx="4.5" fill="none" stroke="currentColor" stroke-width="1.6"/>' +
+    '<path d="M8.5 16.5v-9l7 9v-9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>' +
+    "</svg>";
+
+  // Enlace utilizable: completa el esquema si falta y descarta lo que no sea
+  // http(s) (un href "javascript:" sería ejecutable al pulsarlo).
+  function proyectoUrl(item) {
+    const raw = (item.url || "").trim();
+    if (!raw) return "";
+    const full = /^[a-z][a-z0-9+.-]*:/i.test(raw) ? raw : "https://" + raw;
+    return /^https?:\/\//i.test(full) ? full : "";
+  }
+
+  function addProyecto(text) {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    proyectos.push({ id: newId(), text: trimmed, url: "" });
+    saveProyectos();
+    renderProyectos();
+  }
+
+  function deleteProyecto(id) {
+    proyectos = proyectos.filter((p) => p.id !== id);
+    saveProyectos();
+    // Las tareas que lo tenían asignado se quedan sin proyecto (si no, la
+    // referencia quedaría colgando en los datos)
+    [
+      { list: tasks, save: save },
+      { list: recados, save: saveRecados },
+      { list: pendientes, save: savePendientes },
+    ].forEach((l) => {
+      let changed = false;
+      l.list.forEach((t) => {
+        if (t.projectId === id) {
+          delete t.projectId;
+          changed = true;
+        }
+      });
+      if (changed) l.save();
+    });
+    renderProyectos();
+    renderAllLists();
+  }
+
+  function renderProyectos() {
+    if (!proyectosListEl) return;
+    proyectosListEl.innerHTML = "";
+    proyectos.forEach((item) => {
+      const li = document.createElement("li");
+      li.className = "proyecto-item";
+      li.dataset.id = item.id;
+
+      // El título abre los ajustes del proyecto
+      const main = document.createElement("div");
+      main.className = "proyecto-main";
+      main.addEventListener("click", () => openProyectoDetail(item.id));
+      const text = document.createElement("span");
+      text.className = "proyecto-text";
+      text.textContent = item.text;
+      main.appendChild(text);
+      li.appendChild(main);
+
+      // Enlace: abre Notion en una pestaña nueva (si el proyecto tiene uno)
+      const url = proyectoUrl(item);
+      if (url) {
+        const link = document.createElement("a");
+        link.className = "proyecto-link";
+        link.href = url;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        link.title = "Abrir en Notion";
+        link.setAttribute("aria-label", "Abrir " + item.text + " en Notion");
+        link.innerHTML = NOTION_ICON;
+        li.appendChild(link);
+      }
+
+      proyectosListEl.appendChild(li);
+    });
+    if (proyectosEmpty) proyectosEmpty.hidden = proyectos.length !== 0;
+    if (proyectosSummary) {
+      const n = proyectos.length;
+      proyectosSummary.textContent =
+        n === 0 ? "Sin proyectos todavía" : n + (n === 1 ? " proyecto" : " proyectos");
+    }
+    updateNavCounts();
+  }
+
+  proyectosForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    addProyecto(proyectosInput.value);
+    proyectosInput.value = "";
+    proyectosInput.focus();
+  });
+
+  /* ---------- Ajustes de un proyecto ---------- */
+  const proyectoDetailOverlay = document.getElementById(
+    "proyecto-detail-overlay"
+  );
+  const proyectoDetailClose = document.getElementById("proyecto-detail-close");
+  const proyectoDetailTitle = document.getElementById("proyecto-detail-title");
+  const proyectoDetailUrl = document.getElementById("proyecto-detail-url");
+  const proyectoDetailDelete = document.getElementById(
+    "proyecto-detail-delete"
+  );
+  let proyectoDetailId = null;
+
+  function getProyectoDetailItem() {
+    return proyectoDetailId
+      ? proyectos.find((p) => p.id === proyectoDetailId)
+      : null;
+  }
+
+  function openProyectoDetail(id) {
+    const item = proyectos.find((p) => p.id === id);
+    if (!item) return;
+    proyectoDetailId = id;
+    proyectoDetailTitle.value = item.text;
+    proyectoDetailUrl.value = item.url || "";
+    proyectoDetailOverlay.hidden = false;
+    document.body.classList.add("no-scroll");
+    autoGrow(proyectoDetailTitle); // con el panel visible (si no, scrollHeight es 0)
+  }
+
+  function closeProyectoDetail() {
+    if (proyectoDetailOverlay.hidden) return;
+    proyectoDetailOverlay.hidden = true;
+    proyectoDetailId = null;
+    document.body.classList.remove("no-scroll");
+  }
+
+  proyectoDetailClose.addEventListener("click", closeProyectoDetail);
+  proyectoDetailOverlay.addEventListener("click", (e) => {
+    if (e.target === proyectoDetailOverlay) closeProyectoDetail();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !proyectoDetailOverlay.hidden)
+      closeProyectoDetail();
+  });
+
+  // Título: en memoria mientras se escribe; se persiste al salir del campo.
+  proyectoDetailTitle.addEventListener("input", () => {
+    autoGrow(proyectoDetailTitle);
+    const item = getProyectoDetailItem();
+    const v = proyectoDetailTitle.value.trim();
+    if (!item || !v) return;
+    item.text = v;
+    const el = proyectosListEl.querySelector(
+      '.proyecto-item[data-id="' + item.id + '"] .proyecto-text'
+    );
+    if (el) el.textContent = v;
+  });
+  proyectoDetailTitle.addEventListener("blur", () => {
+    const item = getProyectoDetailItem();
+    if (!item) return;
+    const v = proyectoDetailTitle.value.trim();
+    if (v) {
+      item.text = v;
+      saveProyectos();
+      renderProyectos();
+      renderAllLists(); // el nombre sale en el byline de sus tareas
+    } else {
+      proyectoDetailTitle.value = item.text; // sin título no se guarda
+    }
+  });
+
+  proyectoDetailUrl.addEventListener("blur", () => {
+    const item = getProyectoDetailItem();
+    if (!item) return;
+    item.url = proyectoDetailUrl.value.trim();
+    saveProyectos();
+    renderProyectos();
+  });
+
+  proyectoDetailDelete.addEventListener("click", () => {
+    const item = getProyectoDetailItem();
+    if (!item) return;
+    const id = item.id;
+    closeProyectoDetail();
+    deleteProyecto(id);
+  });
+
   /* ---------- Arranque tras iniciar sesión ---------- */
   function loadLegacy() {
     // Migración: importa las tareas de la antigua versión con localStorage.
@@ -3545,6 +4101,10 @@
     if (db) localPendientes = await idbGet(IDB_KEY_PENDIENTES);
     pendientes = Array.isArray(localPendientes) ? localPendientes : [];
 
+    let localProyectos = [];
+    if (db) localProyectos = await idbGet(IDB_KEY_PROYECTOS);
+    proyectos = Array.isArray(localProyectos) ? localProyectos : [];
+
     let rawHoy;
     if (db) rawHoy = await idbGet(IDB_KEY_HOY);
     const parsedHoy = parseHoy(rawHoy);
@@ -3563,10 +4123,13 @@
     let localPlanned = [];
     if (db) localPlanned = await idbGet(IDB_KEY_PLANNED);
     planned = Array.isArray(localPlanned) ? localPlanned : [];
+    if (backfillPlannedCategory() && db)
+      idbSet(IDB_KEY_PLANNED, planned).catch(() => {});
 
     renderTasksViews(); // pinta Tareas + Rutinas con el respaldo local
     renderRecados();
     renderPendientes();
+    renderProyectos();
     renderHoy();
     renderAgenda();
     renderPlanned();
@@ -3612,6 +4175,10 @@
         if (migrated) save(); // sube la migración a la nube
         clearError();
         renderTasksViews();
+        // Agenda y "Durante el día" también pintan tareas (con fecha de hoy o
+        // de rutinas con "Añadir a Hoy"): hay que repintarlas.
+        renderAgenda();
+        renderHoyView();
         tasksSynced = true;
         maybeMaterialize();
       },
@@ -3634,7 +4201,9 @@
         }
         firstP = false;
         planned = remote;
+        const migratedP = backfillPlannedCategory();
         if (db) idbSet(IDB_KEY_PLANNED, planned).catch(() => {});
+        if (migratedP) savePlanned(); // sube la migración a la nube
         clearError();
         renderPlanned();
         plannedSynced = true;
@@ -3685,6 +4254,30 @@
         if (db) idbSet(IDB_KEY_PENDIENTES, pendientes).catch(() => {});
         clearError();
         renderPendientes();
+      },
+      (err) =>
+        showError("Al leer la nube: " + (err && err.message ? err.message : err))
+    );
+
+    // Listener: proyectos (título + enlace)
+    let firstPro = true;
+    const refPro = fdb.ref(FB_ROOT + "/" + FB_KEY_PROYECTOS);
+    refPro.on(
+      "value",
+      (snap) => {
+        const raw = snap.val();
+        const remote = Array.isArray(raw) ? raw : raw ? Object.values(raw) : [];
+        if (firstPro && remote.length === 0 && proyectos.length > 0) {
+          firstPro = false;
+          refPro.set(proyectos).catch(() => {});
+          return;
+        }
+        firstPro = false;
+        proyectos = remote;
+        if (db) idbSet(IDB_KEY_PROYECTOS, proyectos).catch(() => {});
+        clearError();
+        renderProyectos();
+        renderAllLists(); // sus nombres salen en el byline de las tareas
       },
       (err) =>
         showError("Al leer la nube: " + (err && err.message ? err.message : err))
@@ -3781,7 +4374,8 @@
             ? Object.values(raw)
             : [];
           clearError();
-          renderRutinas(); // las tareas de lactancia viven en Rutinas
+          renderRutinas(); // "durante el día" de lactancia vive en Cuanto antes
+          renderHoyView(); // las de la extracción, en su sección de Hoy
         },
         (err) =>
           showError(

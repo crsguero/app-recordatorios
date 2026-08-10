@@ -50,6 +50,8 @@
       <button type="button" class="app-nav-item" data-view="recados">Recados</button>
       <button type="button" class="app-nav-item" data-view="planificadas">Rutinas</button>
       <button type="button" class="app-nav-item" data-view="pendientes">Pendientes</button>
+      <hr class="app-nav-sep" />
+      <button type="button" class="app-nav-item" data-view="proyectos">Proyectos</button>
       <button type="button" class="app-nav-item app-nav-settings" id="settings-btn">⚙️ Ajustes</button>
     </nav>
 
@@ -92,6 +94,9 @@
         <button type="button" class="menu-item" data-view="pendientes">
           <span class="menu-item-ico">⏳</span> Pendientes
         </button>
+        <button type="button" class="menu-item" data-view="proyectos">
+          <span class="menu-item-ico">📁</span> Proyectos
+        </button>
         <button type="button" class="menu-item" data-action="settings">
           <span class="menu-item-ico">⚙️</span> Ajustes
         </button>
@@ -116,6 +121,9 @@
           </button>
           <button type="button" class="fab-choice" data-create="pendientes">
             <span class="fab-choice-ico">⏳</span><span>Pendiente</span>
+          </button>
+          <button type="button" class="fab-choice" data-create="proyectos">
+            <span class="fab-choice-ico">📁</span><span>Proyecto</span>
           </button>
         </div>
 
@@ -347,6 +355,35 @@
         </div>
       </section>
 
+      <!-- Vista: Proyectos. No son tareas: no se completan. Cada uno lleva un
+           título y un enlace (a Notion), que se abre en una pestaña nueva. -->
+      <section class="view" id="view-proyectos" hidden>
+        <header class="app-header">
+          <div class="header-top">
+            <h1>Proyectos</h1>
+          </div>
+          <p class="subtitle" id="proyectos-summary">Sin proyectos todavía</p>
+        </header>
+
+        <form class="new-task" id="proyectos-form" autocomplete="off">
+          <input
+            type="text"
+            id="proyectos-input"
+            class="task-input"
+            placeholder="Añadir un proyecto…"
+            aria-label="Nuevo proyecto"
+            maxlength="200"
+          />
+          <button type="submit" class="add-btn" aria-label="Añadir proyecto">+</button>
+        </form>
+
+        <ul class="proyecto-list" id="proyectos-list"></ul>
+
+        <p class="empty-state" id="proyectos-empty" hidden>
+          No hay proyectos. ¡Añade uno arriba! 🎉
+        </p>
+      </section>
+
       <!-- Vista: "Rutinas" (interna: planificadas). El id/hash sigue siendo
            `planificadas`. -->
       <section class="view" id="view-planificadas" hidden>
@@ -406,6 +443,25 @@
             <option value="rutinas">Rutinas</option>
             <option value="pendientes">Pendientes</option>
           </select>
+        </div>
+
+        <!-- Categoría (de momento solo en las rutinas) -->
+        <div id="detail-cat-wrap" hidden>
+          <h3 class="detail-section-label">Categoría</h3>
+          <select id="detail-cat" class="date-mode" aria-label="Categoría"></select>
+        </div>
+
+        <!-- Solo rutinas: su repetición va a "Durante el día" (Hoy) -->
+        <label class="hoy-switch hoy-switch-wide" id="detail-addhoy-wrap" hidden>
+          <span class="hoy-switch-text">Añadir a Hoy</span>
+          <input type="checkbox" id="detail-addhoy" aria-label="Añadir a Hoy" />
+          <span class="hoy-switch-slider"></span>
+        </label>
+
+        <!-- Proyecto al que pertenece (solo Tareas / Recados / Pendientes) -->
+        <div id="detail-project-wrap" hidden>
+          <h3 class="detail-section-label">Proyecto</h3>
+          <select id="detail-project" class="date-mode" aria-label="Proyecto"></select>
         </div>
 
         <div id="detail-task-fields">
@@ -544,8 +600,8 @@
 
         <section class="settings-section" id="tab-datos">
           <p class="settings-desc">
-            Guarda una copia de todas tus listas (tareas, recados, pendientes y
-            planificadas) en un archivo, o restáuralas desde uno.
+            Guarda una copia de todas tus listas (tareas, recados, pendientes,
+            proyectos y planificadas) en un archivo, o restáuralas desde uno.
           </p>
           <button type="button" class="settings-action" id="export-btn">⬇️ Exportar datos</button>
           <button type="button" class="settings-action" id="import-btn">⬆️ Importar datos</button>
@@ -597,6 +653,57 @@
         <button class="detail-delete" id="hoy-detail-delete" type="button">
           🗑 Eliminar tarea
         </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Ajustes de un proyecto: título, enlace y eliminar -->
+  <div class="detail-overlay" id="proyecto-detail-overlay" hidden>
+    <div class="detail-panel" role="dialog" aria-modal="true" aria-label="Ajustes del proyecto">
+      <header class="detail-header">
+        <button class="detail-close" id="proyecto-detail-close" type="button" aria-label="Cerrar">‹ Volver</button>
+      </header>
+
+      <div class="detail-body">
+        <textarea
+          class="detail-title"
+          id="proyecto-detail-title"
+          rows="1"
+          maxlength="200"
+          aria-label="Editar proyecto"
+        ></textarea>
+
+        <h3 class="detail-section-label">Enlace</h3>
+        <input
+          type="url"
+          id="proyecto-detail-url"
+          class="date-input"
+          placeholder="https://www.notion.so/…"
+          aria-label="Enlace del proyecto"
+        />
+
+        <button class="detail-delete" id="proyecto-detail-delete" type="button">
+          🗑 Eliminar proyecto
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Historial de una tarea de "Hoy": veces completada por semana -->
+  <div class="detail-overlay" id="hoy-stats-overlay" hidden>
+    <div class="detail-panel" role="dialog" aria-modal="true" aria-label="Veces completada por semana">
+      <header class="detail-header">
+        <button class="detail-close" id="hoy-stats-close" type="button" aria-label="Cerrar">‹ Volver</button>
+      </header>
+
+      <div class="detail-body">
+        <h2 class="hoy-stats-title" id="hoy-stats-title"></h2>
+        <h3 class="detail-section-label">Veces completada por semana</h3>
+        <ul class="hoy-stats-list" id="hoy-stats-list"></ul>
+        <p class="hoy-stats-empty" id="hoy-stats-empty" hidden>
+          Todavía no hay compleciones registradas.
+        </p>
+        <p class="hoy-stats-note">El registro empieza el 10 de agosto de 2026.</p>
       </div>
     </div>
   </div>
