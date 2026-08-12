@@ -36,6 +36,11 @@ body {
   padding: 20px 16px calc(86px + env(safe-area-inset-bottom));
 }
 
+/* Vistas a todo el ancho (Proyectos) */
+.app-main.is-wide {
+  max-width: none;
+}
+
 /* --- Navegación principal --- */
 .view[hidden] {
   display: none;
@@ -169,6 +174,10 @@ body {
 .mtab-lbl {
   font-size: 0.7rem;
   font-weight: 700;
+  white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .mtab.is-active {
@@ -975,6 +984,28 @@ body {
   font-weight: 600;
 }
 
+/* Categoría del proyecto: los mismos colores que en Hoy, pero oscurecidos,
+   porque aquí tiñen texto en vez de servir de fondo. Solo en el byline de sus
+   tareas; en la pestaña Proyectos el título va en el color normal. */
+.task-project.cat-hogar {
+  color: #a16207;
+}
+.task-project.cat-personal {
+  color: #7e22ce;
+}
+.task-project.cat-salud {
+  color: #15803d;
+}
+.task-project.cat-profesional {
+  color: #1d4ed8;
+}
+.task-project.cat-relaciones {
+  color: #c2410c;
+}
+.task-project.cat-maternidad {
+  color: #be185d;
+}
+
 .task-item.is-starred {
   background: var(--star-bg);
 }
@@ -1535,6 +1566,286 @@ body {
 }
 
 /* ---------- Proyectos: título + botón que abre el enlace en Notion ---------- */
+/* Las listas son flex, así que el atributo `hidden` necesita ayuda */
+.task-list[hidden] {
+  display: none;
+}
+
+/* Botón de texto en la cabecera de una vista ("+ Nueva tarea") */
+.header-new-btn {
+  flex: 0 0 auto;
+  padding: 9px 14px;
+  font-family: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #fff;
+  background: var(--primary);
+  border: none;
+  border-radius: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  box-shadow: var(--shadow);
+  transition: background 0.15s ease, transform 0.1s ease;
+}
+
+.header-new-btn:hover {
+  background: var(--primary-dark);
+}
+
+.header-new-btn:active {
+  transform: scale(0.96);
+}
+
+/* Grupos de la vista lista de un proyecto (Ejecutables / Bloqueadas) */
+.proyecto-group-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 20px 2px 10px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-soft);
+}
+
+.proyecto-group-title:first-child {
+  margin-top: 0;
+}
+
+.proyecto-group-count {
+  padding: 1px 8px;
+  font-size: 0.75rem;
+  color: var(--text-soft);
+  background: var(--bg);
+  border-radius: 10px;
+}
+
+/* Cada grupo, en el color de su estado */
+.proyecto-group-title.estado-proceso {
+  color: #1d4ed8;
+}
+.proyecto-group-title.estado-bloqueada {
+  color: #b45309;
+}
+.proyecto-group-title.estado-completada {
+  color: #15803d;
+}
+
+/* Aviso de "está bloqueada" bajo el selector de estado */
+.detail-state-hint {
+  margin-top: 8px;
+  font-size: 0.8rem;
+  color: var(--text-soft);
+}
+
+/* Vista grafo de un proyecto: lienzo con un post-it por tarea */
+.proyecto-canvas[hidden] {
+  display: none;
+}
+
+.proyecto-canvas {
+  position: relative;
+  min-height: 60vh;
+  padding: 4px;
+  background: var(--bg);
+  border: 1px dashed var(--border);
+  border-radius: 14px;
+  overflow: auto;
+}
+
+.postit {
+  position: absolute;
+  width: 150px;
+  height: 150px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow: hidden;
+  text-align: left;
+  font-size: 0.85rem;
+  line-height: 1.35;
+  color: var(--text);
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
+  cursor: grab;
+  word-break: break-word;
+  /* El gesto es del post-it: no debe convertirse en scroll de la página */
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+/* El texto ocupa el alto libre; la procedencia queda abajo a la izquierda */
+.postit-text {
+  flex: 1;
+  min-height: 0;
+  padding-right: 20px; /* hueco del botón de unir */
+  overflow: hidden;
+}
+
+/* Botón para empezar una flecha hacia otra tarea */
+.postit-link {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  font-family: inherit;
+  font-size: 0.9rem;
+  line-height: 1;
+  color: var(--text-soft);
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  touch-action: none;
+}
+
+.postit-link:hover {
+  color: var(--primary);
+  background: var(--star-bg);
+}
+
+/* Trazando una flecha: se elige el destino tocando otro post-it */
+.proyecto-canvas.is-linking .postit {
+  cursor: crosshair;
+}
+
+.postit.is-link-source {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+}
+
+.postit.is-link-source .postit-link {
+  color: var(--primary);
+  background: var(--star-bg);
+}
+
+/* Capa de las flechas: no intercepta el gesto salvo en el propio trazo */
+.proyecto-links {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+  color: var(--text-soft);
+}
+
+.proyecto-link-line {
+  stroke: var(--text-soft);
+  stroke-width: 2;
+  /* Los quiebros son en ángulo recto; la unión, apenas redondeada */
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.proyecto-link-hit {
+  stroke: transparent;
+  stroke-width: 14;
+  stroke-linejoin: round;
+  pointer-events: stroke;
+  cursor: move;
+  touch-action: none;
+}
+
+.proyecto-link.is-dragging .proyecto-link-line {
+  stroke: var(--primary);
+}
+
+.proyecto-link:hover .proyecto-link-line {
+  stroke: var(--danger);
+}
+
+/* Pie del post-it: origen a la izquierda, estado a la derecha */
+.postit-foot {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.postit-origin {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.postit-state {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  border-radius: 8px;
+  white-space: nowrap;
+}
+
+/* Colores de los cuatro estados (etiqueta del post-it) */
+.postit-state.estado-sin-empezar {
+  color: #4b5563;
+  background: #f3f4f6;
+}
+.postit-state.estado-proceso {
+  color: #1d4ed8;
+  background: #eaf2ff;
+}
+.postit-state.estado-bloqueada {
+  color: #b45309;
+  background: #fff4e0;
+}
+.postit-state.estado-completada {
+  color: #15803d;
+  background: #eaf7ef;
+}
+
+.postit.is-dragging {
+  cursor: grabbing;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.22);
+  z-index: 5;
+}
+
+.postit.is-done .postit-text {
+  color: var(--done);
+  text-decoration: line-through;
+}
+
+/* Botón "+" de la cabecera de una vista (Proyectos): abre su modal de creación */
+.header-add-btn {
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  font-family: inherit;
+  font-size: 1.5rem;
+  line-height: 1;
+  color: #fff;
+  background: var(--primary);
+  border: none;
+  border-radius: 12px;
+  cursor: pointer;
+  box-shadow: var(--shadow);
+  transition: background 0.15s ease, transform 0.1s ease;
+}
+
+.header-add-btn:hover {
+  background: var(--primary-dark);
+}
+
+.header-add-btn:active {
+  transform: scale(0.94);
+}
+
 .proyecto-list {
   list-style: none;
   display: flex;
@@ -1564,6 +1875,26 @@ body {
   font-size: 1rem;
   color: var(--text);
   word-break: break-word;
+}
+
+/* Número de tareas pendientes del proyecto, antes del botón de Notion.
+   Es un botón: abre la página con las tareas de ese proyecto. */
+.proyecto-count {
+  flex: 0 0 auto;
+  padding: 4px 8px;
+  font-family: inherit;
+  font-size: 0.8rem;
+  color: var(--text-soft);
+  background: var(--bg);
+  border: none;
+  border-radius: 10px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.proyecto-count:hover {
+  color: var(--primary);
+  background: var(--star-bg);
 }
 
 .proyecto-link {

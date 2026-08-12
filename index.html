@@ -43,8 +43,8 @@
         <span class="app-nav-brand">Menú</span>
       </div>
       <button type="button" class="app-nav-item" data-view="hoy">Hoy</button>
-      <button type="button" class="app-nav-item" data-view="rutinas">Cuanto antes</button>
       <button type="button" class="app-nav-item" data-view="agenda">Agenda</button>
+      <button type="button" class="app-nav-item" data-view="rutinas">Mis tareas</button>
       <hr class="app-nav-sep" />
       <button type="button" class="app-nav-item is-active" data-view="tareas">Tareas</button>
       <button type="button" class="app-nav-item" data-view="recados">Recados</button>
@@ -60,12 +60,12 @@
       <button type="button" class="mtab" data-view="hoy">
         <span class="mtab-ico">📅</span><span class="mtab-lbl">Hoy</span>
       </button>
-      <!-- "Tareas" en la barra abre la vista Cuanto antes (decisión de diseño) -->
-      <button type="button" class="mtab" data-view="rutinas">
-        <span class="mtab-ico">✅</span><span class="mtab-lbl">Tareas</span>
-      </button>
       <button type="button" class="mtab" data-view="agenda">
         <span class="mtab-ico">🗓️</span><span class="mtab-lbl">Agenda</span>
+      </button>
+      <!-- "Mis tareas" en la barra abre la vista interna `rutinas` -->
+      <button type="button" class="mtab" data-view="rutinas">
+        <span class="mtab-ico">✅</span><span class="mtab-lbl">Mis tareas</span>
       </button>
       <button type="button" class="mtab" data-more="1" aria-haspopup="true">
         <span class="mtab-ico">•••</span><span class="mtab-lbl">Más</span>
@@ -199,13 +199,12 @@
         <div id="agenda-sections"></div>
       </section>
 
-      <!-- Vista: "Cuanto antes" (interna: rutinas). Tareas automáticas:
+      <!-- Vista: "Mis tareas" (interna: rutinas). Tareas automáticas:
            planificadas + lactancia. El id/hash sigue siendo `rutinas`. -->
       <section class="view" id="view-rutinas" hidden>
         <header class="app-header">
           <div class="header-top">
-            <!-- En móvil esta vista se llega desde el botón "Tareas" -->
-            <h1><span class="only-mobile">Tareas</span><span class="only-desktop">Cuanto antes</span></h1>
+            <h1>Mis tareas</h1>
           </div>
           <p class="subtitle" id="rutinas-summary">Sin tareas todavía</p>
         </header>
@@ -358,30 +357,54 @@
       <!-- Vista: Proyectos. No son tareas: no se completan. Cada uno lleva un
            título y un enlace (a Notion), que se abre en una pestaña nueva. -->
       <section class="view" id="view-proyectos" hidden>
-        <header class="app-header">
-          <div class="header-top">
-            <h1>Proyectos</h1>
+        <!-- Índice: la lista de proyectos -->
+        <div id="proyectos-index">
+          <header class="app-header">
+            <div class="header-top">
+              <h1>Proyectos</h1>
+              <button
+                type="button"
+                class="header-add-btn"
+                id="proyectos-add-btn"
+                aria-label="Nuevo proyecto"
+                title="Nuevo proyecto"
+              >+</button>
+            </div>
+          </header>
+
+          <ul class="proyecto-list" id="proyectos-list"></ul>
+
+          <p class="empty-state" id="proyectos-empty" hidden>
+            No hay proyectos. ¡Añade uno con el botón + ! 🎉
+          </p>
+        </div>
+
+        <!-- Página de un proyecto: sus tareas (se abre desde "X tareas") -->
+        <div id="proyectos-detail" hidden>
+          <header class="app-header">
+            <button class="detail-close" id="proyecto-tasks-back" type="button">‹ Proyectos</button>
+            <div class="header-top">
+              <h1 id="proyecto-tasks-title"></h1>
+              <button type="button" class="header-new-btn" id="proyecto-task-add-btn">
+                + Nueva tarea
+              </button>
+            </div>
+          </header>
+
+          <div class="task-tabs" id="proyecto-tasks-tabs" role="tablist" aria-label="Vista">
+            <button type="button" class="task-tab is-active" data-tab="lista" role="tab" aria-selected="true">Lista</button>
+            <button type="button" class="task-tab" data-tab="grafo" role="tab" aria-selected="false">Grafo</button>
           </div>
-          <p class="subtitle" id="proyectos-summary">Sin proyectos todavía</p>
-        </header>
 
-        <form class="new-task" id="proyectos-form" autocomplete="off">
-          <input
-            type="text"
-            id="proyectos-input"
-            class="task-input"
-            placeholder="Añadir un proyecto…"
-            aria-label="Nuevo proyecto"
-            maxlength="200"
-          />
-          <button type="submit" class="add-btn" aria-label="Añadir proyecto">+</button>
-        </form>
+          <div id="proyecto-tasks-list"></div>
 
-        <ul class="proyecto-list" id="proyectos-list"></ul>
+          <!-- Vista grafo: cada tarea es un post-it que se puede recolocar -->
+          <div class="proyecto-canvas" id="proyecto-tasks-canvas" hidden></div>
 
-        <p class="empty-state" id="proyectos-empty" hidden>
-          No hay proyectos. ¡Añade uno arriba! 🎉
-        </p>
+          <p class="empty-state" id="proyecto-tasks-empty" hidden>
+            Este proyecto no tiene tareas asignadas.
+          </p>
+        </div>
       </section>
 
       <!-- Vista: "Rutinas" (interna: planificadas). El id/hash sigue siendo
@@ -462,6 +485,19 @@
         <div id="detail-project-wrap" hidden>
           <h3 class="detail-section-label">Proyecto</h3>
           <select id="detail-project" class="date-mode" aria-label="Proyecto"></select>
+        </div>
+
+        <!-- Estado dentro del proyecto (solo si la tarea tiene uno) -->
+        <div id="detail-state-wrap" hidden>
+          <h3 class="detail-section-label">Estado</h3>
+          <select id="detail-state" class="date-mode" aria-label="Estado">
+            <option value="sin-empezar">Sin empezar</option>
+            <option value="proceso">En proceso</option>
+            <option value="completada">Completada</option>
+          </select>
+          <p class="detail-state-hint" id="detail-state-hint" hidden>
+            Ahora mismo está bloqueada: otra tarea del grafo apunta a ella.
+          </p>
         </div>
 
         <div id="detail-task-fields">
@@ -657,6 +693,70 @@
     </div>
   </div>
 
+  <!-- Nueva tarea dentro de un proyecto -->
+  <div class="fab-overlay" id="proyecto-task-overlay" hidden>
+    <div class="fab-box" role="dialog" aria-modal="true" aria-labelledby="proyecto-task-modal-title">
+      <h2 class="fab-title" id="proyecto-task-modal-title">Nueva tarea</h2>
+
+      <form id="proyecto-task-form" autocomplete="off">
+        <label class="fab-label" for="proyecto-task-input">Nombre</label>
+        <input
+          type="text"
+          id="proyecto-task-input"
+          class="task-input"
+          maxlength="200"
+          placeholder="¿Qué hay que hacer?"
+        />
+
+        <label class="fab-label" for="proyecto-task-list">Lista</label>
+        <select id="proyecto-task-list" class="date-mode">
+          <option value="tareas">Tareas</option>
+          <option value="recados">Recados</option>
+          <option value="pendientes">Pendientes</option>
+        </select>
+
+        <div class="fab-actions">
+          <button type="button" class="fab-cancel" id="proyecto-task-cancel">Cancelar</button>
+          <button type="submit" class="fab-submit">Crear</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Nuevo proyecto (botón + de la cabecera de la pestaña) -->
+  <div class="fab-overlay" id="proyecto-new-overlay" hidden>
+    <div class="fab-box" role="dialog" aria-modal="true" aria-labelledby="proyecto-new-title">
+      <h2 class="fab-title" id="proyecto-new-title">Nuevo proyecto</h2>
+
+      <form id="proyecto-new-form" autocomplete="off">
+        <label class="fab-label" for="proyecto-new-name">Nombre</label>
+        <input
+          type="text"
+          id="proyecto-new-name"
+          class="task-input"
+          maxlength="200"
+          placeholder="¿Cómo se llama?"
+        />
+
+        <label class="fab-label" for="proyecto-new-url">Enlace</label>
+        <input
+          type="url"
+          id="proyecto-new-url"
+          class="task-input"
+          placeholder="https://www.notion.so/…"
+        />
+
+        <label class="fab-label" for="proyecto-new-cat">Categoría</label>
+        <select id="proyecto-new-cat" class="date-mode"></select>
+
+        <div class="fab-actions">
+          <button type="button" class="fab-cancel" id="proyecto-new-cancel">Cancelar</button>
+          <button type="submit" class="fab-submit">Crear</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <!-- Ajustes de un proyecto: título, enlace y eliminar -->
   <div class="detail-overlay" id="proyecto-detail-overlay" hidden>
     <div class="detail-panel" role="dialog" aria-modal="true" aria-label="Ajustes del proyecto">
@@ -681,6 +781,9 @@
           placeholder="https://www.notion.so/…"
           aria-label="Enlace del proyecto"
         />
+
+        <h3 class="detail-section-label">Categoría</h3>
+        <select id="proyecto-detail-cat" class="date-mode" aria-label="Categoría"></select>
 
         <button class="detail-delete" id="proyecto-detail-delete" type="button">
           🗑 Eliminar proyecto

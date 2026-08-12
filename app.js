@@ -34,11 +34,26 @@
   const pendientesSummary = document.getElementById("pendientes-summary");
 
   // Vista Proyectos: no son tareas (no se completan). Título + enlace a Notion.
-  const proyectosForm = document.getElementById("proyectos-form");
-  const proyectosInput = document.getElementById("proyectos-input");
   const proyectosListEl = document.getElementById("proyectos-list");
   const proyectosEmpty = document.getElementById("proyectos-empty");
-  const proyectosSummary = document.getElementById("proyectos-summary");
+  const proyectosAddBtn = document.getElementById("proyectos-add-btn");
+  // Página de un proyecto (sus tareas), dentro de la misma pestaña
+  const proyectosIndexEl = document.getElementById("proyectos-index");
+  const proyectosDetailEl = document.getElementById("proyectos-detail");
+  const proyectoTasksBack = document.getElementById("proyecto-tasks-back");
+  const proyectoTasksTitle = document.getElementById("proyecto-tasks-title");
+  const proyectoTasksList = document.getElementById("proyecto-tasks-list");
+  const proyectoTasksEmpty = document.getElementById("proyecto-tasks-empty");
+  const proyectoTasksTabs = document.getElementById("proyecto-tasks-tabs");
+  const proyectoTaskForm = document.getElementById("proyecto-task-form");
+  const proyectoTaskInput = document.getElementById("proyecto-task-input");
+  const proyectoTaskListSel = document.getElementById("proyecto-task-list");
+  const proyectoTaskOverlay = document.getElementById("proyecto-task-overlay");
+  const proyectoTaskAddBtn = document.getElementById("proyecto-task-add-btn");
+  const proyectoTaskCancel = document.getElementById("proyecto-task-cancel");
+  const proyectoTasksCanvas = document.getElementById("proyecto-tasks-canvas");
+  let proyectoOpenId = null; // proyecto cuya página de tareas está abierta
+  let proyectoTasksTab = "lista"; // "lista" | "grafo" (no se persiste)
 
   // Vista Rutinas: tareas automáticas (planificadas + lactancia)
   const rutinasList = document.getElementById("rutinas-list");
@@ -60,7 +75,7 @@
     items: () => tasks,
     setItems: (v) => (tasks = v),
     save: () => save(),
-    filter: (t) => !t.sourcePlannedId,
+    filter: (t) => !t.sourcePlannedId && !isTaskBlocked(t),
     listEl: list,
     doneListEl: doneList,
     emptyEl: emptyState,
@@ -87,7 +102,9 @@
     // "Cuanto antes" reúne: copias de rutinas + las tareas destacadas (★).
     // Las completadas pierden el destacado, así que salen solas de aquí.
     // Las de rutinas con "Añadir a Hoy" no: esas viven en "Durante el día".
-    filter: (t) => !t.hoyDia && (!!t.sourcePlannedId || !!t.starred),
+    // Las bloqueadas por otra tarea de su proyecto tampoco: aún no tocan.
+    filter: (t) =>
+      !t.hoyDia && !isTaskBlocked(t) && (!!t.sourcePlannedId || !!t.starred),
     listEl: rutinasList,
     doneListEl: rutinasDoneList,
     emptyEl: rutinasEmpty,
@@ -131,6 +148,7 @@
     items: () => recados,
     setItems: (v) => (recados = v),
     save: () => saveRecados(),
+    filter: (t) => !isTaskBlocked(t),
     listEl: recadosList,
     doneListEl: recadosDoneList,
     emptyEl: recadosEmpty,
@@ -153,6 +171,7 @@
     items: () => pendientes,
     setItems: (v) => (pendientes = v),
     save: () => savePendientes(),
+    filter: (t) => !isTaskBlocked(t),
     listEl: pendientesList,
     doneListEl: pendientesDoneList,
     emptyEl: pendientesEmpty,
@@ -904,24 +923,29 @@
   const detailType = document.getElementById("detail-type");
   const detailProjectWrap = document.getElementById("detail-project-wrap");
   const detailProject = document.getElementById("detail-project");
+  const detailStateWrap = document.getElementById("detail-state-wrap");
+  const detailState = document.getElementById("detail-state");
+  const detailStateHint = document.getElementById("detail-state-hint");
   const detailCatWrap = document.getElementById("detail-cat-wrap");
   const detailCat = document.getElementById("detail-cat");
   const detailAddHoyWrap = document.getElementById("detail-addhoy-wrap");
   const detailAddHoy = document.getElementById("detail-addhoy");
-  // Categorías de las rutinas: las mismas que las de las tareas de Hoy
-  (function fillDetailCategories() {
-    if (!detailCat) return;
+  // Selector de categoría: el mismo juego en Hoy, en las rutinas y en los
+  // proyectos (el color de cada una va en el CSS, por su id)
+  function fillCategorySelect(select) {
+    if (!select) return;
     const none = document.createElement("option");
     none.value = "";
     none.textContent = "Sin categoría";
-    detailCat.appendChild(none);
+    select.appendChild(none);
     HOY_CATEGORIES.forEach((c) => {
       const opt = document.createElement("option");
       opt.value = c.id;
       opt.textContent = c.name;
-      detailCat.appendChild(opt);
+      select.appendChild(opt);
     });
-  })();
+  }
+  fillCategorySelect(detailCat); // categoría de las rutinas
   const detailSubtasks = document.getElementById("detail-subtasks");
   const subtaskForm = document.getElementById("subtask-form");
   const subtaskInput = document.getElementById("subtask-input");
@@ -1410,6 +1434,7 @@
     detailTaskFields.hidden = true; // sin fecha ni subtareas
     detailRepeatSection.hidden = true;
     detailProjectWrap.hidden = true;
+    detailStateWrap.hidden = true;
     detailCatWrap.hidden = true;
     detailAddHoyWrap.hidden = true;
     detailTypeWrap.hidden = true; // no se puede mover de lista
@@ -1435,6 +1460,7 @@
     detailTaskFields.hidden = true; // sin fecha ni subtareas
     detailRepeatSection.hidden = true;
     detailProjectWrap.hidden = true;
+    detailStateWrap.hidden = true;
     detailCatWrap.hidden = true;
     detailAddHoyWrap.hidden = true;
     detailTypeWrap.hidden = true; // no se puede mover de lista
@@ -1460,6 +1486,7 @@
     detailTaskFields.hidden = false; // restaura los campos de tarea
     detailRepeatSection.hidden = true; // "Repetir" y "Categoría" solo en rutinas
     detailProjectWrap.hidden = true;
+    detailStateWrap.hidden = true;
     detailCatWrap.hidden = true;
     detailAddHoyWrap.hidden = true;
     detailDelete.hidden = false;
@@ -1472,6 +1499,7 @@
     renderSubtasks(task);
     renderDetailType();
     renderDetailProject(task);
+    renderDetailState(task);
     subtaskInput.value = "";
     overlay.hidden = false;
     document.body.classList.add("no-scroll");
@@ -1577,10 +1605,19 @@
   /* ---------- "Proyecto": a qué proyecto pertenece la tarea ----------
      Solo para las tareas de Tareas / Recados / Pendientes. Si el proyecto se
      elimina, la referencia deja de resolver y el byline no muestra nada. */
+  function taskProjectOf(task) {
+    if (!task || !task.projectId) return null;
+    return proyectos.find((x) => x.id === task.projectId) || null;
+  }
+
   function taskProjectName(task) {
-    if (!task || !task.projectId) return "";
-    const p = proyectos.find((x) => x.id === task.projectId);
+    const p = taskProjectOf(task);
     return p ? p.text : "";
+  }
+
+  // Color de la categoría del proyecto (el color vive en el CSS: .cat-<id>)
+  function proyectoCatClass(item) {
+    return item && item.category ? " cat-" + item.category : "";
   }
 
   // Rellena el selector (los proyectos cambian) y marca el de la tarea abierta
@@ -1602,6 +1639,97 @@
     });
     detailProject.value = taskProjectName(task) ? task.projectId : "";
   }
+
+  /* ---------- Estado de una tarea dentro de su proyecto ----------
+     Cuatro estados. "Completada" es el `done` de siempre (el mismo que la
+     casilla), "Bloqueada" sale sola de las flechas del grafo, y los otros dos
+     se eligen a mano. Orden de mando: completada > bloqueada > lo elegido. */
+  const TASK_STATES = [
+    { id: "proceso", name: "En proceso" },
+    { id: "sin-empezar", name: "Sin empezar" },
+    { id: "bloqueada", name: "Bloqueadas" },
+    { id: "completada", name: "Completadas" },
+  ];
+
+  // Tareas del proyecto a las que apunta alguna flecha desde otra que sigue
+  // pendiente. Una tarea completada ya no bloquea a la que va después: si no,
+  // lo bloqueado no se desbloquearía nunca.
+  function proyectoBlockedIds(proyecto) {
+    if (!proyecto) return new Set();
+    const bloquea = (id) => {
+      const e = findTaskEntry(id);
+      return !!e && e.item.projectId === proyecto.id && !e.item.done;
+    };
+    return new Set(
+      proyectoLinks(proyecto)
+        .filter((l) => bloquea(l.from))
+        .map((l) => l.to)
+    );
+  }
+
+  // ¿La tarea está bloqueada por otra de su proyecto? Se usa para esconderla
+  // de Tareas, Recados, Pendientes y Mis tareas: todavía no toca hacerla.
+  // La comprobación cara solo corre para las tareas que tienen proyecto.
+  function isTaskBlocked(task) {
+    if (!task || !task.projectId || task.done) return false;
+    const proyecto = proyectos.find((p) => p.id === task.projectId);
+    if (!proyecto) return false;
+    return proyectoBlockedIds(proyecto).has(task.id);
+  }
+
+  function taskStateOf(task, bloqueadas) {
+    if (task.done) return "completada";
+    if (bloqueadas && bloqueadas.has(task.id)) return "bloqueada";
+    return task.projectState === "proceso" ? "proceso" : "sin-empezar";
+  }
+
+  function taskStateName(id) {
+    const s = TASK_STATES.find((x) => x.id === id);
+    if (!s) return "";
+    // En singular para la etiqueta de una tarea
+    if (id === "bloqueada") return "Bloqueada";
+    if (id === "completada") return "Completada";
+    return s.name;
+  }
+
+  function renderDetailState(task) {
+    const proyecto = taskProjectOf(task);
+    detailStateWrap.hidden = !proyecto;
+    if (!proyecto) return;
+    detailState.value = task.done
+      ? "completada"
+      : task.projectState === "proceso"
+      ? "proceso"
+      : "sin-empezar";
+    const bloqueada =
+      !task.done && proyectoBlockedIds(proyecto).has(task.id);
+    detailStateHint.hidden = !bloqueada;
+  }
+
+  detailState.addEventListener("change", () => {
+    const task = getOpenTask();
+    if (!task) return;
+    const valor = detailState.value;
+    if (valor === "completada") {
+      if (!task.done) {
+        task.done = true;
+        task.completedAt = todayISO();
+        task.starred = false; // al completar, deja de estar destacada
+      }
+    } else {
+      if (task.done) {
+        task.done = false;
+        delete task.completedAt;
+      }
+      if (valor === "proceso") task.projectState = "proceso";
+      else delete task.projectState;
+    }
+    saveOpenTask();
+    detailCheck.checked = task.done; // la casilla del panel, al día
+    detailTitle.classList.toggle("is-done", task.done);
+    renderDetailState(task);
+    renderAllLists();
+  });
 
   detailProject.addEventListener("change", () => {
     const task = getOpenTask();
@@ -1752,6 +1880,7 @@
     toggleTask(openTaskId);
     const task = getOpenTask();
     detailTitle.classList.toggle("is-done", task && task.done);
+    if (task) renderDetailState(task); // "Completada" es el mismo `done`
   });
 
   document.addEventListener("keydown", (e) => {
@@ -1806,7 +1935,7 @@
   // Construye el <li> de una tarea (se usa en la lista de pendientes y en la
   // de completadas). `origin` (opcional): etiqueta de procedencia, p. ej.
   // "Tareas" o "Recados", para las destacadas que se agrupan en Cuanto antes.
-  // `opts` (opcional): { hideDate, hideStar, dragHandle } — en la Agenda la
+  // `opts` (opcional): { hideDate, hideStar, hideProject, dragHandle } — en la Agenda la
   // fecha y el destacado sobran, porque la tarea ya está colocada en su día, y
   // `dragHandle` añade el asa para reordenarla dentro del día.
   function createTaskItem(task, origin, opts) {
@@ -1908,8 +2037,9 @@
     // separados por " · ".
     const dateText =
       dateLabel && !o.hideDate ? (showClock ? "🕑 " : "") + dateLabel : "";
-    const projectName = taskProjectName(task);
-    if (origin || projectName || dateText) {
+    // Dentro de la página del proyecto, su nombre sobra en cada tarea
+    const project = o.hideProject ? null : taskProjectOf(task);
+    if (origin || project || dateText) {
       const dateLine = document.createElement("span");
       dateLine.className = "task-date";
       let first = true;
@@ -1925,11 +2055,12 @@
         originEl.textContent = origin;
         dateLine.appendChild(originEl);
       }
-      if (projectName) {
+      if (project) {
+        // Va en el color de su categoría (o en el color suave, si no tiene)
         addSep();
         const projectEl = document.createElement("span");
-        projectEl.className = "task-project";
-        projectEl.textContent = "📁 " + projectName;
+        projectEl.className = "task-project" + proyectoCatClass(project);
+        projectEl.textContent = project.text;
         dateLine.appendChild(projectEl);
       }
       if (dateText) {
@@ -2147,9 +2278,12 @@
      Número de pendientes de cada lista, junto a su entrada del menú (barra
      lateral en escritorio y menú "Más" en móvil). */
   function navCounts() {
-    const pend = (arr) => arr.filter((t) => !t.done).length;
+    const pend = (arr) =>
+      arr.filter((t) => !t.done && !isTaskBlocked(t)).length;
     return {
-      tareas: tasks.filter((t) => !t.sourcePlannedId && !t.done).length,
+      tareas: tasks.filter(
+        (t) => !t.sourcePlannedId && !t.done && !isTaskBlocked(t)
+      ).length,
       recados: pend(recados),
       pendientes: pend(pendientes),
       proyectos: proyectos.length, // los proyectos no se completan
@@ -2189,6 +2323,7 @@
     // Hoy los del día.
     renderAgenda();
     renderHoyView();
+    renderProyectos(); // cada proyecto lleva su número de tareas
   }
   function renderRutinas() {
     renderList(ctxRutinas);
@@ -2475,13 +2610,19 @@
       const el = document.getElementById("view-" + v);
       if (el) el.hidden = v !== view;
     });
+    // Proyectos ocupa todo el ancho; el resto de vistas van en columna estrecha
+    const main = document.querySelector(".app-main");
+    if (main) main.classList.toggle("is-wide", view === "proyectos");
     if (view === "hoy") renderHoy();
     else if (view === "agenda") renderAgenda();
     else if (view === "tareas") render();
     else if (view === "rutinas") renderRutinas();
     else if (view === "recados") renderRecados();
     else if (view === "pendientes") renderPendientes();
-    else if (view === "proyectos") renderProyectos();
+    else if (view === "proyectos") {
+      proyectoOpenId = null; // a la pestaña se entra siempre por el índice
+      renderProyectos();
+    }
     else if (view === "planificadas") renderPlanned();
   }
 
@@ -2508,13 +2649,13 @@
   window.addEventListener("hashchange", () => activateView(viewFromHash()));
 
   /* ---------- Navegación móvil: barra inferior + menú "Más" + botón ＋ ----------
-     La barra tiene Hoy / Tareas / Agenda y un "Más" con el resto de vistas
-     (Ajustes incluido). El botón "Tareas" abre la vista Cuanto antes; la lista
-     completa de Mis tareas queda en "Más". */
+     La barra tiene Hoy / Agenda / Mis tareas y un "Más" con el resto de vistas
+     (Ajustes incluido). El botón "Mis tareas" abre la vista interna `rutinas`;
+     la lista completa de Tareas queda en "Más". */
   const mobileTabbar = document.getElementById("mobile-tabbar");
   const moreMenu = document.getElementById("more-menu");
   const moreClose = document.getElementById("more-close");
-  // Vistas que tienen botón propio en la barra ("Tareas" abre Cuanto antes)
+  // Vistas que tienen botón propio en la barra ("Mis tareas" = `rutinas`)
   const BAR_VIEWS = ["hoy", "rutinas", "agenda"];
 
   // Resalta la pestaña activa; si la vista no está en la barra (o el menú está
@@ -3879,12 +4020,11 @@
   });
 
   /* ---------- Proyectos (título + enlace, sin completar) ---------- */
-  // Marca de Notion: una "N" en un cuadrado redondeado. Va en línea (currentColor)
-  // para que funcione sin conexión y se adapte al tema.
+  // Marca de Notion (el cubo con la "N"). Va en línea y en `currentColor` para
+  // que funcione sin conexión y siga el color del tema.
   const NOTION_ICON =
-    '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false">' +
-    '<rect x="2.5" y="2.5" width="19" height="19" rx="4.5" fill="none" stroke="currentColor" stroke-width="1.6"/>' +
-    '<path d="M8.5 16.5v-9l7 9v-9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>' +
+    '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false">' +
+    '<path fill="currentColor" d="M4.459 4.208c.746.606 1.026.56 2.428.466l13.215-.793c.28 0 .047-.28-.046-.326L17.86 1.968c-.42-.326-.981-.7-2.054-.607L3.01 2.295c-.466.046-.56.28-.374.466zm.793 3.08v13.904c0 .747.373 1.027 1.214.98l14.523-.84c.841-.046.935-.56.935-1.167V6.354c0-.606-.233-.933-.748-.887l-15.177.887c-.56.047-.747.327-.747.933zm14.337.745c.093.42 0 .84-.42.888l-.7.14v10.264c-.608.327-1.168.514-1.635.514-.748 0-.935-.234-1.495-.933l-4.577-7.186v6.952l1.448.327s0 .84-1.168.84l-3.222.186c-.093-.186 0-.653.327-.746l.84-.233V9.854L7.822 9.76c-.094-.42.14-1.026.793-1.073l3.456-.233 4.764 7.279v-6.44l-1.215-.139c-.093-.514.28-.887.747-.933zM1.936 1.035l13.31-.98c1.634-.14 2.055-.047 3.083.7l4.249 2.986c.7.513.934.653.934 1.213v16.378c0 1.026-.373 1.634-1.68 1.727l-15.458.934c-.98.047-1.448-.093-1.962-.747l-3.129-4.06c-.56-.747-.793-1.306-.793-1.96V2.667c0-.839.374-1.54 1.446-1.632z"/>' +
     "</svg>";
 
   // Enlace utilizable: completa el esquema si falta y descarta lo que no sea
@@ -3896,10 +4036,23 @@
     return /^https?:\/\//i.test(full) ? full : "";
   }
 
-  function addProyecto(text) {
+  // Tareas pendientes asignadas a un proyecto, de las tres listas que lo
+  // admiten (las completadas no cuentan, como en los contadores del menú).
+  function proyectoTaskCount(id) {
+    const cuenta = (arr) =>
+      arr.filter((t) => t.projectId === id && !t.done).length;
+    return cuenta(tasks) + cuenta(recados) + cuenta(pendientes);
+  }
+
+  function addProyecto(text, url, category) {
     const trimmed = text.trim();
     if (!trimmed) return;
-    proyectos.push({ id: newId(), text: trimmed, url: "" });
+    proyectos.push({
+      id: newId(),
+      text: trimmed,
+      url: (url || "").trim(),
+      category: category || "",
+    });
     saveProyectos();
     renderProyectos();
   }
@@ -3927,7 +4080,561 @@
     renderAllLists();
   }
 
+  // Pinta lo que toque: el índice y, si hay un proyecto abierto, su página.
+  // Todas las llamadas existentes siguen valiendo (se repinta lo visible).
   function renderProyectos() {
+    // Primero se decide qué página se ve: el lienzo del grafo necesita estar
+    // visible para poder medir su ancho y repartir los post-it.
+    const open = !!getProyectoOpen();
+    if (proyectosIndexEl) proyectosIndexEl.hidden = open;
+    if (proyectosDetailEl) proyectosDetailEl.hidden = !open;
+    renderProyectosIndex();
+    renderProyectoTasks();
+    updateNavCounts();
+  }
+
+  // Proyecto abierto, si sigue existiendo (si se elimina, se vuelve al índice)
+  function getProyectoOpen() {
+    if (!proyectoOpenId) return null;
+    const item = proyectos.find((p) => p.id === proyectoOpenId);
+    if (!item) proyectoOpenId = null;
+    return item || null;
+  }
+
+  function openProyectoTasks(id) {
+    proyectoOpenId = id;
+    proyectoTasksTab = "lista"; // cada proyecto se abre por su lista
+    renderProyectos();
+    window.scrollTo(0, 0);
+  }
+
+  function closeProyectoTasks() {
+    proyectoOpenId = null;
+    renderProyectos();
+  }
+
+  // Tareas asignadas al proyecto, de las tres listas: pendientes primero
+  function proyectoTasks(id) {
+    const out = [];
+    const add = (arr, origin) =>
+      arr.forEach((t) => {
+        if (t.projectId === id) out.push({ task: t, origin: origin });
+      });
+    add(tasks, "Tareas");
+    add(recados, "Recados");
+    add(pendientes, "Pendientes");
+    return out
+      .filter((e) => !e.task.done)
+      .concat(out.filter((e) => e.task.done));
+  }
+
+  function renderProyectoTasks() {
+    const item = getProyectoOpen();
+    if (!item || !proyectoTasksList) return;
+    proyectoTasksTitle.textContent = item.text;
+    const entries = proyectoTasks(item.id);
+    const esGrafo = proyectoTasksTab === "grafo";
+
+    proyectoTasksTabs.querySelectorAll(".task-tab").forEach((b) => {
+      const on = b.dataset.tab === proyectoTasksTab;
+      b.classList.toggle("is-active", on);
+      b.setAttribute("aria-selected", on ? "true" : "false");
+    });
+
+    proyectoTasksList.hidden = esGrafo;
+    proyectoTasksCanvas.hidden = !esGrafo;
+    if (esGrafo) renderProyectoGrafo(item, entries);
+    else renderProyectoLista(item, entries);
+    if (proyectoTasksEmpty) proyectoTasksEmpty.hidden = entries.length !== 0;
+  }
+
+  /* ---------- Vista lista: ejecutables y bloqueadas ----------
+     Una tarea está bloqueada si en el grafo es destino de alguna flecha: hay
+     otra tarea que apunta a ella y, por tanto, va antes. */
+  function renderProyectoLista(proyecto, entries) {
+    proyectoTasksList.innerHTML = "";
+    const bloqueadas = proyectoBlockedIds(proyecto);
+    const grupos = TASK_STATES.map((estado) => ({
+      nombre: estado.name,
+      id: estado.id,
+      items: entries.filter(
+        (e) => taskStateOf(e.task, bloqueadas) === estado.id
+      ),
+    }));
+    grupos.forEach((grupo) => {
+      if (!grupo.items.length) return; // grupo vacío: ni título
+      const titulo = document.createElement("h2");
+      titulo.className = "proyecto-group-title estado-" + grupo.id;
+      titulo.textContent = grupo.nombre;
+      const count = document.createElement("span");
+      count.className = "proyecto-group-count";
+      count.textContent = grupo.items.length;
+      titulo.appendChild(count);
+      const ul = document.createElement("ul");
+      ul.className = "task-list";
+      // Destacar y el nombre del proyecto se quedan en su lista de origen
+      grupo.items.forEach((e) =>
+        ul.appendChild(
+          createTaskItem(e.task, e.origin, {
+            hideStar: true,
+            hideProject: true,
+          })
+        )
+      );
+      proyectoTasksList.append(titulo, ul);
+    });
+  }
+
+  /* ---------- Vista grafo: un post-it por tarea ---------- */
+  const POSTIT_SIZE = 150; // lado del post-it (cuadrado), en px
+  const POSTIT_GAP = 16;
+
+  // Posición guardada de la tarea dentro del proyecto, o una por defecto en
+  // rejilla (no se persiste hasta que se arrastra).
+  function postitPos(proyecto, taskId, index, columnas) {
+    const saved = proyecto.graph && proyecto.graph[taskId];
+    if (saved && typeof saved.x === "number" && typeof saved.y === "number") {
+      return { x: saved.x, y: saved.y };
+    }
+    const paso = POSTIT_SIZE + POSTIT_GAP;
+    return {
+      x: (index % columnas) * paso,
+      y: Math.floor(index / columnas) * paso,
+    };
+  }
+
+  function savePostitPos(proyecto, taskId, x, y) {
+    if (!proyecto.graph) proyecto.graph = {};
+    proyecto.graph[taskId] = { x: Math.round(x), y: Math.round(y) };
+    saveProyectos();
+  }
+
+  function renderProyectoGrafo(proyecto, entries) {
+    proyectoTasksCanvas.innerHTML = "";
+    const bloqueadas = proyectoBlockedIds(proyecto);
+    const ancho = proyectoTasksCanvas.clientWidth || POSTIT_SIZE;
+    const columnas = Math.max(
+      1,
+      Math.floor((ancho + POSTIT_GAP) / (POSTIT_SIZE + POSTIT_GAP))
+    );
+    let maxY = 0;
+
+    // Capa de las flechas, por debajo de los post-it
+    const svg = document.createElementNS(SVG_NS, "svg");
+    svg.setAttribute("class", "proyecto-links");
+    proyectoTasksCanvas.appendChild(svg);
+
+    entries.forEach((e, i) => {
+      const pos = postitPos(proyecto, e.task.id, i, columnas);
+      const nota = document.createElement("div");
+      nota.className = "postit" + (e.task.done ? " is-done" : "");
+      nota.dataset.id = e.task.id;
+      nota.style.left = pos.x + "px";
+      nota.style.top = pos.y + "px";
+      nota.title = e.task.text;
+
+      const texto = document.createElement("span");
+      texto.className = "postit-text";
+      texto.textContent = e.task.text;
+      // Pie: lista de origen a la izquierda y estado a la derecha. El estado
+      // aquí solo se consulta; se cambia en el panel de la tarea.
+      const pie = document.createElement("div");
+      pie.className = "postit-foot";
+      const origen = document.createElement("span");
+      origen.className = "postit-origin";
+      origen.textContent = e.origin;
+      const estadoId = taskStateOf(e.task, bloqueadas);
+      const estado = document.createElement("span");
+      estado.className = "postit-state estado-" + estadoId;
+      estado.textContent = taskStateName(estadoId);
+      pie.append(origen, estado);
+      // Botón para empezar una flecha hacia otra tarea
+      const enlazar = document.createElement("button");
+      enlazar.type = "button";
+      enlazar.className = "postit-link";
+      enlazar.textContent = "↗";
+      enlazar.title = "Unir con otra tarea";
+      enlazar.setAttribute("aria-label", "Unir con otra tarea");
+      enlazar.addEventListener("pointerdown", (ev) => ev.stopPropagation());
+      enlazar.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        toggleLinkFrom(e.task.id);
+      });
+      nota.append(texto, pie, enlazar);
+
+      enablePostitDrag(nota, proyecto, e.task);
+      proyectoTasksCanvas.appendChild(nota);
+      maxY = Math.max(maxY, pos.y + POSTIT_SIZE);
+    });
+
+    updateLinkMode();
+    drawProyectoLinks(proyecto);
+    fitProyectoCanvas(maxY);
+  }
+
+  /* ---------- Flechas entre post-it ---------- */
+  const SVG_NS = "http://www.w3.org/2000/svg";
+  let proyectoLinkFrom = null; // tarea desde la que se está trazando la flecha
+
+  function proyectoLinks(proyecto) {
+    const raw = proyecto.links;
+    const arr = Array.isArray(raw)
+      ? raw
+      : raw && typeof raw === "object"
+      ? Object.values(raw)
+      : [];
+    return arr.filter((l) => l && l.from && l.to);
+  }
+
+  // Marca/desmarca el origen. Con un origen activo, tocar otro post-it une.
+  function toggleLinkFrom(id) {
+    proyectoLinkFrom = proyectoLinkFrom === id ? null : id;
+    updateLinkMode();
+  }
+
+  function updateLinkMode() {
+    proyectoTasksCanvas.classList.toggle("is-linking", !!proyectoLinkFrom);
+    proyectoTasksCanvas.querySelectorAll(".postit").forEach((n) => {
+      n.classList.toggle("is-link-source", n.dataset.id === proyectoLinkFrom);
+    });
+  }
+
+  function addProyectoLink(proyecto, from, to) {
+    if (!from || !to || from === to) return;
+    const links = proyectoLinks(proyecto);
+    // Ya existe esa misma flecha (mismo sentido)
+    if (links.some((l) => l.from === from && l.to === to)) return;
+    links.push({ from: from, to: to });
+    proyecto.links = links;
+    saveProyectos();
+  }
+
+  function removeProyectoLink(proyecto, from, to) {
+    proyecto.links = proyectoLinks(proyecto).filter(
+      (l) => !(l.from === from && l.to === to)
+    );
+    saveProyectos();
+  }
+
+  // Ruta quebrada entre dos post-it: solo tramos horizontales y verticales.
+  // Sale por el lado hacia el que más se separan y gira a medio camino.
+  // Eje por el que sale la flecha: "h" (izquierda/derecha) o "v" (arriba/abajo)
+  function ejeRuta(a, b) {
+    if (!a || !b) return "h";
+    return Math.abs(b.x - a.x) >= Math.abs(b.y - a.y) ? "h" : "v";
+  }
+
+  // `bend` (opcional): {axis, off} desplaza el tramo central respecto a su
+  // sitio por defecto. Solo cuenta si su eje es el de la ruta actual; si los
+  // post-it se recolocan y la ruta cambia de eje, se ignora.
+  function rutaOrtogonal(a, b, bend) {
+    const mitad = POSTIT_SIZE / 2;
+    const ax = a.x + mitad;
+    const ay = a.y + mitad;
+    const bx = b.x + mitad;
+    const by = b.y + mitad;
+    const dx = bx - ax;
+    const dy = by - ay;
+    const eje = Math.abs(dx) >= Math.abs(dy) ? "h" : "v";
+    const off = bend && bend.axis === eje ? bend.off || 0 : 0;
+    let puntos;
+    if (eje === "h") {
+      // Salida por el lado izquierdo/derecho
+      const sx = ax + (dx >= 0 ? mitad : -mitad);
+      const ex = bx + (dx >= 0 ? -mitad : mitad);
+      const mx = (sx + ex) / 2 + off;
+      puntos = [
+        [sx, ay],
+        [mx, ay],
+        [mx, by],
+        [ex, by],
+      ];
+    } else {
+      // Salida por arriba/abajo
+      const sy = ay + (dy >= 0 ? mitad : -mitad);
+      const ey = by + (dy >= 0 ? -mitad : mitad);
+      const my = (sy + ey) / 2 + off;
+      puntos = [
+        [ax, sy],
+        [ax, my],
+        [bx, my],
+        [bx, ey],
+      ];
+    }
+    // Sin repetidos (cuando van alineados, el giro no existe)
+    return puntos.filter(
+      (p, i, arr) => i === 0 || p[0] !== arr[i - 1][0] || p[1] !== arr[i - 1][1]
+    );
+  }
+
+  // Posición actual de cada post-it, leída del DOM (vale también mientras se
+  // arrastra uno, porque su style ya está actualizado).
+  function postitPositions() {
+    const pos = {};
+    proyectoTasksCanvas.querySelectorAll(".postit").forEach((n) => {
+      pos[n.dataset.id] = {
+        x: parseFloat(n.style.left) || 0,
+        y: parseFloat(n.style.top) || 0,
+      };
+    });
+    return pos;
+  }
+
+  function puntosLink(l, pos) {
+    const a = pos[l.from];
+    const b = pos[l.to];
+    if (!a || !b) return null; // alguna tarea ya no está en el proyecto
+    return rutaOrtogonal(a, b, l.bend)
+      .map((p) => p[0] + "," + p[1])
+      .join(" ");
+  }
+
+  // Arrastrar una flecha desplaza su tramo central (el recorrido sigue siendo
+  // en ángulo recto). Si se pulsa sin arrastrar, se ofrece eliminarla.
+  function enableLinkDrag(g, hit, linea, proyecto, l) {
+    let dragging = false;
+    let moved = false;
+    let eje = "h";
+    let startX = 0;
+    let startY = 0;
+    let startOff = 0;
+
+    hit.addEventListener("pointerdown", (e) => {
+      if (e.button && e.button !== 0) return;
+      const pos = postitPositions();
+      eje = ejeRuta(pos[l.from], pos[l.to]);
+      startOff = l.bend && l.bend.axis === eje ? l.bend.off || 0 : 0;
+      dragging = true;
+      moved = false;
+      startX = e.clientX;
+      startY = e.clientY;
+      g.classList.add("is-dragging");
+      try {
+        hit.setPointerCapture(e.pointerId);
+      } catch (err) {
+        /* algunos navegadores no lo permiten; no es crítico */
+      }
+      e.preventDefault();
+      e.stopPropagation();
+    });
+
+    hit.addEventListener("pointermove", (e) => {
+      if (!dragging) return;
+      const d = eje === "h" ? e.clientX - startX : e.clientY - startY;
+      if (!moved && Math.abs(d) <= 2) return; // todavía es una pulsación
+      moved = true;
+      l.bend = { axis: eje, off: Math.round(startOff + d) };
+      const puntos = puntosLink(l, postitPositions());
+      if (puntos) {
+        hit.setAttribute("points", puntos);
+        linea.setAttribute("points", puntos);
+      }
+    });
+
+    function soltar() {
+      if (!dragging) return;
+      dragging = false;
+      g.classList.remove("is-dragging");
+      if (moved) {
+        saveProyectos(); // el desvío ya está en el objeto guardado
+        return;
+      }
+      if (confirm("¿Eliminar esta flecha?")) {
+        removeProyectoLink(proyecto, l.from, l.to);
+        renderProyectoTasks();
+      }
+    }
+
+    hit.addEventListener("pointerup", soltar);
+    hit.addEventListener("pointercancel", soltar);
+  }
+
+  function drawProyectoLinks(proyecto) {
+    const svg = proyectoTasksCanvas.querySelector(".proyecto-links");
+    if (!svg) return;
+    const pos = postitPositions();
+
+    svg.innerHTML =
+      '<defs><marker id="postit-arrow" viewBox="0 0 10 10" refX="9" refY="5" ' +
+      'markerWidth="6" markerHeight="6" markerUnits="strokeWidth" orient="auto">' +
+      '<path d="M0 0 L10 5 L0 10 z" fill="currentColor"/></marker></defs>';
+
+    // Se normaliza para que los objetos que se pasan al arrastre sean los
+    // mismos que están guardados (ajustar el recorrido los modifica).
+    proyecto.links = proyectoLinks(proyecto);
+    proyecto.links.forEach((l) => {
+      const puntos = puntosLink(l, pos);
+      if (!puntos) return;
+
+      const g = document.createElementNS(SVG_NS, "g");
+      g.setAttribute("class", "proyecto-link");
+      // Trazo ancho invisible: da área para poder pulsar la flecha
+      const hit = document.createElementNS(SVG_NS, "polyline");
+      hit.setAttribute("class", "proyecto-link-hit");
+      const linea = document.createElementNS(SVG_NS, "polyline");
+      linea.setAttribute("class", "proyecto-link-line");
+      linea.setAttribute("marker-end", "url(#postit-arrow)");
+      [hit, linea].forEach((el) => {
+        el.setAttribute("points", puntos);
+        el.setAttribute("fill", "none"); // si no, el polígono se rellena
+        g.appendChild(el);
+      });
+      enableLinkDrag(g, hit, linea, proyecto, l);
+      svg.appendChild(g);
+    });
+  }
+
+  // El lienzo llega hasta el final de la pantalla (respetando el hueco de la
+  // barra de navegación) y, si algún post-it queda más abajo, crece con él.
+  function fitProyectoCanvas(maxY) {
+    if (!proyectoTasksCanvas || proyectoTasksCanvas.hidden) return;
+    const top =
+      proyectoTasksCanvas.getBoundingClientRect().top + window.scrollY;
+    const main = document.querySelector(".app-main");
+    const hueco = main
+      ? parseFloat(getComputedStyle(main).paddingBottom) || 24
+      : 24;
+    const disponible = Math.max(240, window.innerHeight - top - hueco);
+    proyectoTasksCanvas.style.minHeight =
+      Math.max(disponible, maxY + POSTIT_GAP) + "px";
+  }
+
+  // Al cambiar el tamaño de la ventana se recolocan las columnas por defecto
+  window.addEventListener("resize", () => {
+    if (proyectoTasksCanvas && !proyectoTasksCanvas.hidden) renderProyectoTasks();
+  });
+
+  // Arrastre libre por el lienzo. Empieza al momento (no hay scroll que
+  // competir: el post-it tiene `touch-action: none`) y, si no se ha movido,
+  // el toque abre los ajustes de la tarea.
+  function enablePostitDrag(nota, proyecto, task) {
+    let dragging = false;
+    let moved = false;
+    let offX = 0;
+    let offY = 0;
+
+    nota.addEventListener("pointerdown", (e) => {
+      if (e.button && e.button !== 0) return;
+      dragging = true;
+      moved = false;
+      const caja = nota.getBoundingClientRect();
+      offX = e.clientX - caja.left;
+      offY = e.clientY - caja.top;
+      nota.classList.add("is-dragging");
+      try {
+        nota.setPointerCapture(e.pointerId);
+      } catch (err) {
+        /* algunos navegadores no lo permiten; no es crítico */
+      }
+      e.preventDefault();
+    });
+
+    nota.addEventListener("pointermove", (e) => {
+      if (!dragging) return;
+      const caja = proyectoTasksCanvas.getBoundingClientRect();
+      const x = Math.max(0, e.clientX - caja.left - offX);
+      const y = Math.max(0, e.clientY - caja.top - offY);
+      nota.style.left = x + "px";
+      nota.style.top = y + "px";
+      moved = true;
+      drawProyectoLinks(proyecto); // las flechas siguen al post-it
+    });
+
+    function soltar() {
+      if (!dragging) return;
+      dragging = false;
+      nota.classList.remove("is-dragging");
+      if (!moved) {
+        // Con una flecha empezada, el toque la remata en esta tarea
+        if (proyectoLinkFrom) {
+          const desde = proyectoLinkFrom;
+          proyectoLinkFrom = null;
+          if (desde !== task.id) {
+            addProyectoLink(proyecto, desde, task.id);
+            renderProyectoTasks();
+          } else {
+            updateLinkMode(); // tocar el propio origen cancela
+          }
+          return;
+        }
+        openDetail(task.id); // un toque limpio abre la tarea
+        return;
+      }
+      const x = parseFloat(nota.style.left);
+      const y = parseFloat(nota.style.top);
+      savePostitPos(proyecto, task.id, x, y);
+      fitProyectoCanvas(y + POSTIT_SIZE); // que siga dando de sí hacia abajo
+    }
+
+    nota.addEventListener("pointerup", soltar);
+    nota.addEventListener("pointercancel", soltar);
+  }
+
+  /* ---------- Nueva tarea dentro de un proyecto ---------- */
+  function openProyectoTaskNew() {
+    if (!getProyectoOpen()) return;
+    proyectoTaskInput.value = "";
+    proyectoTaskOverlay.hidden = false;
+    proyectoTaskInput.focus();
+  }
+
+  function closeProyectoTaskNew() {
+    if (proyectoTaskOverlay.hidden) return;
+    proyectoTaskOverlay.hidden = true;
+  }
+
+  proyectoTaskAddBtn.addEventListener("click", openProyectoTaskNew);
+  proyectoTaskCancel.addEventListener("click", closeProyectoTaskNew);
+  proyectoTaskOverlay.addEventListener("click", (e) => {
+    if (e.target === proyectoTaskOverlay) closeProyectoTaskNew();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !proyectoTaskOverlay.hidden)
+      closeProyectoTaskNew();
+  });
+
+  // Crear una tarea ya asignada al proyecto, en la lista elegida
+  proyectoTaskForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const item = getProyectoOpen();
+    const text = proyectoTaskInput.value.trim();
+    if (!item || !text) return;
+    const ctx = CTX_BY_TYPE[proyectoTaskListSel.value]();
+    ctx.items().unshift({
+      id: newId(),
+      text: text,
+      done: false,
+      starred: false,
+      projectId: item.id,
+    });
+    ctx.save();
+    closeProyectoTaskNew();
+    renderAllLists(); // repinta su lista de origen y esta página
+  });
+
+  proyectoTasksTabs.addEventListener("click", (e) => {
+    const btn = e.target.closest(".task-tab");
+    if (!btn) return;
+    proyectoTasksTab = btn.dataset.tab;
+    proyectoLinkFrom = null; // no queda una flecha a medias al cambiar de vista
+    renderProyectoTasks();
+  });
+
+  // Escape, o tocar el fondo del lienzo, cancela la flecha a medias
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && proyectoLinkFrom) {
+      proyectoLinkFrom = null;
+      updateLinkMode();
+    }
+  });
+  proyectoTasksCanvas.addEventListener("click", (e) => {
+    if (e.target === proyectoTasksCanvas && proyectoLinkFrom) {
+      proyectoLinkFrom = null;
+      updateLinkMode();
+    }
+  });
+
+  function renderProyectosIndex() {
     if (!proyectosListEl) return;
     proyectosListEl.innerHTML = "";
     proyectos.forEach((item) => {
@@ -3944,6 +4651,18 @@
       text.textContent = item.text;
       main.appendChild(text);
       li.appendChild(main);
+
+      // Tareas pendientes asignadas a este proyecto
+      const n = proyectoTaskCount(item.id);
+      if (n) {
+        const count = document.createElement("button");
+        count.type = "button";
+        count.className = "proyecto-count";
+        count.textContent = n + (n === 1 ? " tarea" : " tareas");
+        count.title = "Ver sus tareas";
+        count.addEventListener("click", () => openProyectoTasks(item.id));
+        li.appendChild(count);
+      }
 
       // Enlace: abre Notion en una pestaña nueva (si el proyecto tiene uno)
       const url = proyectoUrl(item);
@@ -3962,19 +4681,48 @@
       proyectosListEl.appendChild(li);
     });
     if (proyectosEmpty) proyectosEmpty.hidden = proyectos.length !== 0;
-    if (proyectosSummary) {
-      const n = proyectos.length;
-      proyectosSummary.textContent =
-        n === 0 ? "Sin proyectos todavía" : n + (n === 1 ? " proyecto" : " proyectos");
-    }
-    updateNavCounts();
   }
 
-  proyectosForm.addEventListener("submit", (e) => {
+  proyectoTasksBack.addEventListener("click", closeProyectoTasks);
+
+  /* ---------- Nuevo proyecto (botón + de la cabecera) ---------- */
+  const proyectoNewOverlay = document.getElementById("proyecto-new-overlay");
+  const proyectoNewForm = document.getElementById("proyecto-new-form");
+  const proyectoNewName = document.getElementById("proyecto-new-name");
+  const proyectoNewUrl = document.getElementById("proyecto-new-url");
+  const proyectoNewCancel = document.getElementById("proyecto-new-cancel");
+  const proyectoNewCat = document.getElementById("proyecto-new-cat");
+  fillCategorySelect(proyectoNewCat);
+
+  function openProyectoNew() {
+    proyectoNewForm.reset();
+    proyectoNewOverlay.hidden = false;
+    proyectoNewName.focus();
+  }
+
+  function closeProyectoNew() {
+    if (proyectoNewOverlay.hidden) return;
+    proyectoNewOverlay.hidden = true;
+  }
+
+  proyectosAddBtn.addEventListener("click", openProyectoNew);
+  proyectoNewCancel.addEventListener("click", closeProyectoNew);
+  proyectoNewOverlay.addEventListener("click", (e) => {
+    if (e.target === proyectoNewOverlay) closeProyectoNew();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !proyectoNewOverlay.hidden) closeProyectoNew();
+  });
+
+  proyectoNewForm.addEventListener("submit", (e) => {
     e.preventDefault();
-    addProyecto(proyectosInput.value);
-    proyectosInput.value = "";
-    proyectosInput.focus();
+    const name = proyectoNewName.value.trim();
+    if (!name) {
+      proyectoNewName.focus();
+      return;
+    }
+    addProyecto(name, proyectoNewUrl.value, proyectoNewCat.value);
+    closeProyectoNew();
   });
 
   /* ---------- Ajustes de un proyecto ---------- */
@@ -3987,6 +4735,8 @@
   const proyectoDetailDelete = document.getElementById(
     "proyecto-detail-delete"
   );
+  const proyectoDetailCat = document.getElementById("proyecto-detail-cat");
+  fillCategorySelect(proyectoDetailCat);
   let proyectoDetailId = null;
 
   function getProyectoDetailItem() {
@@ -4001,6 +4751,7 @@
     proyectoDetailId = id;
     proyectoDetailTitle.value = item.text;
     proyectoDetailUrl.value = item.url || "";
+    proyectoDetailCat.value = item.category || "";
     proyectoDetailOverlay.hidden = false;
     document.body.classList.add("no-scroll");
     autoGrow(proyectoDetailTitle); // con el panel visible (si no, scrollHeight es 0)
@@ -4054,6 +4805,15 @@
     item.url = proyectoDetailUrl.value.trim();
     saveProyectos();
     renderProyectos();
+  });
+
+  proyectoDetailCat.addEventListener("change", () => {
+    const item = getProyectoDetailItem();
+    if (!item) return;
+    item.category = proyectoDetailCat.value;
+    saveProyectos();
+    renderProyectos();
+    renderAllLists(); // el color va en el byline de sus tareas
   });
 
   proyectoDetailDelete.addEventListener("click", () => {
@@ -4179,6 +4939,7 @@
         // de rutinas con "Añadir a Hoy"): hay que repintarlas.
         renderAgenda();
         renderHoyView();
+        renderProyectos(); // cambia el número de tareas por proyecto
         tasksSynced = true;
         maybeMaterialize();
       },
@@ -4231,6 +4992,7 @@
         if (db) idbSet(IDB_KEY_RECADOS, recados).catch(() => {});
         clearError();
         renderRecados();
+        renderProyectos(); // cambia el número de tareas por proyecto
       },
       (err) =>
         showError("Al leer la nube: " + (err && err.message ? err.message : err))
@@ -4254,6 +5016,7 @@
         if (db) idbSet(IDB_KEY_PENDIENTES, pendientes).catch(() => {});
         clearError();
         renderPendientes();
+        renderProyectos(); // cambia el número de tareas por proyecto
       },
       (err) =>
         showError("Al leer la nube: " + (err && err.message ? err.message : err))
