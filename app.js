@@ -41,6 +41,7 @@
   const proyectosIndexEl = document.getElementById("proyectos-index");
   const proyectosDetailEl = document.getElementById("proyectos-detail");
   const proyectoTasksBack = document.getElementById("proyecto-tasks-back");
+  const proyectoSettingsBtn = document.getElementById("proyecto-settings-btn");
   const proyectoTasksTitle = document.getElementById("proyecto-tasks-title");
   const proyectoTasksList = document.getElementById("proyecto-tasks-list");
   const proyectoTasksEmpty = document.getElementById("proyecto-tasks-empty");
@@ -4036,12 +4037,19 @@
     return /^https?:\/\//i.test(full) ? full : "";
   }
 
-  // Tareas pendientes asignadas a un proyecto, de las tres listas que lo
-  // admiten (las completadas no cuentan, como en los contadores del menú).
-  function proyectoTaskCount(id) {
-    const cuenta = (arr) =>
-      arr.filter((t) => t.projectId === id && !t.done).length;
-    return cuenta(tasks) + cuenta(recados) + cuenta(pendientes);
+  // Progreso del proyecto: {done, total} sobre las tareas que tiene asignadas
+  // en las tres listas que admiten proyecto.
+  function proyectoProgreso(id) {
+    let done = 0;
+    let total = 0;
+    [tasks, recados, pendientes].forEach((arr) =>
+      arr.forEach((t) => {
+        if (t.projectId !== id) return;
+        total++;
+        if (t.done) done++;
+      })
+    );
+    return { done: done, total: total };
   }
 
   function addProyecto(text, url, category) {
@@ -4188,6 +4196,14 @@
   /* ---------- Vista grafo: un post-it por tarea ---------- */
   const POSTIT_SIZE = 150; // lado del post-it (cuadrado), en px
   const POSTIT_GAP = 16;
+  // Estados que colorean la tarjeta entera: en la esquina va solo su icono
+  const POSTIT_STATE_ICONS = { completada: "✅", proceso: "🔄" };
+  // En móvil el grafo es de solo lectura: se consulta, pero no se recolocan
+  // los post-it ni se tocan las flechas (mismo corte que el CSS: 768px).
+  const movilQuery = window.matchMedia("(max-width: 767px)");
+  function grafoSoloLectura() {
+    return movilQuery.matches;
+  }
 
   // Posición guardada de la tarea dentro del proyecto, o una por defecto en
   // rejilla (no se persiste hasta que se arrastra).
@@ -4211,6 +4227,7 @@
 
   function renderProyectoGrafo(proyecto, entries) {
     proyectoTasksCanvas.innerHTML = "";
+    proyectoTasksCanvas.classList.toggle("is-readonly", grafoSoloLectura());
     const bloqueadas = proyectoBlockedIds(proyecto);
     const ancho = proyectoTasksCanvas.clientWidth || POSTIT_SIZE;
     const columnas = Math.max(
@@ -4226,8 +4243,10 @@
 
     entries.forEach((e, i) => {
       const pos = postitPos(proyecto, e.task.id, i, columnas);
+      const estadoId = taskStateOf(e.task, bloqueadas);
       const nota = document.createElement("div");
-      nota.className = "postit" + (e.task.done ? " is-done" : "");
+      nota.className =
+        "postit estado-" + estadoId + (e.task.done ? " is-done" : "");
       nota.dataset.id = e.task.id;
       nota.style.left = pos.x + "px";
       nota.style.top = pos.y + "px";
@@ -4243,24 +4262,36 @@
       const origen = document.createElement("span");
       origen.className = "postit-origin";
       origen.textContent = e.origin;
-      const estadoId = taskStateOf(e.task, bloqueadas);
-      const estado = document.createElement("span");
-      estado.className = "postit-state estado-" + estadoId;
-      estado.textContent = taskStateName(estadoId);
-      pie.append(origen, estado);
-      // Botón para empezar una flecha hacia otra tarea
-      const enlazar = document.createElement("button");
-      enlazar.type = "button";
-      enlazar.className = "postit-link";
-      enlazar.textContent = "↗";
-      enlazar.title = "Unir con otra tarea";
-      enlazar.setAttribute("aria-label", "Unir con otra tarea");
-      enlazar.addEventListener("pointerdown", (ev) => ev.stopPropagation());
-      enlazar.addEventListener("click", (ev) => {
-        ev.stopPropagation();
-        toggleLinkFrom(e.task.id);
-      });
-      nota.append(texto, pie, enlazar);
+      pie.appendChild(origen);
+      // El estado se lee de la propia tarjeta: Completada y En proceso la
+      // tiñen y ponen su icono en la esquina; Sin empezar (blanca) y
+      // Bloqueada (apagada) no llevan nada.
+      const icono = POSTIT_STATE_ICONS[estadoId];
+      if (icono) {
+        const estado = document.createElement("span");
+        estado.className = "postit-check";
+        estado.textContent = icono;
+        estado.title = taskStateName(estadoId);
+        estado.setAttribute("aria-label", taskStateName(estadoId));
+        pie.appendChild(estado);
+      }
+      nota.append(texto, pie);
+
+      // Botón para empezar una flecha hacia otra tarea (no en solo lectura)
+      if (!grafoSoloLectura()) {
+        const enlazar = document.createElement("button");
+        enlazar.type = "button";
+        enlazar.className = "postit-link";
+        enlazar.textContent = "↗";
+        enlazar.title = "Unir con otra tarea";
+        enlazar.setAttribute("aria-label", "Unir con otra tarea");
+        enlazar.addEventListener("pointerdown", (ev) => ev.stopPropagation());
+        enlazar.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          toggleLinkFrom(e.task.id);
+        });
+        nota.appendChild(enlazar);
+      }
 
       enablePostitDrag(nota, proyecto, e.task);
       proyectoTasksCanvas.appendChild(nota);
@@ -4479,7 +4510,7 @@
         el.setAttribute("fill", "none"); // si no, el polígono se rellena
         g.appendChild(el);
       });
-      enableLinkDrag(g, hit, linea, proyecto, l);
+      if (!grafoSoloLectura()) enableLinkDrag(g, hit, linea, proyecto, l);
       svg.appendChild(g);
     });
   }
@@ -4508,6 +4539,11 @@
   // competir: el post-it tiene `touch-action: none`) y, si no se ha movido,
   // el toque abre los ajustes de la tarea.
   function enablePostitDrag(nota, proyecto, task) {
+    // Solo lectura: el post-it sigue abriendo su tarea, pero no se mueve
+    if (grafoSoloLectura()) {
+      nota.addEventListener("click", () => openDetail(task.id));
+      return;
+    }
     let dragging = false;
     let moved = false;
     let offX = 0;
@@ -4642,27 +4678,31 @@
       li.className = "proyecto-item";
       li.dataset.id = item.id;
 
-      // El título abre los ajustes del proyecto
+      // La fila entera abre la lista de tareas del proyecto
       const main = document.createElement("div");
       main.className = "proyecto-main";
-      main.addEventListener("click", () => openProyectoDetail(item.id));
+      main.addEventListener("click", () => openProyectoTasks(item.id));
       const text = document.createElement("span");
       text.className = "proyecto-text";
       text.textContent = item.text;
       main.appendChild(text);
+      // 2ª línea: su categoría, en el color que le toca
+      const cat = HOY_CATEGORIES.find((c) => c.id === item.category);
+      if (cat) {
+        const catEl = document.createElement("span");
+        catEl.className = "proyecto-cat cat-" + cat.id;
+        catEl.textContent = cat.name;
+        main.appendChild(catEl);
+      }
       li.appendChild(main);
 
-      // Tareas pendientes asignadas a este proyecto
-      const n = proyectoTaskCount(item.id);
-      if (n) {
-        const count = document.createElement("button");
-        count.type = "button";
-        count.className = "proyecto-count";
-        count.textContent = n + (n === 1 ? " tarea" : " tareas");
-        count.title = "Ver sus tareas";
-        count.addEventListener("click", () => openProyectoTasks(item.id));
-        li.appendChild(count);
-      }
+      // Progreso: completadas / total
+      const prog = proyectoProgreso(item.id);
+      const count = document.createElement("span");
+      count.className = "proyecto-count";
+      count.textContent = prog.done + "/" + prog.total;
+      count.title = "Tareas completadas del total";
+      li.appendChild(count);
 
       // Enlace: abre Notion en una pestaña nueva (si el proyecto tiene uno)
       const url = proyectoUrl(item);
@@ -4684,6 +4724,18 @@
   }
 
   proyectoTasksBack.addEventListener("click", closeProyectoTasks);
+  proyectoSettingsBtn.addEventListener("click", () => {
+    const item = getProyectoOpen();
+    if (item) openProyectoDetail(item.id);
+  });
+
+  // Reordenar los proyectos arrastrando (el contenedor no se reemplaza)
+  enableReorder(
+    proyectosListEl,
+    "proyecto-item",
+    () => proyectos,
+    saveProyectos
+  );
 
   /* ---------- Nuevo proyecto (botón + de la cabecera) ---------- */
   const proyectoNewOverlay = document.getElementById("proyecto-new-overlay");

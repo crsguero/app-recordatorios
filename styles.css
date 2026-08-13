@@ -987,22 +987,28 @@ body {
 /* Categoría del proyecto: los mismos colores que en Hoy, pero oscurecidos,
    porque aquí tiñen texto en vez de servir de fondo. Solo en el byline de sus
    tareas; en la pestaña Proyectos el título va en el color normal. */
-.task-project.cat-hogar {
+.task-project.cat-hogar,
+.proyecto-cat.cat-hogar {
   color: #a16207;
 }
-.task-project.cat-personal {
+.task-project.cat-personal,
+.proyecto-cat.cat-personal {
   color: #7e22ce;
 }
-.task-project.cat-salud {
+.task-project.cat-salud,
+.proyecto-cat.cat-salud {
   color: #15803d;
 }
-.task-project.cat-profesional {
+.task-project.cat-profesional,
+.proyecto-cat.cat-profesional {
   color: #1d4ed8;
 }
-.task-project.cat-relaciones {
+.task-project.cat-relaciones,
+.proyecto-cat.cat-relaciones {
   color: #c2410c;
 }
-.task-project.cat-maternidad {
+.task-project.cat-maternidad,
+.proyecto-cat.cat-maternidad {
   color: #be185d;
 }
 
@@ -1571,6 +1577,46 @@ body {
   display: none;
 }
 
+/* Acciones a la derecha del título de una vista */
+.header-actions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.header-icon-btn {
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  font-size: 1.05rem;
+  line-height: 1;
+  color: var(--text);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  cursor: pointer;
+}
+
+.header-icon-btn:hover {
+  border-color: var(--primary);
+  background: var(--star-bg);
+}
+
+/* Nombre del proyecto dentro de su modal de ajustes: aquí es un campo más,
+   no el título grande del panel lateral (de ahí la especificidad extra). */
+textarea.proyecto-detail-name {
+  width: 100%;
+  box-sizing: border-box;
+  margin-bottom: 4px;
+  padding: 11px 12px;
+  font-size: 1rem;
+  font-weight: 400;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
 /* Botón de texto en la cabecera de una vista ("+ Nueva tarea") */
 .header-new-btn {
   flex: 0 0 auto;
@@ -1756,6 +1802,16 @@ body {
   touch-action: none;
 }
 
+/* Grafo de solo lectura (móvil): se consulta y se abre la tarea, nada más */
+.proyecto-canvas.is-readonly .postit {
+  cursor: pointer;
+  touch-action: auto; /* el gesto vuelve a ser el scroll de la página */
+}
+
+.proyecto-canvas.is-readonly .proyecto-link-hit {
+  pointer-events: none;
+}
+
 .proyecto-link.is-dragging .proyecto-link-line {
   stroke: var(--primary);
 }
@@ -1783,32 +1839,6 @@ body {
   text-overflow: ellipsis;
 }
 
-.postit-state {
-  flex: 0 0 auto;
-  padding: 1px 6px;
-  font-size: 0.65rem;
-  font-weight: 700;
-  border-radius: 8px;
-  white-space: nowrap;
-}
-
-/* Colores de los cuatro estados (etiqueta del post-it) */
-.postit-state.estado-sin-empezar {
-  color: #4b5563;
-  background: #f3f4f6;
-}
-.postit-state.estado-proceso {
-  color: #1d4ed8;
-  background: #eaf2ff;
-}
-.postit-state.estado-bloqueada {
-  color: #b45309;
-  background: #fff4e0;
-}
-.postit-state.estado-completada {
-  color: #15803d;
-  background: #eaf7ef;
-}
 
 .postit.is-dragging {
   cursor: grabbing;
@@ -1816,9 +1846,31 @@ body {
   z-index: 5;
 }
 
+/* Completada y En proceso tiñen la tarjeta entera (y llevan icono, no chip) */
+.postit.is-done {
+  background: #eaf7ef;
+  border-color: #c7e6d3;
+}
+
+.postit.estado-proceso {
+  background: #eaf2ff;
+  border-color: #c9dcfb;
+}
+
+/* Bloqueada: se distingue por estar apagada, sin icono ni etiqueta */
+.postit.estado-bloqueada {
+  opacity: 0.4;
+}
+
 .postit.is-done .postit-text {
   color: var(--done);
   text-decoration: line-through;
+}
+
+.postit-check {
+  flex: 0 0 auto;
+  font-size: 0.85rem;
+  line-height: 1;
 }
 
 /* Botón "+" de la cabecera de una vista (Proyectos): abre su modal de creación */
@@ -1862,12 +1914,31 @@ body {
   border: 1px solid var(--border);
   border-radius: 12px;
   box-shadow: var(--shadow);
+  /* Se reordena manteniendo pulsado: sin selección de texto ni menú */
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.proyecto-item.dragging {
+  opacity: 0.9;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.18);
 }
 
 .proyecto-main {
   flex: 1;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
   cursor: pointer;
+}
+
+/* Categoría del proyecto, en su color, bajo el nombre */
+.proyecto-cat {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-soft);
+  margin-top: 2px;
 }
 
 .proyecto-text {
@@ -1877,24 +1948,16 @@ body {
   word-break: break-word;
 }
 
-/* Número de tareas pendientes del proyecto, antes del botón de Notion.
-   Es un botón: abre la página con las tareas de ese proyecto. */
+/* Progreso del proyecto (completadas/total), antes del botón de Notion */
 .proyecto-count {
   flex: 0 0 auto;
   padding: 4px 8px;
-  font-family: inherit;
   font-size: 0.8rem;
+  font-weight: 600;
   color: var(--text-soft);
   background: var(--bg);
-  border: none;
   border-radius: 10px;
   white-space: nowrap;
-  cursor: pointer;
-}
-
-.proyecto-count:hover {
-  color: var(--primary);
-  background: var(--star-bg);
 }
 
 .proyecto-link {

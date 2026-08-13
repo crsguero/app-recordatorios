@@ -385,9 +385,18 @@
             <button class="detail-close" id="proyecto-tasks-back" type="button">‹ Proyectos</button>
             <div class="header-top">
               <h1 id="proyecto-tasks-title"></h1>
-              <button type="button" class="header-new-btn" id="proyecto-task-add-btn">
-                + Nueva tarea
-              </button>
+              <div class="header-actions">
+                <button type="button" class="header-new-btn" id="proyecto-task-add-btn">
+                  + Nueva tarea
+                </button>
+                <button
+                  type="button"
+                  class="header-icon-btn"
+                  id="proyecto-settings-btn"
+                  aria-label="Ajustes del proyecto"
+                  title="Ajustes del proyecto"
+                >⚙️</button>
+              </div>
             </div>
           </header>
 
@@ -757,37 +766,37 @@
     </div>
   </div>
 
-  <!-- Ajustes de un proyecto: título, enlace y eliminar -->
-  <div class="detail-overlay" id="proyecto-detail-overlay" hidden>
-    <div class="detail-panel" role="dialog" aria-modal="true" aria-label="Ajustes del proyecto">
-      <header class="detail-header">
-        <button class="detail-close" id="proyecto-detail-close" type="button" aria-label="Cerrar">‹ Volver</button>
-      </header>
+  <!-- Ajustes de un proyecto: título, enlace, categoría y eliminar -->
+  <div class="fab-overlay" id="proyecto-detail-overlay" hidden>
+    <div class="fab-box" role="dialog" aria-modal="true" aria-labelledby="proyecto-detail-modal-title">
+      <h2 class="fab-title" id="proyecto-detail-modal-title">Ajustes del proyecto</h2>
 
-      <div class="detail-body">
-        <textarea
-          class="detail-title"
-          id="proyecto-detail-title"
-          rows="1"
-          maxlength="200"
-          aria-label="Editar proyecto"
-        ></textarea>
+      <label class="fab-label" for="proyecto-detail-title">Nombre</label>
+      <textarea
+        class="detail-title proyecto-detail-name"
+        id="proyecto-detail-title"
+        rows="1"
+        maxlength="200"
+        aria-label="Editar proyecto"
+      ></textarea>
 
-        <h3 class="detail-section-label">Enlace</h3>
-        <input
-          type="url"
-          id="proyecto-detail-url"
-          class="date-input"
-          placeholder="https://www.notion.so/…"
-          aria-label="Enlace del proyecto"
-        />
+      <label class="fab-label" for="proyecto-detail-url">Enlace</label>
+      <input
+        type="url"
+        id="proyecto-detail-url"
+        class="date-input"
+        placeholder="https://www.notion.so/…"
+      />
 
-        <h3 class="detail-section-label">Categoría</h3>
-        <select id="proyecto-detail-cat" class="date-mode" aria-label="Categoría"></select>
+      <label class="fab-label" for="proyecto-detail-cat">Categoría</label>
+      <select id="proyecto-detail-cat" class="date-mode"></select>
 
-        <button class="detail-delete" id="proyecto-detail-delete" type="button">
-          🗑 Eliminar proyecto
-        </button>
+      <button class="detail-delete" id="proyecto-detail-delete" type="button">
+        🗑 Eliminar proyecto
+      </button>
+
+      <div class="fab-actions">
+        <button type="button" class="fab-submit" id="proyecto-detail-close">Cerrar</button>
       </div>
     </div>
   </div>
