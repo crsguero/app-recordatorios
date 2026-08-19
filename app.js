@@ -54,7 +54,7 @@
   const proyectoTaskCancel = document.getElementById("proyecto-task-cancel");
   const proyectoTasksCanvas = document.getElementById("proyecto-tasks-canvas");
   let proyectoOpenId = null; // proyecto cuya página de tareas está abierta
-  let proyectoTasksTab = "lista"; // "lista" | "grafo" (no se persiste)
+  let proyectoTasksTab = "grafo"; // "grafo" | "lista" (no se persiste)
 
   // Vista Rutinas: tareas automáticas (planificadas + lactancia)
   const rutinasList = document.getElementById("rutinas-list");
@@ -64,6 +64,15 @@
   const rutinasToggleDone = document.getElementById("rutinas-toggle-done");
   const rutinasClearDone = document.getElementById("rutinas-clear-done");
   const rutinasSummary = document.getElementById("rutinas-summary");
+
+  // Etiqueta de procedencia que acompaña a una tarea en su 2ª línea (el
+  // byline): va en singular, porque nombra a esa tarea y no a la lista entera.
+  const ORIGEN = {
+    tareas: "Tarea",
+    recados: "Recado",
+    pendientes: "Pendiente",
+    rutinas: "Rutina",
+  };
 
   /* ---------- Contextos de lista (Mis tareas / Recados) ----------
      Ambas listas comparten toda la lógica (render, modal, drag, completadas).
@@ -123,7 +132,7 @@
     // Etiqueta de procedencia: solo para las destacadas, no para las rutinas
     originOf: (t) => {
       if (t._lact || t._at || t.sourcePlannedId) return null;
-      return recados.indexOf(t) !== -1 ? "Recados" : "Tareas";
+      return recados.indexOf(t) !== -1 ? ORIGEN.recados : ORIGEN.tareas;
     },
     // Tabs por procedencia: "all" | "rutinas" | "tareas" | "recados"
     tabsEl: document.getElementById("rutinas-tabs"),
@@ -219,6 +228,9 @@
   const FB_KEY_RECADOS = "recados"; // recordatorios/recados = segunda lista
   const FB_KEY_PENDIENTES = "pendientes"; // recordatorios/pendientes = tercera lista
   const FB_KEY_PROYECTOS = "proyectos"; // recordatorios/proyectos = proyectos (título + enlace)
+  // recordatorios/proyectoSecciones = secciones en las que se agrupa el índice
+  // de Proyectos. El proyecto guarda su sección en `sectionId`.
+  const FB_KEY_PRO_SECCIONES = "proyectoSecciones";
   const FB_KEY_HOY = "hoy"; // recordatorios/hoy = tareas del día (mañana/tarde)
   const FB_KEY_AGENDA = "agenda"; // recordatorios/agenda = tareas por día de la semana
   // recordatorios/dayOrder = orden manual de cada día de la semana (1-7),
@@ -257,6 +269,7 @@
   const IDB_KEY_RECADOS = "recados";
   const IDB_KEY_PENDIENTES = "pendientes";
   const IDB_KEY_PROYECTOS = "proyectos";
+  const IDB_KEY_PRO_SECCIONES = "proyectoSecciones";
   const IDB_KEY_HOY = "hoy";
   const IDB_KEY_AGENDA = "agenda";
   const IDB_KEY_DAY_ORDER = "dayOrder";
@@ -267,8 +280,12 @@
   let tasks = [];
   let recados = []; // segunda lista (misma funcionalidad, sin planificadas auto)
   let pendientes = []; // tercera lista (igual que recados)
-  // Proyectos: {id, text, url}. No se completan ni se reordenan.
+  // Proyectos: {id, text, url, category, sectionId}. No se completan. El orden
+  // del array es el orden del índice; `sectionId` dice en qué sección van (sin
+  // sección, o si esa sección ya no existe, van al bloque "Sin sección").
   let proyectos = [];
+  // Secciones del índice de Proyectos: {id, name}, en el orden en que se pintan
+  let proyectoSecciones = [];
   // Agenda: tareas fijas por día de la semana {id, text, day: 1-7, done}
   let agenda = [];
   // Orden manual de cada día: { "1": [id, id, …], … 1=Lunes … 7=Domingo }.
@@ -341,6 +358,7 @@
   ];
   let hoyDay = null; // día (ISO) al que pertenecen los estados "done" actuales
   let hoyReady = false; // true tras la primera sincronización de hoy
+  let doneLogsLimpios = false; // la limpieza de `doneLog` corre una vez por carga
   let planned = []; // tareas planificadas (solo texto, sin completar)
 
   /* ---------- Aviso de errores visible ---------- */
@@ -431,6 +449,18 @@
       fdb
         .ref(FB_ROOT + "/" + FB_KEY_PROYECTOS)
         .set(proyectos && proyectos.length ? proyectos : null)
+        .catch((e) =>
+          showError("Al sincronizar: " + (e && e.message ? e.message : e))
+        );
+    }
+  }
+
+  function saveProyectoSecciones() {
+    if (db) idbSet(IDB_KEY_PRO_SECCIONES, proyectoSecciones).catch(() => {});
+    if (fbReady) {
+      fdb
+        .ref(FB_ROOT + "/" + FB_KEY_PRO_SECCIONES)
+        .set(proyectoSecciones && proyectoSecciones.length ? proyectoSecciones : null)
         .catch((e) =>
           showError("Al sincronizar: " + (e && e.message ? e.message : e))
         );
@@ -546,6 +576,31 @@
     hoyDay = today;
     saveHoy();
     return true;
+  }
+
+  // Limpieza única del registro guardado: una versión anterior apuntaba dos
+  // veces la primera compleción de cada tarea (escribía `lastDoneAt` antes de
+  // leer el registro, así que el respaldo de `hoyDoneLog` devolvía la fecha de
+  // hoy y el `concat` la repetía). El filtro de `hoyDoneLog` lo tapa al leer,
+  // pero el dato viaja por la nube a dispositivos que aún no lo tienen, así
+  // que se sanea en origen. Devuelve si ha cambiado algo.
+  function limpiarDoneLogs() {
+    let cambios = false;
+    hoy.forEach((item) => {
+      // Sin registro no hay nada que limpiar: escribir aquí inventaría un
+      // `doneLog` a partir del respaldo `lastDoneAt` de `hoyDoneLog`.
+      if (!item.doneLog) return;
+      const original = Array.isArray(item.doneLog)
+        ? item.doneLog
+        : Object.values(item.doneLog);
+      // `hoyDoneLog` conserva el orden y solo quita elementos: si la longitud
+      // baja es que había fechas repetidas (o basura).
+      const limpio = hoyDoneLog(item);
+      if (limpio.length === original.length) return;
+      item.doneLog = limpio;
+      cambios = true;
+    });
+    return cambios;
   }
 
   function savePlanned() {
@@ -1696,7 +1751,10 @@
   function renderDetailState(task) {
     const proyecto = taskProjectOf(task);
     detailStateWrap.hidden = !proyecto;
-    if (!proyecto) return;
+    if (!proyecto) {
+      detailState.disabled = false; // sin proyecto no hay bloqueo que arrastrar
+      return;
+    }
     detailState.value = task.done
       ? "completada"
       : task.projectState === "proceso"
@@ -1704,6 +1762,9 @@
       : "sin-empezar";
     const bloqueada =
       !task.done && proyectoBlockedIds(proyecto).has(task.id);
+    // Bloqueada: el estado se ve, pero no se toca. Lo manda el grafo, igual
+    // que en el board, donde su columna tampoco se arrastra.
+    detailState.disabled = bloqueada;
     detailStateHint.hidden = !bloqueada;
   }
 
@@ -1935,10 +1996,13 @@
 
   // Construye el <li> de una tarea (se usa en la lista de pendientes y en la
   // de completadas). `origin` (opcional): etiqueta de procedencia, p. ej.
-  // "Tareas" o "Recados", para las destacadas que se agrupan en Cuanto antes.
-  // `opts` (opcional): { hideDate, hideStar, hideProject, dragHandle } — en la Agenda la
-  // fecha y el destacado sobran, porque la tarea ya está colocada en su día, y
-  // `dragHandle` añade el asa para reordenarla dentro del día.
+  // "Tarea" o "Recado" (ver ORIGEN), para las destacadas que se agrupan en
+  // Cuanto antes.
+  // `opts` (opcional): { hideDate, hideStar, hideProject, hideCheck, dragHandle } — en la
+  // Agenda la fecha y el destacado sobran, porque la tarea ya está colocada en
+  // su día; `hideCheck` quita la casilla (el board de un proyecto, donde el
+  // estado lo dice la columna), y `dragHandle` añade el asa para reordenarla
+  // dentro del día.
   function createTaskItem(task, origin, opts) {
     const o = opts || {};
     const li = document.createElement("li");
@@ -1995,19 +2059,22 @@
       dateLabel = rel.charAt(0).toUpperCase() + rel.slice(1);
     }
 
-    // Control de estado: siempre checkbox
-    const control = document.createElement("input");
-    control.type = "checkbox";
-    control.className = "task-check";
-    control.checked = task.done;
-    control.setAttribute("aria-label", "Marcar como completada");
-    control.addEventListener("change", () =>
-      task._lact
-        ? toggleLactDone(task._lact)
-        : task._at
-        ? toggleAtDone(task._at)
-        : toggleTask(task.id)
-    );
+    // Control de estado: checkbox, salvo donde sobre (board del proyecto)
+    let control = null;
+    if (!o.hideCheck) {
+      control = document.createElement("input");
+      control.type = "checkbox";
+      control.className = "task-check";
+      control.checked = task.done;
+      control.setAttribute("aria-label", "Marcar como completada");
+      control.addEventListener("change", () =>
+        task._lact
+          ? toggleLactDone(task._lact)
+          : task._at
+          ? toggleAtDone(task._at)
+          : toggleTask(task.id)
+      );
+    }
 
     const main = document.createElement("div");
     main.className = "task-main";
@@ -2106,7 +2173,8 @@
 
     // En las listas por día se arrastra desde el asa (como las de Agenda)
     if (o.dragHandle) li.appendChild(dayHandleEl());
-    li.append(control, main);
+    if (control) li.appendChild(control);
+    li.appendChild(main);
     if (trailing) li.appendChild(trailing);
     return li;
   }
@@ -2903,7 +2971,14 @@
   // Exportar: descarga un JSON con todas las tareas
   // Exportar: descarga un JSON con las tres listas y las planificadas
   exportBtn.addEventListener("click", () => {
-    const payload = { tasks, recados, pendientes, proyectos, planned };
+    const payload = {
+      tasks,
+      recados,
+      pendientes,
+      proyectos,
+      proyectoSecciones,
+      planned,
+    };
     const data = JSON.stringify(payload, null, 2);
     const blob = new Blob([data], { type: "application/json" });
     const url = URL.createObjectURL(blob);
@@ -2932,6 +3007,7 @@
         let inRecados = null;
         let inPendientes = null;
         let inProyectos = null;
+        let inProSecciones = null;
         let inPlanned = null;
         if (Array.isArray(parsed)) {
           inTasks = parsed;
@@ -2943,6 +3019,9 @@
             : null;
           inProyectos = Array.isArray(parsed.proyectos)
             ? parsed.proyectos
+            : null;
+          inProSecciones = Array.isArray(parsed.proyectoSecciones)
+            ? parsed.proyectoSecciones
             : null;
           inPlanned = Array.isArray(parsed.planned) ? parsed.planned : null;
         } else {
@@ -2970,6 +3049,11 @@
           pendientes = inPendientes.map(ensureId);
           savePendientes();
           renderPendientes();
+        }
+        if (inProSecciones) {
+          proyectoSecciones = inProSecciones.map(ensureId);
+          saveProyectoSecciones();
+          renderProyectos();
         }
         if (inProyectos) {
           proyectos = inProyectos.map(ensureId);
@@ -3161,7 +3245,15 @@
       : raw && typeof raw === "object"
       ? Object.values(raw)
       : [];
-    const log = arr.filter((d) => typeof d === "string" && d);
+    // Una fecha como mucho por día: completar dos veces el mismo día no es
+    // posible (el reseteo diario desmarca una vez, y marcar/desmarcar/marcar
+    // apila y desapila). Las repetidas son restos de un error anterior.
+    const vistas = {};
+    const log = arr.filter((d) => {
+      if (typeof d !== "string" || !d || vistas[d]) return false;
+      vistas[d] = true;
+      return true;
+    });
     if (!log.length && item.lastDoneAt) return [item.lastDoneAt];
     return log;
   }
@@ -3444,11 +3536,14 @@
     // Última fecha de completado (se guarda siempre, se muestre o no). Al
     // desmarcar se recupera la anterior, para deshacer un check por error.
     if (item.done) {
+      // El registro se lee ANTES de pisar `lastDoneAt`: si no, el respaldo de
+      // `hoyDoneLog` devolvería la fecha de hoy y se apuntaría dos veces.
+      const previo = hoyDoneLog(item);
       if (item.lastDoneAt) item.prevDoneAt = item.lastDoneAt;
       else delete item.prevDoneAt;
       item.lastDoneAt = todayISO();
       // Registro completo, para el resumen por semanas
-      item.doneLog = hoyDoneLog(item).concat([item.lastDoneAt]);
+      item.doneLog = previo.concat([item.lastDoneAt]);
     } else {
       if (item.prevDoneAt) item.lastDoneAt = item.prevDoneAt;
       else delete item.lastDoneAt;
@@ -3690,11 +3785,11 @@
     const out = [];
     tasks.forEach((t) => {
       if (!t.sourcePlannedId && t.dateMode === "on" && t.dateStart === iso)
-        out.push({ task: t, origin: "Tareas" });
+        out.push({ task: t, origin: ORIGEN.tareas });
     });
     recados.forEach((t) => {
       if (t.dateMode === "on" && t.dateStart === iso)
-        out.push({ task: t, origin: "Recados" });
+        out.push({ task: t, origin: ORIGEN.recados });
     });
     return out;
   }
@@ -4037,19 +4132,23 @@
     return /^https?:\/\//i.test(full) ? full : "";
   }
 
-  // Progreso del proyecto: {done, total} sobre las tareas que tiene asignadas
-  // en las tres listas que admiten proyecto.
+  // Progreso del proyecto: {done, total, ready} sobre las tareas que tiene
+  // asignadas en las tres listas que admiten proyecto. `ready` son las
+  // ejecutables: pendientes y sin ninguna flecha del grafo que las bloquee.
   function proyectoProgreso(id) {
     let done = 0;
     let total = 0;
+    let ready = 0;
+    const bloqueadas = proyectoBlockedIds(proyectos.find((p) => p.id === id));
     [tasks, recados, pendientes].forEach((arr) =>
       arr.forEach((t) => {
         if (t.projectId !== id) return;
         total++;
         if (t.done) done++;
+        else if (!bloqueadas.has(t.id)) ready++;
       })
     );
-    return { done: done, total: total };
+    return { done: done, total: total, ready: ready };
   }
 
   function addProyecto(text, url, category) {
@@ -4111,7 +4210,7 @@
 
   function openProyectoTasks(id) {
     proyectoOpenId = id;
-    proyectoTasksTab = "lista"; // cada proyecto se abre por su lista
+    proyectoTasksTab = "grafo"; // cada proyecto se abre por su diagrama
     renderProyectos();
     window.scrollTo(0, 0);
   }
@@ -4128,9 +4227,9 @@
       arr.forEach((t) => {
         if (t.projectId === id) out.push({ task: t, origin: origin });
       });
-    add(tasks, "Tareas");
-    add(recados, "Recados");
-    add(pendientes, "Pendientes");
+    add(tasks, ORIGEN.tareas);
+    add(recados, ORIGEN.recados);
+    add(pendientes, ORIGEN.pendientes);
     return out
       .filter((e) => !e.task.done)
       .concat(out.filter((e) => e.task.done));
@@ -4159,18 +4258,33 @@
   /* ---------- Vista lista: ejecutables y bloqueadas ----------
      Una tarea está bloqueada si en el grafo es destino de alguna flecha: hay
      otra tarea que apunta a ella y, por tanto, va antes. */
+
+  // Orden de las secciones en la vista lista. En escritorio son las columnas
+  // del board, de izquierda a derecha (el CSS las coloca en rejilla).
+  const LISTA_ESTADOS = ["bloqueada", "sin-empezar", "proceso", "completada"];
+
   function renderProyectoLista(proyecto, entries) {
     proyectoTasksList.innerHTML = "";
+    if (!entries.length) return; // sin tareas: solo el mensaje vacío
     const bloqueadas = proyectoBlockedIds(proyecto);
-    const grupos = TASK_STATES.map((estado) => ({
-      nombre: estado.name,
-      id: estado.id,
-      items: entries.filter(
-        (e) => taskStateOf(e.task, bloqueadas) === estado.id
-      ),
-    }));
+    const grupos = LISTA_ESTADOS.map((id) => {
+      const estado = TASK_STATES.find((s) => s.id === id);
+      return {
+        nombre: estado.name,
+        id: id,
+        items: entries.filter((e) => taskStateOf(e.task, bloqueadas) === id),
+      };
+    });
     grupos.forEach((grupo) => {
-      if (!grupo.items.length) return; // grupo vacío: ni título
+      // Los grupos vacíos se pintan igual, marcados: en móvil el CSS los
+      // esconde y en escritorio se quedan como columna vacía, para que las
+      // demás no cambien de sitio.
+      const wrap = document.createElement("section");
+      wrap.className =
+        "proyecto-group estado-" +
+        grupo.id +
+        (grupo.items.length ? "" : " is-empty");
+      wrap.dataset.state = grupo.id; // lo lee el arrastre entre columnas
       const titulo = document.createElement("h2");
       titulo.className = "proyecto-group-title estado-" + grupo.id;
       titulo.textContent = grupo.nombre;
@@ -4186,12 +4300,204 @@
           createTaskItem(e.task, e.origin, {
             hideStar: true,
             hideProject: true,
+            // El estado ya lo dice la columna; se cambia desde la tarea
+            hideCheck: true,
           })
         )
       );
-      proyectoTasksList.append(titulo, ul);
+      wrap.append(titulo, ul);
+      proyectoTasksList.appendChild(wrap);
     });
   }
+
+  /* ---------- Arrastrar una tarea de una columna a otra ----------
+     Soltarla en otra columna le pone ese estado, igual que el selector del
+     panel de la tarea. "Bloqueadas" queda fuera del juego (ni se arrastra ni
+     se suelta ahí): ese estado lo decide el grafo, no la mano. */
+  const BOARD_MOVE_PX = 8; // con ratón, se arrastra al pasar de este margen
+
+  // Aplica el estado de la columna de destino. Misma lógica que el selector
+  // "Estado" del panel: completada es el `done` de siempre.
+  function boardApplyState(taskId, estado) {
+    const e = findTaskEntry(taskId);
+    if (!e) return;
+    const task = e.item;
+    if (estado === "completada") {
+      if (task.done) return;
+      task.done = true;
+      task.completedAt = todayISO();
+      task.starred = false; // al completar, deja de estar destacada
+    } else {
+      if (task.done) {
+        task.done = false;
+        delete task.completedAt;
+      }
+      if (estado === "proceso") task.projectState = "proceso";
+      else delete task.projectState;
+    }
+    e.ctx.save();
+    renderAllLists(); // repinta su lista de origen y este board
+  }
+
+  function enableBoardDrag(container) {
+    let dragEl = null;
+    let dragging = false;
+    let pressTimer = null;
+    let startX = 0;
+    let startY = 0;
+    let fromState = "";
+
+    function cancelPress() {
+      clearTimeout(pressTimer);
+      pressTimer = null;
+    }
+
+    // Columna bajo el puntero, de las que admiten tareas. En escritorio manda
+    // la x (todas ocupan la misma franja de alto); en móvil, apiladas, la x
+    // vale para todas y desempata la distancia vertical.
+    function columnAt(x, y) {
+      let best = null;
+      let bestDist = Infinity;
+      container.querySelectorAll(".proyecto-group").forEach((col) => {
+        if (col.dataset.state === "bloqueada") return;
+        const r = col.getBoundingClientRect();
+        if (!r.width || x < r.left || x > r.right) return;
+        const dy = y < r.top ? r.top - y : y > r.bottom ? y - r.bottom : 0;
+        if (dy < bestDist) {
+          bestDist = dy;
+          best = col;
+        }
+      });
+      return best;
+    }
+
+    // Tarea de esa columna ante la que hay que soltar (la primera cuyo centro
+    // queda por debajo del puntero), o null para dejarla la última.
+    function itemAfter(ul, y) {
+      const items = [...ul.querySelectorAll(".task-item:not(.dragging)")];
+      let closest = { offset: Number.NEGATIVE_INFINITY, element: null };
+      items.forEach((child) => {
+        const box = child.getBoundingClientRect();
+        const offset = y - box.top - box.height / 2;
+        if (offset < 0 && offset > closest.offset) {
+          closest = { offset: offset, element: child };
+        }
+      });
+      return closest.element;
+    }
+
+    function startDrag(pointerId) {
+      if (!dragEl || dragging) return;
+      dragging = true;
+      reorderDragging = true;
+      dragEl.classList.add("dragging");
+      container.classList.add("is-dragging");
+      try {
+        if (pointerId != null) dragEl.setPointerCapture(pointerId);
+      } catch (e) {
+        /* algunos navegadores no lo permiten; no es crítico */
+      }
+    }
+
+    function consumeClick(e) {
+      e.stopPropagation();
+      e.preventDefault();
+    }
+
+    function endDrag() {
+      cancelPress();
+      if (dragging) {
+        dragging = false;
+        reorderDragging = false;
+        const col = dragEl && dragEl.closest(".proyecto-group");
+        const toState = col ? col.dataset.state : fromState;
+        dragEl.classList.remove("dragging");
+        container.classList.remove("is-dragging");
+        // Anula el "click" que el navegador dispara al soltar (abriría la
+        // tarea). Se auto-elimina al primer click o tras un breve margen.
+        container.addEventListener("click", consumeClick, {
+          capture: true,
+          once: true,
+        });
+        setTimeout(() => {
+          container.removeEventListener("click", consumeClick, true);
+        }, 350);
+        const id = dragEl.dataset.id;
+        dragEl = null;
+        // Dentro de la misma columna no hay nada que guardar: se repinta para
+        // devolverla a su sitio (el orden lo manda su lista de origen).
+        if (toState && toState !== fromState) boardApplyState(id, toState);
+        else renderProyectoTasks();
+        return;
+      }
+      dragEl = null;
+    }
+
+    container.addEventListener("pointerdown", (e) => {
+      if (e.button && e.button !== 0) return; // solo botón principal
+      const li = e.target.closest(".task-item");
+      if (!li) return;
+      const col = li.closest(".proyecto-group");
+      // Las bloqueadas no se mueven, y las externas (lactancia / App tareas)
+      // no son nuestras para cambiarles el estado.
+      if (!col || col.dataset.state === "bloqueada") return;
+      if (
+        li.dataset.id &&
+        (li.dataset.id.indexOf("lact:") === 0 ||
+          li.dataset.id.indexOf("at:") === 0)
+      )
+        return;
+      dragEl = li;
+      fromState = col.dataset.state;
+      startX = e.clientX;
+      startY = e.clientY;
+      cancelPress();
+      // Con el dedo hace falta mantener pulsado, porque mover es scroll. Con
+      // ratón basta con arrastrar un poco (lo natural en un board).
+      if (e.pointerType === "touch") {
+        pressTimer = setTimeout(() => startDrag(e.pointerId), LONG_PRESS_MS);
+      }
+    });
+
+    container.addEventListener("pointermove", (e) => {
+      if (!dragEl) return;
+      if (!dragging) {
+        // Se soltó fuera del board: ese pointerdown ya no cuenta
+        if (!e.buttons) {
+          cancelPress();
+          dragEl = null;
+          return;
+        }
+        const lejos =
+          Math.abs(e.clientY - startY) > BOARD_MOVE_PX ||
+          Math.abs(e.clientX - startX) > BOARD_MOVE_PX;
+        if (!lejos) return;
+        // Con el dedo, moverse antes del long-press es scroll, no arrastre
+        if (e.pointerType === "touch") {
+          cancelPress();
+          dragEl = null;
+          return;
+        }
+        startDrag(e.pointerId);
+      }
+      e.preventDefault();
+      const col = columnAt(e.clientX, e.clientY);
+      if (!col) return; // fuera del board (o sobre Bloqueadas): se queda donde está
+      const ul = col.querySelector(".task-list");
+      if (!ul) return;
+      const after = itemAfter(ul, e.clientY);
+      if (after == null) {
+        if (ul.lastElementChild !== dragEl) ul.appendChild(dragEl);
+      } else if (after !== dragEl && dragEl.nextElementSibling !== after) {
+        ul.insertBefore(dragEl, after);
+      }
+    });
+
+    container.addEventListener("pointerup", endDrag);
+    container.addEventListener("pointercancel", endDrag);
+  }
+
+  enableBoardDrag(proyectoTasksList);
 
   /* ---------- Vista grafo: un post-it por tarea ---------- */
   const POSTIT_SIZE = 150; // lado del post-it (cuadrado), en px
@@ -4670,56 +4976,128 @@
     }
   });
 
+  // ¿La sección existe todavía? Un proyecto con una sección borrada (o sin
+  // sección) cae en el bloque "Sin sección".
+  function proyectoSeccionOf(item) {
+    const id = (item && item.sectionId) || "";
+    return proyectoSecciones.some((s) => s.id === id) ? id : "";
+  }
+
+  function proyectoItemEl(item) {
+    const li = document.createElement("li");
+    li.className = "proyecto-item";
+    li.dataset.id = item.id;
+
+    // Enlace a Notion, a modo avatar al principio de la fila (si lo tiene)
+    const url = proyectoUrl(item);
+    if (url) {
+      const link = document.createElement("a");
+      link.className = "proyecto-link";
+      link.href = url;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      link.title = "Abrir en Notion";
+      link.setAttribute("aria-label", "Abrir " + item.text + " en Notion");
+      link.innerHTML = NOTION_ICON;
+      li.appendChild(link);
+    }
+
+    // La fila entera abre la lista de tareas del proyecto
+    const main = document.createElement("div");
+    main.className = "proyecto-main";
+    main.addEventListener("click", () => openProyectoTasks(item.id));
+    const text = document.createElement("span");
+    text.className = "proyecto-text";
+    text.textContent = item.text;
+    main.appendChild(text);
+    // 2ª línea: su categoría, en el color que le toca
+    const cat = HOY_CATEGORIES.find((c) => c.id === item.category);
+    if (cat) {
+      const catEl = document.createElement("span");
+      catEl.className = "proyecto-cat cat-" + cat.id;
+      catEl.textContent = cat.name;
+      main.appendChild(catEl);
+    }
+    li.appendChild(main);
+
+    // Ejecutables: pendientes que ya se pueden hacer. Solo si hay alguna.
+    const prog = proyectoProgreso(item.id);
+    if (prog.ready) {
+      const ready = document.createElement("span");
+      ready.className = "proyecto-ready";
+      ready.textContent = prog.ready;
+      ready.title = "Tareas ejecutables ahora";
+      li.appendChild(ready);
+    }
+
+    // Progreso: completadas / total
+    const count = document.createElement("span");
+    count.className = "proyecto-count";
+    count.textContent = prog.done + "/" + prog.total;
+    count.title = "Tareas completadas del total";
+    li.appendChild(count);
+
+    return li;
+  }
+
+  // Índice de proyectos. Sin secciones creadas es una sola lista, como siempre.
+  // Con secciones, un bloque por sección y, al final, "Sin sección" (que se
+  // mantiene aunque esté vacío: es donde se sueltan los que salen de una).
   function renderProyectosIndex() {
     if (!proyectosListEl) return;
     proyectosListEl.innerHTML = "";
-    proyectos.forEach((item) => {
-      const li = document.createElement("li");
-      li.className = "proyecto-item";
-      li.dataset.id = item.id;
+    const conSecciones = proyectoSecciones.length > 0;
 
-      // La fila entera abre la lista de tareas del proyecto
-      const main = document.createElement("div");
-      main.className = "proyecto-main";
-      main.addEventListener("click", () => openProyectoTasks(item.id));
-      const text = document.createElement("span");
-      text.className = "proyecto-text";
-      text.textContent = item.text;
-      main.appendChild(text);
-      // 2ª línea: su categoría, en el color que le toca
-      const cat = HOY_CATEGORIES.find((c) => c.id === item.category);
-      if (cat) {
-        const catEl = document.createElement("span");
-        catEl.className = "proyecto-cat cat-" + cat.id;
-        catEl.textContent = cat.name;
-        main.appendChild(catEl);
-      }
-      li.appendChild(main);
+    // Bloques a pintar: las secciones en orden y, al final, "Sin sección"
+    const bloques = proyectoSecciones
+      .map((s) => ({ id: s.id, name: s.name }))
+      .concat([{ id: "", name: "Sin sección" }]);
 
-      // Progreso: completadas / total
-      const prog = proyectoProgreso(item.id);
-      const count = document.createElement("span");
-      count.className = "proyecto-count";
-      count.textContent = prog.done + "/" + prog.total;
-      count.title = "Tareas completadas del total";
-      li.appendChild(count);
+    bloques.forEach((bloque) => {
+      const items = proyectos.filter(
+        (p) => proyectoSeccionOf(p) === bloque.id
+      );
+      // Sin secciones no hay cabeceras ni bloques vacíos que enseñar
+      if (!conSecciones && !items.length) return;
 
-      // Enlace: abre Notion en una pestaña nueva (si el proyecto tiene uno)
-      const url = proyectoUrl(item);
-      if (url) {
-        const link = document.createElement("a");
-        link.className = "proyecto-link";
-        link.href = url;
-        link.target = "_blank";
-        link.rel = "noopener noreferrer";
-        link.title = "Abrir en Notion";
-        link.setAttribute("aria-label", "Abrir " + item.text + " en Notion");
-        link.innerHTML = NOTION_ICON;
-        li.appendChild(link);
+      const wrap = document.createElement("section");
+      wrap.className = "proyecto-sec";
+      wrap.dataset.section = bloque.id;
+
+      // "Sin sección" vacío no lleva cabecera: se queda al final como un
+      // destino discreto donde volver a soltar lo que salga de una sección.
+      const conCabecera = conSecciones && (bloque.id !== "" || items.length > 0);
+
+      if (conCabecera) {
+        const head = document.createElement("div");
+        head.className = "proyecto-sec-head";
+        const title = document.createElement("h2");
+        title.className = "proyecto-sec-title";
+        title.textContent = bloque.name;
+        const n = document.createElement("span");
+        n.className = "proyecto-sec-count";
+        n.textContent = items.length;
+        head.append(title, n);
+        wrap.appendChild(head);
       }
 
-      proyectosListEl.appendChild(li);
+      const ul = document.createElement("ul");
+      ul.className = "proyecto-list";
+      items.forEach((item) => ul.appendChild(proyectoItemEl(item)));
+      wrap.appendChild(ul);
+
+      if (conSecciones && !items.length) {
+        const hint = document.createElement("p");
+        hint.className = "proyecto-sec-empty";
+        hint.textContent = conCabecera
+          ? "Arrastra proyectos aquí."
+          : "Arrastra aquí los proyectos sin sección.";
+        wrap.appendChild(hint);
+      }
+
+      proyectosListEl.appendChild(wrap);
     });
+
     if (proyectosEmpty) proyectosEmpty.hidden = proyectos.length !== 0;
   }
 
@@ -4729,13 +5107,304 @@
     if (item) openProyectoDetail(item.id);
   });
 
-  // Reordenar los proyectos arrastrando (el contenedor no se reemplaza)
-  enableReorder(
-    proyectosListEl,
-    "proyecto-item",
-    () => proyectos,
-    saveProyectos
+  /* ---------- Arrastrar proyectos: entre secciones y dentro de una ----------
+     Mismo gesto que el board de tareas: con el dedo hay que mantener pulsado
+     (mover sería scroll) y con ratón basta con arrastrar un poco. Al soltar se
+     reescribe el array `proyectos` con el orden del DOM y cada uno se queda con
+     la sección del bloque en el que ha caído. */
+  const PRO_MOVE_PX = 8; // con ratón, se arrastra al pasar de este margen
+
+  function enableProyectoDrag(container) {
+    let dragEl = null;
+    let dragging = false;
+    let moved = false; // sin movimiento no hay nada que guardar
+    let pressTimer = null;
+    let startX = 0;
+    let startY = 0;
+
+    function cancelPress() {
+      clearTimeout(pressTimer);
+      pressTimer = null;
+    }
+
+    // Bloque bajo el puntero. Los bloques están siempre apilados, así que
+    // manda la y: el que lo contiene o, fuera de todos, el más cercano.
+    function sectionAt(y) {
+      let best = null;
+      let bestDist = Infinity;
+      container.querySelectorAll(".proyecto-sec").forEach((sec) => {
+        const r = sec.getBoundingClientRect();
+        if (!r.height) return;
+        const dy = y < r.top ? r.top - y : y > r.bottom ? y - r.bottom : 0;
+        if (dy < bestDist) {
+          bestDist = dy;
+          best = sec;
+        }
+      });
+      return best;
+    }
+
+    // Proyecto de ese bloque ante el que hay que soltar (el primero cuyo centro
+    // queda por debajo del puntero), o null para dejarlo el último.
+    function itemAfter(ul, y) {
+      const items = [...ul.querySelectorAll(".proyecto-item:not(.dragging)")];
+      let closest = { offset: Number.NEGATIVE_INFINITY, element: null };
+      items.forEach((child) => {
+        const box = child.getBoundingClientRect();
+        const offset = y - box.top - box.height / 2;
+        if (offset < 0 && offset > closest.offset) {
+          closest = { offset: offset, element: child };
+        }
+      });
+      return closest.element;
+    }
+
+    function startDrag(pointerId) {
+      if (!dragEl || dragging) return;
+      dragging = true;
+      moved = false;
+      reorderDragging = true;
+      dragEl.classList.add("dragging");
+      container.classList.add("is-dragging");
+      try {
+        if (pointerId != null) dragEl.setPointerCapture(pointerId);
+      } catch (e) {
+        /* algunos navegadores no lo permiten; no es crítico */
+      }
+    }
+
+    function consumeClick(e) {
+      e.stopPropagation();
+      e.preventDefault();
+    }
+
+    // Reescribe `proyectos` con lo que se ve: recorre los bloques en orden y,
+    // dentro de cada uno, sus filas. Cada proyecto se queda con la sección del
+    // bloque donde ha caído ("" = sin sección, que no se guarda).
+    function commitOrder() {
+      const orden = [];
+      container.querySelectorAll(".proyecto-sec").forEach((sec) => {
+        const secId = sec.dataset.section || "";
+        sec.querySelectorAll(".proyecto-item").forEach((li) => {
+          const item = proyectos.find((p) => p.id === li.dataset.id);
+          if (!item) return;
+          if (secId) item.sectionId = secId;
+          else delete item.sectionId;
+          orden.push(item);
+        });
+      });
+      // Por si algún proyecto no estuviera en el DOM: no se pierde
+      proyectos.forEach((p) => {
+        if (orden.indexOf(p) === -1) orden.push(p);
+      });
+      proyectos = orden;
+      saveProyectos();
+    }
+
+    function endDrag() {
+      cancelPress();
+      if (dragging) {
+        dragging = false;
+        reorderDragging = false;
+        if (dragEl) dragEl.classList.remove("dragging");
+        container.classList.remove("is-dragging");
+        // Anula el "click" que el navegador dispara al soltar (abriría el
+        // proyecto). Se auto-elimina al primer click o tras un breve margen.
+        container.addEventListener("click", consumeClick, {
+          capture: true,
+          once: true,
+        });
+        setTimeout(() => {
+          container.removeEventListener("click", consumeClick, true);
+        }, 350);
+        dragEl = null;
+        if (moved) {
+          commitOrder();
+          renderProyectosIndex(); // repinta contadores y bloques vacíos
+        }
+        return;
+      }
+      dragEl = null;
+    }
+
+    container.addEventListener("pointerdown", (e) => {
+      if (e.button && e.button !== 0) return; // solo botón principal
+      if (e.target.closest(".proyecto-link")) return; // el avatar es un enlace
+      const li = e.target.closest(".proyecto-item");
+      if (!li) return;
+      dragEl = li;
+      startX = e.clientX;
+      startY = e.clientY;
+      cancelPress();
+      if (e.pointerType === "touch") {
+        pressTimer = setTimeout(() => startDrag(e.pointerId), LONG_PRESS_MS);
+      }
+    });
+
+    container.addEventListener("pointermove", (e) => {
+      if (!dragEl) return;
+      if (!dragging) {
+        // Se soltó fuera de la lista: ese pointerdown ya no cuenta
+        if (!e.buttons) {
+          cancelPress();
+          dragEl = null;
+          return;
+        }
+        const lejos =
+          Math.abs(e.clientY - startY) > PRO_MOVE_PX ||
+          Math.abs(e.clientX - startX) > PRO_MOVE_PX;
+        if (!lejos) return;
+        // Con el dedo, moverse antes del long-press es scroll, no arrastre
+        if (e.pointerType === "touch") {
+          cancelPress();
+          dragEl = null;
+          return;
+        }
+        startDrag(e.pointerId);
+      }
+      e.preventDefault();
+      const sec = sectionAt(e.clientY);
+      if (!sec) return;
+      const ul = sec.querySelector(".proyecto-list");
+      if (!ul) return;
+      const after = itemAfter(ul, e.clientY);
+      if (after == null) {
+        if (ul.lastElementChild !== dragEl) {
+          ul.appendChild(dragEl);
+          moved = true;
+        }
+      } else if (after !== dragEl && dragEl.nextElementSibling !== after) {
+        ul.insertBefore(dragEl, after);
+        moved = true;
+      }
+    });
+
+    container.addEventListener("pointerup", endDrag);
+    container.addEventListener("pointercancel", endDrag);
+  }
+
+  enableProyectoDrag(proyectosListEl);
+
+  /* ---------- Secciones de Proyectos (modal de ajustes) ---------- */
+  const proyectosSeccionesBtn = document.getElementById(
+    "proyectos-secciones-btn"
   );
+  const proSeccionesOverlay = document.getElementById(
+    "proyecto-secciones-overlay"
+  );
+  const proSeccionesClose = document.getElementById("proyecto-secciones-close");
+  const proSeccionForm = document.getElementById("proyecto-seccion-form");
+  const proSeccionName = document.getElementById("proyecto-seccion-name");
+  const proSeccionList = document.getElementById("proyecto-seccion-list");
+  const proSeccionEmpty = document.getElementById("proyecto-seccion-empty");
+
+  // Lista de secciones del modal: nombre editable + eliminar
+  function renderProyectoSeccionesModal() {
+    if (!proSeccionList) return;
+    proSeccionList.innerHTML = "";
+    proyectoSecciones.forEach((sec) => {
+      const li = document.createElement("li");
+      li.className = "seccion-item";
+      li.dataset.id = sec.id;
+
+      const input = document.createElement("input");
+      input.type = "text";
+      input.className = "seccion-name";
+      input.maxLength = 80;
+      input.value = sec.name;
+      input.setAttribute("aria-label", "Nombre de la sección");
+      // El nombre se guarda al salir del campo; en blanco, se recupera
+      input.addEventListener("blur", () => {
+        const v = input.value.trim();
+        if (!v) {
+          input.value = sec.name;
+          return;
+        }
+        if (v === sec.name) return;
+        sec.name = v;
+        saveProyectoSecciones();
+        renderProyectosIndex();
+      });
+      input.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          input.blur();
+        }
+      });
+
+      const del = document.createElement("button");
+      del.type = "button";
+      del.className = "seccion-del";
+      del.textContent = "🗑";
+      del.title = "Eliminar sección";
+      del.setAttribute("aria-label", "Eliminar la sección " + sec.name);
+      del.addEventListener("click", () => deleteProyectoSeccion(sec.id));
+
+      li.append(input, del);
+      proSeccionList.appendChild(li);
+    });
+    if (proSeccionEmpty) proSeccionEmpty.hidden = proyectoSecciones.length !== 0;
+  }
+
+  function addProyectoSeccion(name) {
+    const trimmed = (name || "").trim();
+    if (!trimmed) return;
+    proyectoSecciones.push({ id: newId(), name: trimmed });
+    saveProyectoSecciones();
+    renderProyectoSeccionesModal();
+    renderProyectosIndex();
+  }
+
+  // Eliminar una sección no borra sus proyectos: vuelven a "Sin sección".
+  function deleteProyectoSeccion(id) {
+    const sec = proyectoSecciones.find((s) => s.id === id);
+    if (!sec) return;
+    const n = proyectos.filter((p) => proyectoSeccionOf(p) === id).length;
+    const msg = n
+      ? 'Eliminar la sección "' +
+        sec.name +
+        '"? Sus ' +
+        n +
+        " proyecto(s) pasan a Sin sección (no se borran)."
+      : 'Eliminar la sección "' + sec.name + '"?';
+    if (!confirm(msg)) return;
+    proyectoSecciones = proyectoSecciones.filter((s) => s.id !== id);
+    proyectos.forEach((p) => {
+      if (p.sectionId === id) delete p.sectionId;
+    });
+    saveProyectoSecciones();
+    saveProyectos();
+    renderProyectoSeccionesModal();
+    renderProyectosIndex();
+  }
+
+  function openProyectoSecciones() {
+    renderProyectoSeccionesModal();
+    proSeccionName.value = "";
+    proSeccionesOverlay.hidden = false;
+    proSeccionName.focus();
+  }
+
+  function closeProyectoSecciones() {
+    if (proSeccionesOverlay.hidden) return;
+    proSeccionesOverlay.hidden = true;
+  }
+
+  proyectosSeccionesBtn.addEventListener("click", openProyectoSecciones);
+  proSeccionesClose.addEventListener("click", closeProyectoSecciones);
+  proSeccionesOverlay.addEventListener("click", (e) => {
+    if (e.target === proSeccionesOverlay) closeProyectoSecciones();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !proSeccionesOverlay.hidden)
+      closeProyectoSecciones();
+  });
+  proSeccionForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    addProyectoSeccion(proSeccionName.value);
+    proSeccionName.value = "";
+    proSeccionName.focus();
+  });
 
   /* ---------- Nuevo proyecto (botón + de la cabecera) ---------- */
   const proyectoNewOverlay = document.getElementById("proyecto-new-overlay");
@@ -4916,6 +5585,10 @@
     let localProyectos = [];
     if (db) localProyectos = await idbGet(IDB_KEY_PROYECTOS);
     proyectos = Array.isArray(localProyectos) ? localProyectos : [];
+
+    let localProSecciones = [];
+    if (db) localProSecciones = await idbGet(IDB_KEY_PRO_SECCIONES);
+    proyectoSecciones = Array.isArray(localProSecciones) ? localProSecciones : [];
 
     let rawHoy;
     if (db) rawHoy = await idbGet(IDB_KEY_HOY);
@@ -5098,6 +5771,30 @@
         showError("Al leer la nube: " + (err && err.message ? err.message : err))
     );
 
+    // Listener: secciones del índice de Proyectos
+    let firstProSec = true;
+    const refProSec = fdb.ref(FB_ROOT + "/" + FB_KEY_PRO_SECCIONES);
+    refProSec.on(
+      "value",
+      (snap) => {
+        const raw = snap.val();
+        const remote = Array.isArray(raw) ? raw : raw ? Object.values(raw) : [];
+        if (firstProSec && remote.length === 0 && proyectoSecciones.length > 0) {
+          firstProSec = false;
+          refProSec.set(proyectoSecciones).catch(() => {});
+          return;
+        }
+        firstProSec = false;
+        proyectoSecciones = remote;
+        if (db) idbSet(IDB_KEY_PRO_SECCIONES, proyectoSecciones).catch(() => {});
+        clearError();
+        renderProyectos();
+        renderProyectoSeccionesModal();
+      },
+      (err) =>
+        showError("Al leer la nube: " + (err && err.message ? err.message : err))
+    );
+
     // Listener: agenda (tareas por día de la semana)
     let firstAg = true;
     const refAg = fdb.ref(FB_ROOT + "/" + FB_KEY_AGENDA);
@@ -5169,6 +5866,12 @@
         if (db) idbSet(IDB_KEY_HOY, snap.val()).catch(() => {});
         clearError();
         hoyReady = true;
+        // Una sola vez por carga y ya con los datos de la nube delante, para
+        // no escribir sobre un estado a medio sincronizar.
+        if (!doneLogsLimpios) {
+          doneLogsLimpios = true;
+          if (limpiarDoneLogs()) saveHoy();
+        }
         resetHoyIfNewDay(); // resetea "done" si ha cambiado el día
         renderHoy();
       },

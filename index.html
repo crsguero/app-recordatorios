@@ -362,17 +362,28 @@
           <header class="app-header">
             <div class="header-top">
               <h1>Proyectos</h1>
-              <button
-                type="button"
-                class="header-add-btn"
-                id="proyectos-add-btn"
-                aria-label="Nuevo proyecto"
-                title="Nuevo proyecto"
-              >+</button>
+              <div class="header-actions">
+                <button
+                  type="button"
+                  class="header-icon-btn"
+                  id="proyectos-secciones-btn"
+                  aria-label="Secciones de proyectos"
+                  title="Secciones"
+                >⚙️</button>
+                <button
+                  type="button"
+                  class="header-add-btn"
+                  id="proyectos-add-btn"
+                  aria-label="Nuevo proyecto"
+                  title="Nuevo proyecto"
+                >+</button>
+              </div>
             </div>
           </header>
 
-          <ul class="proyecto-list" id="proyectos-list"></ul>
+          <!-- Un bloque por sección (más "Sin sección"), cada uno con su lista.
+               Los proyectos se arrastran entre bloques y dentro de cada uno. -->
+          <div class="proyecto-sections" id="proyectos-list"></div>
 
           <p class="empty-state" id="proyectos-empty" hidden>
             No hay proyectos. ¡Añade uno con el botón + ! 🎉
@@ -401,8 +412,8 @@
           </header>
 
           <div class="task-tabs" id="proyecto-tasks-tabs" role="tablist" aria-label="Vista">
-            <button type="button" class="task-tab is-active" data-tab="lista" role="tab" aria-selected="true">Lista</button>
-            <button type="button" class="task-tab" data-tab="grafo" role="tab" aria-selected="false">Grafo</button>
+            <button type="button" class="task-tab is-active" data-tab="grafo" role="tab" aria-selected="true">Diagrama</button>
+            <button type="button" class="task-tab" data-tab="lista" role="tab" aria-selected="false">Listas</button>
           </div>
 
           <div id="proyecto-tasks-list"></div>
@@ -505,7 +516,7 @@
             <option value="completada">Completada</option>
           </select>
           <p class="detail-state-hint" id="detail-state-hint" hidden>
-            Ahora mismo está bloqueada: otra tarea del grafo apunta a ella.
+            Ahora mismo está bloqueada: otra tarea del diagrama apunta a ella.
           </p>
         </div>
 
@@ -763,6 +774,36 @@
           <button type="submit" class="fab-submit">Crear</button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- Secciones de Proyectos: crear, renombrar y eliminar -->
+  <div class="fab-overlay" id="proyecto-secciones-overlay" hidden>
+    <div class="fab-box" role="dialog" aria-modal="true" aria-labelledby="proyecto-secciones-modal-title">
+      <h2 class="fab-title" id="proyecto-secciones-modal-title">Secciones</h2>
+
+      <form id="proyecto-seccion-form" autocomplete="off">
+        <label class="fab-label" for="proyecto-seccion-name">Nueva sección</label>
+        <div class="seccion-new-row">
+          <input
+            type="text"
+            id="proyecto-seccion-name"
+            class="task-input"
+            maxlength="80"
+            placeholder="¿Cómo se llama?"
+          />
+          <button type="submit" class="seccion-add-btn" aria-label="Crear sección" title="Crear sección">+</button>
+        </div>
+      </form>
+
+      <ul class="seccion-list" id="proyecto-seccion-list"></ul>
+      <p class="seccion-empty" id="proyecto-seccion-empty">
+        Aún no hay secciones. Crea una y arrastra los proyectos dentro.
+      </p>
+
+      <div class="fab-actions">
+        <button type="button" class="fab-submit" id="proyecto-secciones-close">Cerrar</button>
+      </div>
     </div>
   </div>
 
