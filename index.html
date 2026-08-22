@@ -3,8 +3,10 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <meta name="theme-color" content="#4f46e5" />
+  <meta name="theme-color" content="#7D50BA" />
   <title>Tareas</title>
+  <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+  <link rel="apple-touch-icon" href="favicon.svg" />
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
@@ -420,10 +422,6 @@
 
           <!-- Vista grafo: cada tarea es un post-it que se puede recolocar -->
           <div class="proyecto-canvas" id="proyecto-tasks-canvas" hidden></div>
-
-          <p class="empty-state" id="proyecto-tasks-empty" hidden>
-            Este proyecto no tiene tareas asignadas.
-          </p>
         </div>
       </section>
 
@@ -485,6 +483,8 @@
             <option value="recados">Recados</option>
             <option value="rutinas">Rutinas</option>
             <option value="pendientes">Pendientes</option>
+            <!-- Solo con proyecto asignado: la tarea vive únicamente allí -->
+            <option value="sinTipo">Sin tipo (solo en el proyecto)</option>
           </select>
         </div>
 
@@ -513,6 +513,8 @@
           <select id="detail-state" class="date-mode" aria-label="Estado">
             <option value="sin-empezar">Sin empezar</option>
             <option value="proceso">En proceso</option>
+            <!-- En espera: como bloqueada, no sale en ninguna lista de tareas -->
+            <option value="espera">En espera</option>
             <option value="completada">Completada</option>
           </select>
           <p class="detail-state-hint" id="detail-state-hint" hidden>
@@ -728,8 +730,10 @@
           placeholder="¿Qué hay que hacer?"
         />
 
-        <label class="fab-label" for="proyecto-task-list">Lista</label>
+        <label class="fab-label" for="proyecto-task-list">Tipo</label>
         <select id="proyecto-task-list" class="date-mode">
+          <!-- Por defecto: la tarea se queda solo en el proyecto -->
+          <option value="sinTipo">Sin tipo (solo en el proyecto)</option>
           <option value="tareas">Tareas</option>
           <option value="recados">Recados</option>
           <option value="pendientes">Pendientes</option>
@@ -831,6 +835,13 @@
 
       <label class="fab-label" for="proyecto-detail-cat">Categoría</label>
       <select id="proyecto-detail-cat" class="date-mode"></select>
+
+      <!-- Vista de diagrama: al apagarla se pierden las flechas del proyecto -->
+      <label class="hoy-switch hoy-switch-wide proyecto-detail-switch">
+        <span class="hoy-switch-text">Vista de diagrama</span>
+        <input type="checkbox" id="proyecto-detail-diagram" aria-label="Vista de diagrama" />
+        <span class="hoy-switch-slider"></span>
+      </label>
 
       <button class="detail-delete" id="proyecto-detail-delete" type="button">
         🗑 Eliminar proyecto

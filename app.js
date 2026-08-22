@@ -44,13 +44,15 @@
   const proyectoSettingsBtn = document.getElementById("proyecto-settings-btn");
   const proyectoTasksTitle = document.getElementById("proyecto-tasks-title");
   const proyectoTasksList = document.getElementById("proyecto-tasks-list");
-  const proyectoTasksEmpty = document.getElementById("proyecto-tasks-empty");
   const proyectoTasksTabs = document.getElementById("proyecto-tasks-tabs");
   const proyectoTaskForm = document.getElementById("proyecto-task-form");
   const proyectoTaskInput = document.getElementById("proyecto-task-input");
   const proyectoTaskListSel = document.getElementById("proyecto-task-list");
   const proyectoTaskOverlay = document.getElementById("proyecto-task-overlay");
   const proyectoTaskAddBtn = document.getElementById("proyecto-task-add-btn");
+  const proyectoTaskModalTitle = document.getElementById(
+    "proyecto-task-modal-title"
+  );
   const proyectoTaskCancel = document.getElementById("proyecto-task-cancel");
   const proyectoTasksCanvas = document.getElementById("proyecto-tasks-canvas");
   let proyectoOpenId = null; // proyecto cuya página de tareas está abierta
@@ -85,7 +87,7 @@
     items: () => tasks,
     setItems: (v) => (tasks = v),
     save: () => save(),
-    filter: (t) => !t.sourcePlannedId && !isTaskBlocked(t),
+    filter: (t) => !t.sourcePlannedId && !isTaskOnHold(t),
     listEl: list,
     doneListEl: doneList,
     emptyEl: emptyState,
@@ -114,7 +116,7 @@
     // Las de rutinas con "Añadir a Hoy" no: esas viven en "Durante el día".
     // Las bloqueadas por otra tarea de su proyecto tampoco: aún no tocan.
     filter: (t) =>
-      !t.hoyDia && !isTaskBlocked(t) && (!!t.sourcePlannedId || !!t.starred),
+      !t.hoyDia && !isTaskOnHold(t) && (!!t.sourcePlannedId || !!t.starred),
     listEl: rutinasList,
     doneListEl: rutinasDoneList,
     emptyEl: rutinasEmpty,
@@ -158,7 +160,7 @@
     items: () => recados,
     setItems: (v) => (recados = v),
     save: () => saveRecados(),
-    filter: (t) => !isTaskBlocked(t),
+    filter: (t) => !isTaskOnHold(t),
     listEl: recadosList,
     doneListEl: recadosDoneList,
     emptyEl: recadosEmpty,
@@ -181,7 +183,7 @@
     items: () => pendientes,
     setItems: (v) => (pendientes = v),
     save: () => savePendientes(),
-    filter: (t) => !isTaskBlocked(t),
+    filter: (t) => !isTaskOnHold(t),
     listEl: pendientesList,
     doneListEl: pendientesDoneList,
     emptyEl: pendientesEmpty,
@@ -190,6 +192,16 @@
     summaryEl: pendientesSummary,
     doneVisible: false,
     plannedRank: false,
+  };
+
+  // Tareas sin tipo: existen solo dentro de su proyecto. Al no pintarse en
+  // ninguna vista, su contexto no tiene DOM; solo sirve para leerlas, guardarlas
+  // y moverlas de sitio (el resto de la app las trata como a cualquier tarea).
+  const ctxSinTipo = {
+    noun: "tarea",
+    items: () => sinTipo,
+    setItems: (v) => (sinTipo = v),
+    save: () => saveSinTipo(),
   };
 
   // Busca una tarea por id en cualquiera de las listas. Las que están en
@@ -202,6 +214,8 @@
     if (item) return { item: item, ctx: ctxRecados };
     item = pendientes.find((t) => t.id === id);
     if (item) return { item: item, ctx: ctxPendientes };
+    item = sinTipo.find((t) => t.id === id);
+    if (item) return { item: item, ctx: ctxSinTipo };
     return null;
   }
 
@@ -227,6 +241,8 @@
   const FB_KEY_PLANNED = "planned"; // recordatorios/planned = tareas planificadas
   const FB_KEY_RECADOS = "recados"; // recordatorios/recados = segunda lista
   const FB_KEY_PENDIENTES = "pendientes"; // recordatorios/pendientes = tercera lista
+  // recordatorios/sinTipo = tareas sin tipo (solo dentro de su proyecto)
+  const FB_KEY_SIN_TIPO = "sinTipo";
   const FB_KEY_PROYECTOS = "proyectos"; // recordatorios/proyectos = proyectos (título + enlace)
   // recordatorios/proyectoSecciones = secciones en las que se agrupa el índice
   // de Proyectos. El proyecto guarda su sección en `sectionId`.
@@ -268,6 +284,7 @@
   const IDB_KEY_PLANNED = "planned";
   const IDB_KEY_RECADOS = "recados";
   const IDB_KEY_PENDIENTES = "pendientes";
+  const IDB_KEY_SIN_TIPO = "sinTipo";
   const IDB_KEY_PROYECTOS = "proyectos";
   const IDB_KEY_PRO_SECCIONES = "proyectoSecciones";
   const IDB_KEY_HOY = "hoy";
@@ -280,6 +297,8 @@
   let tasks = [];
   let recados = []; // segunda lista (misma funcionalidad, sin planificadas auto)
   let pendientes = []; // tercera lista (igual que recados)
+  // Tareas sin tipo: solo viven en su proyecto, fuera de las listas de tareas
+  let sinTipo = [];
   // Proyectos: {id, text, url, category, sectionId}. No se completan. El orden
   // del array es el orden del índice; `sectionId` dice en qué sección van (sin
   // sección, o si esa sección ya no existe, van al bloque "Sin sección").
@@ -437,6 +456,18 @@
       fdb
         .ref(FB_ROOT + "/" + FB_KEY_PENDIENTES)
         .set(pendientes && pendientes.length ? pendientes : null)
+        .catch((e) =>
+          showError("Al sincronizar: " + (e && e.message ? e.message : e))
+        );
+    }
+  }
+
+  function saveSinTipo() {
+    if (db) idbSet(IDB_KEY_SIN_TIPO, sinTipo).catch(() => {});
+    if (fbReady) {
+      fdb
+        .ref(FB_ROOT + "/" + FB_KEY_SIN_TIPO)
+        .set(sinTipo && sinTipo.length ? sinTipo : null)
         .catch((e) =>
           showError("Al sincronizar: " + (e && e.message ? e.message : e))
         );
@@ -1571,6 +1602,7 @@
     tareas: () => ctxTareas,
     recados: () => ctxRecados,
     pendientes: () => ctxPendientes,
+    sinTipo: () => ctxSinTipo,
   };
 
   // Tipo actual de lo que hay abierto en el panel (null = no aplica)
@@ -1582,13 +1614,20 @@
     if (e.ctx === ctxRecados) return "recados";
     if (e.ctx === ctxPendientes) return "pendientes";
     if (e.ctx === ctxTareas) return "tareas";
+    if (e.ctx === ctxSinTipo) return "sinTipo";
     return null;
   }
 
-  // Muestra el selector con el valor actual (o lo oculta si no aplica)
+  // Muestra el selector con el valor actual (o lo oculta si no aplica).
+  // "Sin tipo" solo se ofrece con un proyecto asignado: sin él la tarea no se
+  // vería en ninguna parte.
   function renderDetailType() {
     const type = detailTypeOf();
     detailTypeWrap.hidden = !type;
+    const task = getOpenTask();
+    const optSinTipo = detailType.querySelector('option[value="sinTipo"]');
+    if (optSinTipo)
+      optSinTipo.hidden = !(task && task.projectId) && type !== "sinTipo";
     if (type) detailType.value = type;
   }
 
@@ -1697,21 +1736,32 @@
   }
 
   /* ---------- Estado de una tarea dentro de su proyecto ----------
-     Cuatro estados. "Completada" es el `done` de siempre (el mismo que la
-     casilla), "Bloqueada" sale sola de las flechas del grafo, y los otros dos
-     se eligen a mano. Orden de mando: completada > bloqueada > lo elegido. */
+     Cinco estados. "Completada" es el `done` de siempre (el mismo que la
+     casilla), "Bloqueada" sale sola de las flechas del grafo, y los otros tres
+     se eligen a mano. Orden de mando: completada > bloqueada > lo elegido.
+     "En espera" y "Bloqueada" comparten efecto fuera del proyecto: la tarea no
+     se ve en ninguna lista (la diferencia es quién lo decide, el diagrama o
+     tú). Se guarda en `projectState`, igual que "En proceso". */
   const TASK_STATES = [
     { id: "proceso", name: "En proceso" },
     { id: "sin-empezar", name: "Sin empezar" },
+    { id: "espera", name: "En espera" },
     { id: "bloqueada", name: "Bloqueadas" },
     { id: "completada", name: "Completadas" },
   ];
+
+  // ¿El proyecto usa la vista de diagrama? Es lo normal: solo está apagada si
+  // se ha desactivado a mano en sus ajustes. Sin diagrama no hay flechas, y por
+  // tanto tampoco tareas bloqueadas.
+  function proyectoConDiagrama(proyecto) {
+    return !!proyecto && proyecto.diagram !== false;
+  }
 
   // Tareas del proyecto a las que apunta alguna flecha desde otra que sigue
   // pendiente. Una tarea completada ya no bloquea a la que va después: si no,
   // lo bloqueado no se desbloquearía nunca.
   function proyectoBlockedIds(proyecto) {
-    if (!proyecto) return new Set();
+    if (!proyecto || !proyectoConDiagrama(proyecto)) return new Set();
     const bloquea = (id) => {
       const e = findTaskEntry(id);
       return !!e && e.item.projectId === proyecto.id && !e.item.done;
@@ -1733,9 +1783,24 @@
     return proyectoBlockedIds(proyecto).has(task.id);
   }
 
+  // ¿Está "En espera" dentro de su proyecto? Es la versión a mano de lo mismo:
+  // la tarea existe, pero ahora no toca.
+  function isTaskWaiting(task) {
+    return (
+      !!task && !!task.projectId && !task.done && task.projectState === "espera"
+    );
+  }
+
+  // Tareas que no salen de su proyecto: bloqueadas por el diagrama o en espera.
+  // Es el filtro que usan todas las listas de tareas.
+  function isTaskOnHold(task) {
+    return isTaskWaiting(task) || isTaskBlocked(task);
+  }
+
   function taskStateOf(task, bloqueadas) {
     if (task.done) return "completada";
     if (bloqueadas && bloqueadas.has(task.id)) return "bloqueada";
+    if (task.projectState === "espera") return "espera";
     return task.projectState === "proceso" ? "proceso" : "sin-empezar";
   }
 
@@ -1757,8 +1822,8 @@
     }
     detailState.value = task.done
       ? "completada"
-      : task.projectState === "proceso"
-      ? "proceso"
+      : task.projectState === "proceso" || task.projectState === "espera"
+      ? task.projectState
       : "sin-empezar";
     const bloqueada =
       !task.done && proyectoBlockedIds(proyecto).has(task.id);
@@ -1783,7 +1848,7 @@
         task.done = false;
         delete task.completedAt;
       }
-      if (valor === "proceso") task.projectState = "proceso";
+      if (valor === "proceso" || valor === "espera") task.projectState = valor;
       else delete task.projectState;
     }
     saveOpenTask();
@@ -1799,6 +1864,15 @@
     if (detailProject.value) task.projectId = detailProject.value;
     else delete task.projectId;
     saveOpenTask();
+    // Una tarea sin tipo solo se ve dentro de su proyecto: si se queda sin él,
+    // vuelve a Tareas para no desaparecer de la app.
+    if (!task.projectId && detailTypeOf() === "sinTipo") {
+      moveTaskToList("tareas");
+      alert(
+        "La tarea no tenía tipo y ya no está en ningún proyecto: se ha movido a Tareas."
+      );
+    }
+    renderDetailType();
     renderAllLists();
   });
 
@@ -1806,6 +1880,16 @@
     const from = detailTypeOf();
     const target = detailType.value;
     if (!from || from === target) return;
+    // Sin tipo, la tarea solo se ve en su proyecto: sin proyecto no vale (el
+    // selector ya lo esconde, pero no todos los navegadores lo respetan).
+    const abierta = getOpenTask();
+    if (target === "sinTipo" && !(abierta && abierta.projectId)) {
+      alert(
+        "Para dejar una tarea sin tipo hay que asignarle antes un proyecto: si no, no se vería en ninguna parte."
+      );
+      renderDetailType(); // vuelve al valor que tenía
+      return;
+    }
     if (from === "rutinas") plannedToTask(target);
     else if (target === "rutinas") {
       if (!taskToPlanned()) renderDetailType(); // cancelado: vuelve al valor
@@ -2245,6 +2329,7 @@
   }
 
   function renderList(ctx) {
+    if (!ctx.listEl) return; // contexto sin vista propia (tareas sin tipo)
     const items = ctx.filter ? ctx.items().filter(ctx.filter) : ctx.items();
     // Pendientes: con plannedRank, las copias de planificadas van primero; luego
     // las destacadas; luego el resto. Orden estable dentro de cada grupo.
@@ -2348,10 +2433,10 @@
      lateral en escritorio y menú "Más" en móvil). */
   function navCounts() {
     const pend = (arr) =>
-      arr.filter((t) => !t.done && !isTaskBlocked(t)).length;
+      arr.filter((t) => !t.done && !isTaskOnHold(t)).length;
     return {
       tareas: tasks.filter(
-        (t) => !t.sourcePlannedId && !t.done && !isTaskBlocked(t)
+        (t) => !t.sourcePlannedId && !t.done && !isTaskOnHold(t)
       ).length,
       recados: pend(recados),
       pendientes: pend(pendientes),
@@ -2668,7 +2753,9 @@
 
   let currentView = "tareas";
 
-  function activateView(view) {
+  // `proyectoId` (opcional) solo cuenta en la vista Proyectos: entra directa a
+  // ese proyecto, que es como se vuelve al mismo sitio al recargar la página.
+  function activateView(view, proyectoId) {
     if (VIEWS.indexOf(view) === -1) view = "tareas"; // por defecto
     currentView = view;
     document
@@ -2689,14 +2776,25 @@
     else if (view === "recados") renderRecados();
     else if (view === "pendientes") renderPendientes();
     else if (view === "proyectos") {
-      proyectoOpenId = null; // a la pestaña se entra siempre por el índice
+      // Sin id en el hash se entra por el índice; con él, al proyecto
+      proyectoOpenId = proyectoId || null;
+      clearProyectoSel();
       renderProyectos();
     }
     else if (view === "planificadas") renderPlanned();
   }
 
-  function viewFromHash() {
-    return (location.hash || "").replace(/^#/, "");
+  // El hash es "#vista" o, dentro de un proyecto, "#proyectos/<id>"
+  function routeFromHash() {
+    const raw = (location.hash || "").replace(/^#/, "");
+    const corte = raw.indexOf("/");
+    if (corte === -1) return { view: raw, id: "" };
+    return { view: raw.slice(0, corte), id: raw.slice(corte + 1) };
+  }
+
+  function applyHash() {
+    const r = routeFromHash();
+    activateView(r.view, r.id);
   }
 
   // Abre una vista: deja el hash como estado y la activa ya (sin esperar al
@@ -2715,7 +2813,7 @@
     });
   });
 
-  window.addEventListener("hashchange", () => activateView(viewFromHash()));
+  window.addEventListener("hashchange", applyHash);
 
   /* ---------- Navegación móvil: barra inferior + menú "Más" + botón ＋ ----------
      La barra tiene Hoy / Agenda / Mis tareas y un "Más" con el resto de vistas
@@ -2975,6 +3073,7 @@
       tasks,
       recados,
       pendientes,
+      sinTipo,
       proyectos,
       proyectoSecciones,
       planned,
@@ -3006,6 +3105,7 @@
         let inTasks = null;
         let inRecados = null;
         let inPendientes = null;
+        let inSinTipo = null;
         let inProyectos = null;
         let inProSecciones = null;
         let inPlanned = null;
@@ -3017,6 +3117,7 @@
           inPendientes = Array.isArray(parsed.pendientes)
             ? parsed.pendientes
             : null;
+          inSinTipo = Array.isArray(parsed.sinTipo) ? parsed.sinTipo : null;
           inProyectos = Array.isArray(parsed.proyectos)
             ? parsed.proyectos
             : null;
@@ -3049,6 +3150,10 @@
           pendientes = inPendientes.map(ensureId);
           savePendientes();
           renderPendientes();
+        }
+        if (inSinTipo) {
+          sinTipo = inSinTipo.map(ensureId);
+          saveSinTipo();
         }
         if (inProSecciones) {
           proyectoSecciones = inProSecciones.map(ensureId);
@@ -4132,20 +4237,21 @@
     return /^https?:\/\//i.test(full) ? full : "";
   }
 
-  // Progreso del proyecto: {done, total, ready} sobre las tareas que tiene
-  // asignadas en las tres listas que admiten proyecto. `ready` son las
-  // ejecutables: pendientes y sin ninguna flecha del grafo que las bloquee.
+  // Progreso del proyecto: {done, total, ready} sobre todas sus tareas (las de
+  // las tres listas que admiten proyecto y las que no tienen tipo). `ready` son
+  // las ejecutables: pendientes, sin flecha del grafo que las bloquee y sin
+  // dejar a mano en espera.
   function proyectoProgreso(id) {
     let done = 0;
     let total = 0;
     let ready = 0;
     const bloqueadas = proyectoBlockedIds(proyectos.find((p) => p.id === id));
-    [tasks, recados, pendientes].forEach((arr) =>
+    [tasks, recados, pendientes, sinTipo].forEach((arr) =>
       arr.forEach((t) => {
         if (t.projectId !== id) return;
         total++;
         if (t.done) done++;
-        else if (!bloqueadas.has(t.id)) ready++;
+        else if (!bloqueadas.has(t.id) && t.projectState !== "espera") ready++;
       })
     );
     return { done: done, total: total, ready: ready };
@@ -4167,6 +4273,23 @@
   function deleteProyecto(id) {
     proyectos = proyectos.filter((p) => p.id !== id);
     saveProyectos();
+    // Si era el que estaba abierto, se vuelve al índice (y la URL, con él).
+    // El repintado va al final, con todo lo demás ya recolocado.
+    if (proyectoOpenId === id) {
+      proyectoOpenId = null;
+      clearProyectoSel();
+      if (location.hash.indexOf("#proyectos/") === 0)
+        location.hash = "#proyectos";
+    }
+    // Las tareas sin tipo de ese proyecto se quedarían sin ninguna vista donde
+    // aparecer: pasan a Tareas antes de soltar la referencia al proyecto.
+    const huerfanas = sinTipo.filter((t) => t.projectId === id);
+    if (huerfanas.length) {
+      sinTipo = sinTipo.filter((t) => t.projectId !== id);
+      tasks = tasks.concat(huerfanas);
+      saveSinTipo();
+      save();
+    }
     // Las tareas que lo tenían asignado se quedan sin proyecto (si no, la
     // referencia quedaría colgando en los datos)
     [
@@ -4200,33 +4323,46 @@
     updateNavCounts();
   }
 
-  // Proyecto abierto, si sigue existiendo (si se elimina, se vuelve al índice)
+  // Proyecto abierto, si sigue existiendo (si se elimina, se vuelve al índice).
+  // Mientras la lista esté vacía no se descarta el id: al recargar sobre un
+  // proyecto, el hash se lee antes de que lleguen los datos, y ese id tiene que
+  // sobrevivir hasta el primer repintado con los proyectos ya cargados.
   function getProyectoOpen() {
     if (!proyectoOpenId) return null;
     const item = proyectos.find((p) => p.id === proyectoOpenId);
-    if (!item) proyectoOpenId = null;
+    if (!item && proyectos.length) proyectoOpenId = null;
     return item || null;
   }
 
   function openProyectoTasks(id) {
     proyectoOpenId = id;
-    proyectoTasksTab = "grafo"; // cada proyecto se abre por su diagrama
+    // Cada proyecto se abre por su diagrama; si lo tiene apagado, por su lista
+    const item = proyectos.find((p) => p.id === id);
+    proyectoTasksTab = proyectoConDiagrama(item) ? "grafo" : "lista";
+    clearProyectoSel();
+    // El proyecto abierto queda en la URL: al recargar se vuelve a él
+    const target = "#proyectos/" + id;
+    if (location.hash !== target) location.hash = target;
     renderProyectos();
     window.scrollTo(0, 0);
   }
 
   function closeProyectoTasks() {
     proyectoOpenId = null;
+    clearProyectoSel();
+    if (location.hash.indexOf("#proyectos/") === 0) location.hash = "#proyectos";
     renderProyectos();
   }
 
-  // Tareas asignadas al proyecto, de las tres listas: pendientes primero
+  // Tareas asignadas al proyecto: las de las tres listas más las que no tienen
+  // tipo (estas van sin etiqueta de procedencia). Pendientes primero.
   function proyectoTasks(id) {
     const out = [];
     const add = (arr, origin) =>
       arr.forEach((t) => {
         if (t.projectId === id) out.push({ task: t, origin: origin });
       });
+    add(sinTipo, "");
     add(tasks, ORIGEN.tareas);
     add(recados, ORIGEN.recados);
     add(pendientes, ORIGEN.pendientes);
@@ -4240,6 +4376,10 @@
     if (!item || !proyectoTasksList) return;
     proyectoTasksTitle.textContent = item.text;
     const entries = proyectoTasks(item.id);
+    // Con el diagrama apagado solo hay lista: ni pestañas que elegir
+    const conDiagrama = proyectoConDiagrama(item);
+    if (!conDiagrama && proyectoTasksTab === "grafo") proyectoTasksTab = "lista";
+    proyectoTasksTabs.hidden = !conDiagrama;
     const esGrafo = proyectoTasksTab === "grafo";
 
     proyectoTasksTabs.querySelectorAll(".task-tab").forEach((b) => {
@@ -4252,7 +4392,6 @@
     proyectoTasksCanvas.hidden = !esGrafo;
     if (esGrafo) renderProyectoGrafo(item, entries);
     else renderProyectoLista(item, entries);
-    if (proyectoTasksEmpty) proyectoTasksEmpty.hidden = entries.length !== 0;
   }
 
   /* ---------- Vista lista: ejecutables y bloqueadas ----------
@@ -4261,13 +4400,24 @@
 
   // Orden de las secciones en la vista lista. En escritorio son las columnas
   // del board, de izquierda a derecha (el CSS las coloca en rejilla).
-  const LISTA_ESTADOS = ["bloqueada", "sin-empezar", "proceso", "completada"];
+  const LISTA_ESTADOS = [
+    "bloqueada",
+    "espera",
+    "sin-empezar",
+    "proceso",
+    "completada",
+  ];
 
   function renderProyectoLista(proyecto, entries) {
     proyectoTasksList.innerHTML = "";
-    if (!entries.length) return; // sin tareas: solo el mensaje vacío
+    // Sin diagrama no hay flechas: la columna "Bloqueadas" sobra
+    const estados = proyectoConDiagrama(proyecto)
+      ? LISTA_ESTADOS
+      : LISTA_ESTADOS.filter((id) => id !== "bloqueada");
+    // En escritorio, el board reparte una columna por estado
+    proyectoTasksList.style.setProperty("--board-cols", estados.length);
     const bloqueadas = proyectoBlockedIds(proyecto);
-    const grupos = LISTA_ESTADOS.map((id) => {
+    const grupos = estados.map((id) => {
       const estado = TASK_STATES.find((s) => s.id === id);
       return {
         nombre: estado.name,
@@ -4292,6 +4442,19 @@
       count.className = "proyecto-group-count";
       count.textContent = grupo.items.length;
       titulo.appendChild(count);
+      // Crear una tarea que nazca ya en este estado. "Bloqueada" no se elige a
+      // mano: ese lo decide el diagrama.
+      if (grupo.id !== "bloqueada") {
+        const add = document.createElement("button");
+        add.type = "button";
+        add.className = "proyecto-group-add";
+        add.textContent = "+";
+        const etiqueta = "Nueva tarea en " + taskStateName(grupo.id);
+        add.title = etiqueta;
+        add.setAttribute("aria-label", etiqueta);
+        add.addEventListener("click", () => openProyectoTaskNew(grupo.id));
+        titulo.appendChild(add);
+      }
       const ul = document.createElement("ul");
       ul.className = "task-list";
       // Destacar y el nombre del proyecto se quedan en su lista de origen
@@ -4332,7 +4495,8 @@
         task.done = false;
         delete task.completedAt;
       }
-      if (estado === "proceso") task.projectState = "proceso";
+      if (estado === "proceso" || estado === "espera")
+        task.projectState = estado;
       else delete task.projectState;
     }
     e.ctx.save();
@@ -4503,7 +4667,7 @@
   const POSTIT_SIZE = 150; // lado del post-it (cuadrado), en px
   const POSTIT_GAP = 16;
   // Estados que colorean la tarjeta entera: en la esquina va solo su icono
-  const POSTIT_STATE_ICONS = { completada: "✅", proceso: "🔄" };
+  const POSTIT_STATE_ICONS = { completada: "✅", proceso: "🔄", espera: "🕑" };
   // En móvil el grafo es de solo lectura: se consulta, pero no se recolocan
   // los post-it ni se tocan las flechas (mismo corte que el CSS: 768px).
   const movilQuery = window.matchMedia("(max-width: 767px)");
@@ -4525,10 +4689,42 @@
     };
   }
 
-  function savePostitPos(proyecto, taskId, x, y) {
+  // Apunta la posición sin guardar (para mover varios de una vez y guardar
+  // una sola). `savePostitPos` es lo mismo, pero para uno solo.
+  function setPostitPos(proyecto, taskId, x, y) {
     if (!proyecto.graph) proyecto.graph = {};
     proyecto.graph[taskId] = { x: Math.round(x), y: Math.round(y) };
+  }
+
+  function savePostitPos(proyecto, taskId, x, y) {
+    setPostitPos(proyecto, taskId, x, y);
     saveProyectos();
+  }
+
+  /* ---------- Selección múltiple en el diagrama ----------
+     Ctrl/Cmd (o Mayús) + clic va marcando post-it, y arrastrando cualquiera de
+     los marcados se mueven todos juntos. También se puede encerrar un grupo
+     dibujando un rectángulo sobre el fondo del lienzo. En móvil no aplica: el
+     grafo es de solo lectura. */
+  let proyectoSel = new Set(); // ids de las tareas marcadas en el diagrama
+  let marqueeMoved = false; // el último gesto en el fondo fue un rectángulo
+
+  function updateProyectoSel() {
+    proyectoTasksCanvas.querySelectorAll(".postit").forEach((n) => {
+      n.classList.toggle("is-selected", proyectoSel.has(n.dataset.id));
+    });
+  }
+
+  function clearProyectoSel() {
+    if (!proyectoSel.size) return;
+    proyectoSel.clear();
+    updateProyectoSel();
+  }
+
+  function toggleProyectoSel(id) {
+    if (proyectoSel.has(id)) proyectoSel.delete(id);
+    else proyectoSel.add(id);
+    updateProyectoSel();
   }
 
   function renderProyectoGrafo(proyecto, entries) {
@@ -4562,12 +4758,13 @@
       texto.className = "postit-text";
       texto.textContent = e.task.text;
       // Pie: lista de origen a la izquierda y estado a la derecha. El estado
-      // aquí solo se consulta; se cambia en el panel de la tarea.
+      // aquí solo se consulta; se cambia en el panel de la tarea. Las tareas
+      // sin tipo no vienen de ninguna lista: van sin etiqueta.
       const pie = document.createElement("div");
       pie.className = "postit-foot";
       const origen = document.createElement("span");
       origen.className = "postit-origin";
-      origen.textContent = e.origin;
+      origen.textContent = e.origin || "";
       pie.appendChild(origen);
       // El estado se lee de la propia tarjeta: Completada y En proceso la
       // tiñen y ponen su icono en la esquina; Sin empezar (blanca) y
@@ -4604,6 +4801,12 @@
       maxY = Math.max(maxY, pos.y + POSTIT_SIZE);
     });
 
+    // La selección sobrevive al repintado, menos lo que ya no existe
+    const vivos = new Set(entries.map((en) => en.task.id));
+    proyectoSel.forEach((id) => {
+      if (!vivos.has(id)) proyectoSel.delete(id);
+    });
+    updateProyectoSel();
     updateLinkMode();
     drawProyectoLinks(proyecto);
     fitProyectoCanvas(maxY);
@@ -4653,51 +4856,126 @@
     saveProyectos();
   }
 
-  // Ruta quebrada entre dos post-it: solo tramos horizontales y verticales.
-  // Sale por el lado hacia el que más se separan y gira a medio camino.
-  // Eje por el que sale la flecha: "h" (izquierda/derecha) o "v" (arriba/abajo)
-  function ejeRuta(a, b) {
-    if (!a || !b) return "h";
-    return Math.abs(b.x - a.x) >= Math.abs(b.y - a.y) ? "h" : "v";
+  /* ---------- Por qué lado sale y entra cada flecha ----------
+     Los cuatro lados de una tarjeta, siempre anclados a su centro: "l"
+     izquierda, "r" derecha, "t" arriba, "b" abajo. Cada uno con su normal
+     (hacia dónde sale la flecha). Una flecha puede fijar los suyos en
+     `fromSide` / `toSide`; el que no esté fijado se calcula solo, como antes. */
+  const LADOS = {
+    l: { fx: 0, fy: 0.5, nx: -1, ny: 0 },
+    r: { fx: 1, fy: 0.5, nx: 1, ny: 0 },
+    t: { fx: 0.5, fy: 0, nx: 0, ny: -1 },
+    b: { fx: 0.5, fy: 1, nx: 0, ny: 1 },
+  };
+  const LADO_NOMBRE = {
+    l: "izquierda",
+    r: "derecha",
+    t: "arriba",
+    b: "abajo",
+  };
+  const LINK_STUB = 18; // tramo recto al salir de la tarjeta y al entrar
+
+  // Punto de enganche (centro del lado) de la tarjeta colocada en `p`
+  function anclaLado(p, lado) {
+    const s = LADOS[lado] || LADOS.r;
+    return { x: p.x + POSTIT_SIZE * s.fx, y: p.y + POSTIT_SIZE * s.fy };
   }
 
+  // Punto donde acaba el tramo recto: ahí va el mango para reengancharla
+  function mangoLado(p, lado) {
+    const s = LADOS[lado] || LADOS.r;
+    const a = anclaLado(p, lado);
+    return { x: a.x + s.nx * LINK_STUB, y: a.y + s.ny * LINK_STUB };
+  }
+
+  // Lados por defecto: los que se miran entre sí (el comportamiento de siempre)
+  function ladosAuto(a, b) {
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    if (Math.abs(dx) >= Math.abs(dy))
+      return dx >= 0 ? { from: "r", to: "l" } : { from: "l", to: "r" };
+    return dy >= 0 ? { from: "b", to: "t" } : { from: "t", to: "b" };
+  }
+
+  function ladosLink(l, a, b) {
+    const auto = ladosAuto(a, b);
+    return {
+      from: LADOS[l.fromSide] ? l.fromSide : auto.from,
+      to: LADOS[l.toSide] ? l.toSide : auto.to,
+    };
+  }
+
+  // Lado de la tarjeta colocada en `p` más cercano a un punto del lienzo
+  function ladoMasCercano(p, x, y) {
+    let mejor = "r";
+    let dist = Infinity;
+    Object.keys(LADOS).forEach((k) => {
+      const a = anclaLado(p, k);
+      const d = (a.x - x) * (a.x - x) + (a.y - y) * (a.y - y);
+      if (d < dist) {
+        dist = d;
+        mejor = k;
+      }
+    });
+    return mejor;
+  }
+
+  // Eje del tramo central, que es el que desplaza `bend`: "h" si la flecha sale
+  // y entra en horizontal, "v" si en vertical, null si hace un codo (ahí no hay
+  // tramo central que mover).
+  function ejeLink(l, a, b) {
+    if (!a || !b) return null;
+    const lados = ladosLink(l, a, b);
+    const hA = LADOS[lados.from].nx !== 0;
+    const hB = LADOS[lados.to].nx !== 0;
+    if (hA && hB) return "h";
+    if (!hA && !hB) return "v";
+    return null;
+  }
+
+  // Ruta quebrada entre dos post-it: solo tramos horizontales y verticales.
+  // Sale perpendicular al lado elegido, hace su recorrido y entra perpendicular
+  // al lado de destino.
   // `bend` (opcional): {axis, off} desplaza el tramo central respecto a su
   // sitio por defecto. Solo cuenta si su eje es el de la ruta actual; si los
   // post-it se recolocan y la ruta cambia de eje, se ignora.
-  function rutaOrtogonal(a, b, bend) {
-    const mitad = POSTIT_SIZE / 2;
-    const ax = a.x + mitad;
-    const ay = a.y + mitad;
-    const bx = b.x + mitad;
-    const by = b.y + mitad;
-    const dx = bx - ax;
-    const dy = by - ay;
-    const eje = Math.abs(dx) >= Math.abs(dy) ? "h" : "v";
-    const off = bend && bend.axis === eje ? bend.off || 0 : 0;
-    let puntos;
-    if (eje === "h") {
-      // Salida por el lado izquierdo/derecho
-      const sx = ax + (dx >= 0 ? mitad : -mitad);
-      const ex = bx + (dx >= 0 ? -mitad : mitad);
-      const mx = (sx + ex) / 2 + off;
-      puntos = [
-        [sx, ay],
-        [mx, ay],
-        [mx, by],
-        [ex, by],
+  function rutaOrtogonal(a, b, ladoA, ladoB, bend) {
+    const sa = LADOS[ladoA] || LADOS.r;
+    const sb = LADOS[ladoB] || LADOS.l;
+    const s1 = anclaLado(a, ladoA);
+    const e1 = anclaLado(b, ladoB);
+    const s2 = mangoLado(a, ladoA);
+    const e2 = mangoLado(b, ladoB);
+    const hA = sa.nx !== 0;
+    const hB = sb.nx !== 0;
+    let medio;
+    if (hA && hB) {
+      // Las dos en horizontal: el tramo central es vertical, a media distancia
+      const off = bend && bend.axis === "h" ? bend.off || 0 : 0;
+      const mx = (s2.x + e2.x) / 2 + off;
+      medio = [
+        [mx, s2.y],
+        [mx, e2.y],
       ];
+    } else if (!hA && !hB) {
+      // Las dos en vertical: el tramo central es horizontal
+      const off = bend && bend.axis === "v" ? bend.off || 0 : 0;
+      const my = (s2.y + e2.y) / 2 + off;
+      medio = [
+        [s2.x, my],
+        [e2.x, my],
+      ];
+    } else if (hA) {
+      medio = [[e2.x, s2.y]]; // codo: primero en horizontal, luego en vertical
     } else {
-      // Salida por arriba/abajo
-      const sy = ay + (dy >= 0 ? mitad : -mitad);
-      const ey = by + (dy >= 0 ? -mitad : mitad);
-      const my = (sy + ey) / 2 + off;
-      puntos = [
-        [ax, sy],
-        [ax, my],
-        [bx, my],
-        [bx, ey],
-      ];
+      medio = [[s2.x, e2.y]]; // codo al revés
     }
+    const puntos = [[s1.x, s1.y], [s2.x, s2.y]]
+      .concat(medio)
+      .concat([
+        [e2.x, e2.y],
+        [e1.x, e1.y],
+      ]);
     // Sin repetidos (cuando van alineados, el giro no existe)
     return puntos.filter(
       (p, i, arr) => i === 0 || p[0] !== arr[i - 1][0] || p[1] !== arr[i - 1][1]
@@ -4717,18 +4995,27 @@
     return pos;
   }
 
-  function puntosLink(l, pos) {
+  // Geometría de una flecha: los puntos del trazo y dónde van sus dos mangos.
+  // null si alguna de las dos tareas ya no está en el proyecto.
+  function geoLink(l, pos) {
     const a = pos[l.from];
     const b = pos[l.to];
-    if (!a || !b) return null; // alguna tarea ya no está en el proyecto
-    return rutaOrtogonal(a, b, l.bend)
-      .map((p) => p[0] + "," + p[1])
-      .join(" ");
+    if (!a || !b) return null;
+    const lados = ladosLink(l, a, b);
+    return {
+      puntos: rutaOrtogonal(a, b, lados.from, lados.to, l.bend)
+        .map((p) => p[0] + "," + p[1])
+        .join(" "),
+      lados: lados,
+      m1: mangoLado(a, lados.from),
+      m2: mangoLado(b, lados.to),
+    };
   }
 
   // Arrastrar una flecha desplaza su tramo central (el recorrido sigue siendo
   // en ángulo recto). Si se pulsa sin arrastrar, se ofrece eliminarla.
-  function enableLinkDrag(g, hit, linea, proyecto, l) {
+  // `refrescar` vuelve a pintar esta flecha con la geometría al día.
+  function enableLinkDrag(g, hit, proyecto, l, refrescar) {
     let dragging = false;
     let moved = false;
     let eje = "h";
@@ -4739,8 +5026,9 @@
     hit.addEventListener("pointerdown", (e) => {
       if (e.button && e.button !== 0) return;
       const pos = postitPositions();
-      eje = ejeRuta(pos[l.from], pos[l.to]);
-      startOff = l.bend && l.bend.axis === eje ? l.bend.off || 0 : 0;
+      // En codo no hay tramo central: la flecha solo se pulsa para eliminarla
+      eje = ejeLink(l, pos[l.from], pos[l.to]);
+      startOff = eje && l.bend && l.bend.axis === eje ? l.bend.off || 0 : 0;
       dragging = true;
       moved = false;
       startX = e.clientX;
@@ -4756,16 +5044,12 @@
     });
 
     hit.addEventListener("pointermove", (e) => {
-      if (!dragging) return;
+      if (!dragging || !eje) return;
       const d = eje === "h" ? e.clientX - startX : e.clientY - startY;
       if (!moved && Math.abs(d) <= 2) return; // todavía es una pulsación
       moved = true;
       l.bend = { axis: eje, off: Math.round(startOff + d) };
-      const puntos = puntosLink(l, postitPositions());
-      if (puntos) {
-        hit.setAttribute("points", puntos);
-        linea.setAttribute("points", puntos);
-      }
+      refrescar();
     });
 
     function soltar() {
@@ -4786,6 +5070,50 @@
     hit.addEventListener("pointercancel", soltar);
   }
 
+  // Arrastrar el mango de un extremo lo engancha al lado más cercano de su
+  // tarjeta: derecha, izquierda, arriba o abajo, siempre por el centro.
+  // `extremo` es "from" o "to" (que son también los campos con el id de la tarea).
+  function enableLinkEndDrag(mango, g, proyecto, l, extremo, refrescar) {
+    const campo = extremo === "from" ? "fromSide" : "toSide";
+    let dragging = false;
+    let inicial = null;
+
+    mango.addEventListener("pointerdown", (e) => {
+      if (e.button && e.button !== 0) return;
+      dragging = true;
+      inicial = l[campo];
+      g.classList.add("is-dragging");
+      try {
+        mango.setPointerCapture(e.pointerId);
+      } catch (err) {
+        /* algunos navegadores no lo permiten; no es crítico */
+      }
+      e.preventDefault();
+      e.stopPropagation(); // ni bend, ni rectángulo de selección
+    });
+
+    mango.addEventListener("pointermove", (e) => {
+      if (!dragging) return;
+      const p = postitPositions()[l[extremo]];
+      if (!p) return;
+      const r = proyectoTasksCanvas.getBoundingClientRect();
+      const lado = ladoMasCercano(p, e.clientX - r.left, e.clientY - r.top);
+      if (l[campo] === lado) return;
+      l[campo] = lado;
+      refrescar();
+    });
+
+    function soltar() {
+      if (!dragging) return;
+      dragging = false;
+      g.classList.remove("is-dragging");
+      if (l[campo] !== inicial) saveProyectos();
+    }
+
+    mango.addEventListener("pointerup", soltar);
+    mango.addEventListener("pointercancel", soltar);
+  }
+
   function drawProyectoLinks(proyecto) {
     const svg = proyectoTasksCanvas.querySelector(".proyecto-links");
     if (!svg) return;
@@ -4800,8 +5128,8 @@
     // mismos que están guardados (ajustar el recorrido los modifica).
     proyecto.links = proyectoLinks(proyecto);
     proyecto.links.forEach((l) => {
-      const puntos = puntosLink(l, pos);
-      if (!puntos) return;
+      const geo = geoLink(l, pos);
+      if (!geo) return;
 
       const g = document.createElementNS(SVG_NS, "g");
       g.setAttribute("class", "proyecto-link");
@@ -4812,11 +5140,50 @@
       linea.setAttribute("class", "proyecto-link-line");
       linea.setAttribute("marker-end", "url(#postit-arrow)");
       [hit, linea].forEach((el) => {
-        el.setAttribute("points", puntos);
+        el.setAttribute("points", geo.puntos);
         el.setAttribute("fill", "none"); // si no, el polígono se rellena
         g.appendChild(el);
       });
-      if (!grafoSoloLectura()) enableLinkDrag(g, hit, linea, proyecto, l);
+
+      if (grafoSoloLectura()) {
+        svg.appendChild(g);
+        return;
+      }
+
+      // Un mango en cada extremo, en la punta del tramo recto (fuera de la
+      // tarjeta, para que no lo tape). Arrastrarlo cambia de lado.
+      const mangos = [0, 1].map(() => {
+        const c = document.createElementNS(SVG_NS, "circle");
+        c.setAttribute("class", "proyecto-link-end");
+        c.setAttribute("r", "5");
+        g.appendChild(c);
+        return c;
+      });
+
+      // Repinta esta flecha con la geometría al día (posiciones y lados)
+      const refrescar = () => {
+        const ahora = geoLink(l, postitPositions());
+        if (!ahora) return;
+        hit.setAttribute("points", ahora.puntos);
+        linea.setAttribute("points", ahora.puntos);
+        [ahora.m1, ahora.m2].forEach((m, i) => {
+          mangos[i].setAttribute("cx", m.x);
+          mangos[i].setAttribute("cy", m.y);
+        });
+        mangos[0].setAttribute(
+          "aria-label",
+          "Sale por la " + LADO_NOMBRE[ahora.lados.from]
+        );
+        mangos[1].setAttribute(
+          "aria-label",
+          "Entra por la " + LADO_NOMBRE[ahora.lados.to]
+        );
+      };
+      refrescar();
+
+      enableLinkDrag(g, hit, proyecto, l, refrescar);
+      enableLinkEndDrag(mangos[0], g, proyecto, l, "from", refrescar);
+      enableLinkEndDrag(mangos[1], g, proyecto, l, "to", refrescar);
       svg.appendChild(g);
     });
   }
@@ -4854,14 +5221,40 @@
     let moved = false;
     let offX = 0;
     let offY = 0;
+    let startX = 0;
+    let startY = 0;
+    // Cuando se arrastra una selección: posición de salida de cada post-it
+    let grupo = null;
 
     nota.addEventListener("pointerdown", (e) => {
       if (e.button && e.button !== 0) return;
+      // Con Ctrl/Cmd/Mayús el clic solo marca o desmarca: ni mueve ni abre
+      if (e.ctrlKey || e.metaKey || e.shiftKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        toggleProyectoSel(task.id);
+        return;
+      }
+      // Agarrar algo que no está marcado deshace la selección anterior
+      if (!proyectoSel.has(task.id)) clearProyectoSel();
       dragging = true;
       moved = false;
+      startX = e.clientX;
+      startY = e.clientY;
       const caja = nota.getBoundingClientRect();
       offX = e.clientX - caja.left;
       offY = e.clientY - caja.top;
+      // Con varios marcados se mueven todos: se anotan sus posiciones de salida
+      grupo =
+        proyectoSel.size > 1 && proyectoSel.has(task.id)
+          ? [...proyectoTasksCanvas.querySelectorAll(".postit")]
+              .filter((n) => proyectoSel.has(n.dataset.id))
+              .map((n) => ({
+                nota: n,
+                x0: parseFloat(n.style.left) || 0,
+                y0: parseFloat(n.style.top) || 0,
+              }))
+          : null;
       nota.classList.add("is-dragging");
       try {
         nota.setPointerCapture(e.pointerId);
@@ -4873,19 +5266,34 @@
 
     nota.addEventListener("pointermove", (e) => {
       if (!dragging) return;
-      const caja = proyectoTasksCanvas.getBoundingClientRect();
-      const x = Math.max(0, e.clientX - caja.left - offX);
-      const y = Math.max(0, e.clientY - caja.top - offY);
-      nota.style.left = x + "px";
-      nota.style.top = y + "px";
       moved = true;
-      drawProyectoLinks(proyecto); // las flechas siguen al post-it
+      if (grupo) {
+        // El grupo se mueve rígido: el desplazamiento se recorta para que
+        // ninguno se salga por arriba o por la izquierda del lienzo.
+        let dx = e.clientX - startX;
+        let dy = e.clientY - startY;
+        grupo.forEach((g) => {
+          dx = Math.max(dx, -g.x0);
+          dy = Math.max(dy, -g.y0);
+        });
+        grupo.forEach((g) => {
+          g.nota.style.left = g.x0 + dx + "px";
+          g.nota.style.top = g.y0 + dy + "px";
+        });
+      } else {
+        const caja = proyectoTasksCanvas.getBoundingClientRect();
+        nota.style.left = Math.max(0, e.clientX - caja.left - offX) + "px";
+        nota.style.top = Math.max(0, e.clientY - caja.top - offY) + "px";
+      }
+      drawProyectoLinks(proyecto); // las flechas siguen a los post-it
     });
 
     function soltar() {
       if (!dragging) return;
       dragging = false;
       nota.classList.remove("is-dragging");
+      const g = grupo;
+      grupo = null;
       if (!moved) {
         // Con una flecha empezada, el toque la remata en esta tarea
         if (proyectoLinkFrom) {
@@ -4899,7 +5307,21 @@
           }
           return;
         }
+        clearProyectoSel();
         openDetail(task.id); // un toque limpio abre la tarea
+        return;
+      }
+      // Movimiento en grupo: se apuntan todas las posiciones y se guarda una vez
+      if (g) {
+        let maxY = 0;
+        g.forEach((it) => {
+          const gx = parseFloat(it.nota.style.left);
+          const gy = parseFloat(it.nota.style.top);
+          setPostitPos(proyecto, it.nota.dataset.id, gx, gy);
+          maxY = Math.max(maxY, gy + POSTIT_SIZE);
+        });
+        saveProyectos();
+        fitProyectoCanvas(maxY);
         return;
       }
       const x = parseFloat(nota.style.left);
@@ -4912,10 +5334,106 @@
     nota.addEventListener("pointercancel", soltar);
   }
 
-  /* ---------- Nueva tarea dentro de un proyecto ---------- */
-  function openProyectoTaskNew() {
+  /* ---------- Rectángulo de selección sobre el fondo del lienzo ---------- */
+  function enableProyectoMarquee(canvas) {
+    let caja = null; // el <div> del rectángulo, mientras se dibuja
+    let base = null; // lo que ya estaba marcado al empezar (Ctrl/Cmd suma)
+    let arrastrando = false;
+    let x0 = 0;
+    let y0 = 0;
+
+    canvas.addEventListener("pointerdown", (e) => {
+      if (e.button && e.button !== 0) return;
+      if (grafoSoloLectura()) return;
+      if (e.target !== canvas) return; // solo desde el fondo, no desde un post-it
+      const r = canvas.getBoundingClientRect();
+      x0 = e.clientX - r.left;
+      y0 = e.clientY - r.top;
+      arrastrando = true;
+      marqueeMoved = false; // gesto nuevo: lo del anterior ya no cuenta
+      // Sin Ctrl/Cmd/Mayús se empieza una selección nueva
+      if (!(e.ctrlKey || e.metaKey || e.shiftKey)) clearProyectoSel();
+      base = new Set(proyectoSel);
+      try {
+        canvas.setPointerCapture(e.pointerId);
+      } catch (err) {
+        /* algunos navegadores no lo permiten; no es crítico */
+      }
+    });
+
+    canvas.addEventListener("pointermove", (e) => {
+      if (!arrastrando) return;
+      const r = canvas.getBoundingClientRect();
+      const x = e.clientX - r.left;
+      const y = e.clientY - r.top;
+      if (!caja) {
+        // Hasta que no se mueve de verdad, sigue siendo un clic
+        if (Math.abs(x - x0) < 4 && Math.abs(y - y0) < 4) return;
+        caja = document.createElement("div");
+        caja.className = "proyecto-marquee";
+        canvas.appendChild(caja);
+      }
+      const izq = Math.min(x, x0);
+      const arriba = Math.min(y, y0);
+      const ancho = Math.abs(x - x0);
+      const alto = Math.abs(y - y0);
+      caja.style.left = izq + "px";
+      caja.style.top = arriba + "px";
+      caja.style.width = ancho + "px";
+      caja.style.height = alto + "px";
+      // Se marca en vivo todo lo que toca el rectángulo (y se desmarca al
+      // encogerlo: se parte siempre de lo que había al empezar).
+      proyectoSel = new Set(base);
+      canvas.querySelectorAll(".postit").forEach((n) => {
+        const nx = parseFloat(n.style.left) || 0;
+        const ny = parseFloat(n.style.top) || 0;
+        const toca =
+          nx < izq + ancho &&
+          nx + POSTIT_SIZE > izq &&
+          ny < arriba + alto &&
+          ny + POSTIT_SIZE > arriba;
+        if (toca) proyectoSel.add(n.dataset.id);
+      });
+      updateProyectoSel();
+    });
+
+    function fin() {
+      if (!arrastrando) return;
+      arrastrando = false;
+      base = null;
+      if (caja) {
+        caja.remove();
+        caja = null;
+        // Tras dibujar el rectángulo llega un "click" en el fondo: que no
+        // cancele de paso la flecha que estuviera a medias.
+        marqueeMoved = true;
+      }
+    }
+
+    canvas.addEventListener("pointerup", fin);
+    canvas.addEventListener("pointercancel", fin);
+  }
+
+  enableProyectoMarquee(proyectoTasksCanvas);
+
+  /* ---------- Nueva tarea dentro de un proyecto ----------
+     Desde la cabecera nace "Sin empezar"; desde el "+" de una columna de la
+     vista Listas, ya en el estado de esa columna. */
+  let proyectoTaskEstado = "sin-empezar";
+
+  function openProyectoTaskNew(estado) {
     if (!getProyectoOpen()) return;
+    const valido =
+      estado &&
+      estado !== "bloqueada" && // ese lo decide el diagrama, no se elige
+      TASK_STATES.some((s) => s.id === estado);
+    proyectoTaskEstado = valido ? estado : "sin-empezar";
     proyectoTaskInput.value = "";
+    proyectoTaskListSel.value = "sinTipo"; // por defecto, solo en el proyecto
+    proyectoTaskModalTitle.textContent =
+      proyectoTaskEstado === "sin-empezar"
+        ? "Nueva tarea"
+        : "Nueva tarea · " + taskStateName(proyectoTaskEstado);
     proyectoTaskOverlay.hidden = false;
     proyectoTaskInput.focus();
   }
@@ -4925,7 +5443,7 @@
     proyectoTaskOverlay.hidden = true;
   }
 
-  proyectoTaskAddBtn.addEventListener("click", openProyectoTaskNew);
+  proyectoTaskAddBtn.addEventListener("click", () => openProyectoTaskNew());
   proyectoTaskCancel.addEventListener("click", closeProyectoTaskNew);
   proyectoTaskOverlay.addEventListener("click", (e) => {
     if (e.target === proyectoTaskOverlay) closeProyectoTaskNew();
@@ -4935,20 +5453,31 @@
       closeProyectoTaskNew();
   });
 
-  // Crear una tarea ya asignada al proyecto, en la lista elegida
+  // Crear una tarea ya asignada al proyecto, en la lista y el estado elegidos
   proyectoTaskForm.addEventListener("submit", (e) => {
     e.preventDefault();
     const item = getProyectoOpen();
     const text = proyectoTaskInput.value.trim();
     if (!item || !text) return;
-    const ctx = CTX_BY_TYPE[proyectoTaskListSel.value]();
-    ctx.items().unshift({
+    const nueva = {
       id: newId(),
       text: text,
       done: false,
       starred: false,
       projectId: item.id,
-    });
+    };
+    // Mismo criterio que el selector "Estado" del panel de la tarea
+    if (proyectoTaskEstado === "completada") {
+      nueva.done = true;
+      nueva.completedAt = todayISO();
+    } else if (
+      proyectoTaskEstado === "proceso" ||
+      proyectoTaskEstado === "espera"
+    ) {
+      nueva.projectState = proyectoTaskEstado;
+    }
+    const ctx = CTX_BY_TYPE[proyectoTaskListSel.value]();
+    ctx.items().unshift(nueva);
     ctx.save();
     closeProyectoTaskNew();
     renderAllLists(); // repinta su lista de origen y esta página
@@ -4959,21 +5488,32 @@
     if (!btn) return;
     proyectoTasksTab = btn.dataset.tab;
     proyectoLinkFrom = null; // no queda una flecha a medias al cambiar de vista
+    clearProyectoSel();
     renderProyectoTasks();
   });
 
-  // Escape, o tocar el fondo del lienzo, cancela la flecha a medias
+  // Escape, o tocar el fondo del lienzo, cancela la flecha a medias y deshace
+  // la selección de post-it
   document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && proyectoLinkFrom) {
+    if (e.key !== "Escape") return;
+    if (proyectoLinkFrom) {
       proyectoLinkFrom = null;
       updateLinkMode();
     }
+    clearProyectoSel();
   });
   proyectoTasksCanvas.addEventListener("click", (e) => {
-    if (e.target === proyectoTasksCanvas && proyectoLinkFrom) {
+    // Si el gesto fue dibujar un rectángulo de selección, este clic no cuenta
+    if (marqueeMoved) {
+      marqueeMoved = false;
+      return;
+    }
+    if (e.target !== proyectoTasksCanvas) return;
+    if (proyectoLinkFrom) {
       proyectoLinkFrom = null;
       updateLinkMode();
     }
+    clearProyectoSel();
   });
 
   // ¿La sección existe todavía? Un proyecto con una sección borrada (o sin
@@ -5457,6 +5997,9 @@
     "proyecto-detail-delete"
   );
   const proyectoDetailCat = document.getElementById("proyecto-detail-cat");
+  const proyectoDetailDiagram = document.getElementById(
+    "proyecto-detail-diagram"
+  );
   fillCategorySelect(proyectoDetailCat);
   let proyectoDetailId = null;
 
@@ -5473,6 +6016,7 @@
     proyectoDetailTitle.value = item.text;
     proyectoDetailUrl.value = item.url || "";
     proyectoDetailCat.value = item.category || "";
+    proyectoDetailDiagram.checked = proyectoConDiagrama(item);
     proyectoDetailOverlay.hidden = false;
     document.body.classList.add("no-scroll");
     autoGrow(proyectoDetailTitle); // con el panel visible (si no, scrollHeight es 0)
@@ -5537,6 +6081,41 @@
     renderAllLists(); // el color va en el byline de sus tareas
   });
 
+  // Apagar el diagrama deja el proyecto como si nunca lo hubiera tenido: se
+  // borran las flechas (y con ellas el estado "Bloqueada": esas tareas pasan a
+  // "Sin empezar") y también la colocación de los post-it. Volver a encenderlo
+  // es empezar de cero, con las tarjetas otra vez en rejilla.
+  proyectoDetailDiagram.addEventListener("change", () => {
+    const item = getProyectoDetailItem();
+    if (!item) {
+      proyectoDetailDiagram.checked = true;
+      return;
+    }
+    if (proyectoDetailDiagram.checked) {
+      delete item.diagram; // encendido es lo normal: no hace falta guardarlo
+    } else {
+      const n = proyectoLinks(item).length;
+      const aviso = n
+        ? "Al desactivar el diagrama se borran sus " +
+          n +
+          " flecha(s) y la colocación de las tarjetas. Las tareas bloqueadas" +
+          " pasarán a Sin empezar. ¿Continuar?"
+        : "Al desactivar el diagrama se borra la colocación de las tarjetas." +
+          " ¿Continuar?";
+      if (!confirm(aviso)) {
+        proyectoDetailDiagram.checked = true; // se deja como estaba
+        return;
+      }
+      item.diagram = false;
+      delete item.links;
+      delete item.graph; // las posiciones de los post-it
+    }
+    saveProyectos();
+    clearProyectoSel();
+    renderProyectos();
+    renderAllLists(); // las que estaban bloqueadas vuelven a sus listas
+  });
+
   proyectoDetailDelete.addEventListener("click", () => {
     const item = getProyectoDetailItem();
     if (!item) return;
@@ -5581,6 +6160,10 @@
     let localPendientes = [];
     if (db) localPendientes = await idbGet(IDB_KEY_PENDIENTES);
     pendientes = Array.isArray(localPendientes) ? localPendientes : [];
+
+    let localSinTipo = [];
+    if (db) localSinTipo = await idbGet(IDB_KEY_SIN_TIPO);
+    sinTipo = Array.isArray(localSinTipo) ? localSinTipo : [];
 
     let localProyectos = [];
     if (db) localProyectos = await idbGet(IDB_KEY_PROYECTOS);
@@ -5742,6 +6325,29 @@
         clearError();
         renderPendientes();
         renderProyectos(); // cambia el número de tareas por proyecto
+      },
+      (err) =>
+        showError("Al leer la nube: " + (err && err.message ? err.message : err))
+    );
+
+    // Listener: tareas sin tipo (solo se ven dentro de su proyecto)
+    let firstSt = true;
+    const refSt = fdb.ref(FB_ROOT + "/" + FB_KEY_SIN_TIPO);
+    refSt.on(
+      "value",
+      (snap) => {
+        const raw = snap.val();
+        const remote = Array.isArray(raw) ? raw : raw ? Object.values(raw) : [];
+        if (firstSt && remote.length === 0 && sinTipo.length > 0) {
+          firstSt = false;
+          refSt.set(sinTipo).catch(() => {});
+          return;
+        }
+        firstSt = false;
+        sinTipo = remote;
+        if (db) idbSet(IDB_KEY_SIN_TIPO, sinTipo).catch(() => {});
+        clearError();
+        renderProyectos(); // su única vista es la página del proyecto
       },
       (err) =>
         showError("Al leer la nube: " + (err && err.message ? err.message : err))
@@ -5966,5 +6572,5 @@
 
   // Vista inicial según el hash de la URL (#hoy, #tareas, …). Va al final, con
   // todas las constantes ya inicializadas (evita el error de TDZ al pintar Hoy).
-  activateView(viewFromHash());
+  applyHash();
 })();
