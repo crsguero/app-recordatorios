@@ -67,6 +67,22 @@
   const rutinasClearDone = document.getElementById("rutinas-clear-done");
   const rutinasSummary = document.getElementById("rutinas-summary");
 
+  // Vista Rutinas (interna: repeticiones): las copias que generan las
+  // planificadas, sin las destacadas que acompañan a "Mis tareas".
+  const repeticionesList = document.getElementById("repeticiones-list");
+  const repeticionesEmpty = document.getElementById("repeticiones-empty");
+  const repeticionesDoneSection = document.getElementById(
+    "repeticiones-done-section"
+  );
+  const repeticionesDoneList = document.getElementById("repeticiones-done-list");
+  const repeticionesToggleDone = document.getElementById(
+    "repeticiones-toggle-done"
+  );
+  const repeticionesClearDone = document.getElementById(
+    "repeticiones-clear-done"
+  );
+  const repeticionesSummary = document.getElementById("repeticiones-summary");
+
   // Etiqueta de procedencia que acompaña a una tarea en su 2ª línea (el
   // byline): va en singular, porque nombra a esa tarea y no a la lista entera.
   const ORIGEN = {
@@ -96,15 +112,6 @@
     summaryEl: summary,
     doneVisible: false,
     plannedRank: false,
-    // Tabs: "all" | "starred" (destacadas) | "unstarred"
-    tabsEl: document.getElementById("tareas-tabs"),
-    tabFilter: "all",
-    tabMatch: (t, v) => (v === "starred" ? !!t.starred : !t.starred),
-    emptyTexts: {
-      all: "No hay tareas aquí. ¡Añade una arriba! 🎉",
-      starred: "Nada urgente ahora mismo. 🎉",
-      unstarred: "Nada que dejar para luego. 🎉",
-    },
   };
   const ctxRutinas = {
     noun: "tarea",
@@ -113,10 +120,10 @@
     save: () => save(),
     // "Cuanto antes" reúne: copias de rutinas + las tareas destacadas (★).
     // Las completadas pierden el destacado, así que salen solas de aquí.
-    // Las de rutinas con "Añadir a Hoy" no: esas viven en "Durante el día".
-    // Las bloqueadas por otra tarea de su proyecto tampoco: aún no tocan.
-    filter: (t) =>
-      !t.hoyDia && !isTaskOnHold(t) && (!!t.sourcePlannedId || !!t.starred),
+    // "Añadir a Hoy" no las saca: se siguen viendo aquí y además en "Durante
+    // el día", igual que una tarea normal fijada sigue en su lista.
+    // Las bloqueadas por otra tarea de su proyecto sí: aún no tocan.
+    filter: (t) => !isTaskOnHold(t) && (!!t.sourcePlannedId || !!t.starred),
     listEl: rutinasList,
     doneListEl: rutinasDoneList,
     emptyEl: rutinasEmpty,
@@ -155,6 +162,29 @@
       recados: "No hay recados destacados.",
     },
   };
+  // Vista Rutinas: solo las repeticiones, las mismas que en "Mis tareas" con el
+  // filtro Rutinas (copias de planificadas + tareas automáticas de otras apps).
+  // Comparte el array `tasks` con Tareas y con "Mis tareas"; lo que cambia es
+  // el filtro. Sin destacadas ni recados: aquí no pintan nada.
+  const ctxRepeticiones = {
+    noun: "tarea",
+    items: () => tasks,
+    setItems: (v) => (tasks = v),
+    save: () => save(),
+    // Igual que en "Mis tareas": "Añadir a Hoy" no saca la repetición de aquí
+    // (se ve en las dos partes), y las bloqueadas por su proyecto aún no tocan.
+    filter: (t) => !isTaskOnHold(t) && !!t.sourcePlannedId,
+    listEl: repeticionesList,
+    doneListEl: repeticionesDoneList,
+    emptyEl: repeticionesEmpty,
+    doneSectionEl: repeticionesDoneSection,
+    toggleBtn: repeticionesToggleDone,
+    summaryEl: repeticionesSummary,
+    doneVisible: false,
+    plannedRank: true,
+    externalPending: () => lactPending().concat(atareasPending()),
+    externalDone: () => lactDone().concat(atareasDone()),
+  };
   const ctxRecados = {
     noun: "recado",
     items: () => recados,
@@ -169,14 +199,6 @@
     summaryEl: recadosSummary,
     doneVisible: false,
     plannedRank: false,
-    tabsEl: document.getElementById("recados-tabs"),
-    tabFilter: "all",
-    tabMatch: (t, v) => (v === "starred" ? !!t.starred : !t.starred),
-    emptyTexts: {
-      all: "No hay recados aquí. ¡Añade uno arriba! 🎉",
-      starred: "Nada urgente ahora mismo. 🎉",
-      unstarred: "Nada que dejar para luego. 🎉",
-    },
   };
   const ctxPendientes = {
     noun: "tarea",
@@ -248,6 +270,11 @@
   // de Proyectos. El proyecto guarda su sección en `sectionId`.
   const FB_KEY_PRO_SECCIONES = "proyectoSecciones";
   const FB_KEY_HOY = "hoy"; // recordatorios/hoy = tareas del día (mañana/tarde)
+  // recordatorios/hoyFijadas = tareas de otras apps (lactancia / App tareas)
+  // fijadas a "Durante el día". Las nuestras no lo necesitan: llevan `hoyDia`
+  // encima. Las externas se reconstruyen en cada render, así que la marca no
+  // puede vivir en ellas y la guardamos aquí, sin tocar los datos de esas apps.
+  const FB_KEY_HOY_FIJADAS = "hoyFijadas";
   const FB_KEY_AGENDA = "agenda"; // recordatorios/agenda = tareas por día de la semana
   // recordatorios/dayOrder = orden manual de cada día de la semana (1-7),
   // común a la sección "Durante el día" de Hoy y a la pestaña Agenda.
@@ -260,7 +287,13 @@
      refleja el cambio solo. Esquema de cada tarea allí:
      { id, texto, hecha, creada, completada?, auto?, fecha?, desde?, banoFecha?, extra? } */
   const LACT_ROOT = "lactancia";
-  const LACT_NODES = ["tareas-mama", "tareas-antes-extraccion"];
+  // La plantilla de "Durante el día" de lactancia se lee (no se escribe) por su
+  // toggle "Añadir a Hoy": ver LACT_NODE_PLANTILLA.
+  const LACT_NODES = [
+    "tareas-mama",
+    "tareas-antes-extraccion",
+    "tareas-extraccion",
+  ];
   let lactRaw = { "tareas-mama": [], "tareas-antes-extraccion": [] }; // copias vivas de la nube
 
   /* ---------- Integración con App tareas (misma base de datos) ----------
@@ -288,8 +321,11 @@
   const IDB_KEY_PROYECTOS = "proyectos";
   const IDB_KEY_PRO_SECCIONES = "proyectoSecciones";
   const IDB_KEY_HOY = "hoy";
+  const IDB_KEY_HOY_FIJADAS = "hoyFijadas";
   const IDB_KEY_AGENDA = "agenda";
   const IDB_KEY_DAY_ORDER = "dayOrder";
+  // Registro local de lo borrado en este dispositivo (ver "Borrados definitivos")
+  const IDB_KEY_DELETED = "deletedIds";
   let db = null;
   let fbReady = false; // true cuando Firebase está autenticado y escuchando
   let appStarted = false; // evita arrancar la app dos veces
@@ -321,6 +357,8 @@
     { day: 6, name: "Sábado" },
     { day: 7, name: "Domingo" },
   ];
+  // Ids borrados en este dispositivo: [{id, at}] (ver "Borrados definitivos")
+  let deletedIds = [];
   let hoy = []; // tareas del día {id, text, section: <id sección>, done}
   // Secciones de Hoy. Las por defecto usan ids "manana"/"tarde" para no perder
   // los datos actuales (las tareas ya guardan esos ids en `section`).
@@ -379,6 +417,7 @@
   let hoyReady = false; // true tras la primera sincronización de hoy
   let doneLogsLimpios = false; // la limpieza de `doneLog` corre una vez por carga
   let planned = []; // tareas planificadas (solo texto, sin completar)
+  let hoyFijadas = []; // claves de tareas externas fijadas a "Durante el día"
 
   /* ---------- Aviso de errores visible ---------- */
   function showError(msg) {
@@ -541,6 +580,70 @@
     return out;
   }
 
+  /* ---------- Borrados definitivos ----------
+     Al borrar algo se guarda su id aquí, en IndexedDB (no en la nube: hay que
+     poder apuntarlo sin conexión). Cuando llega una lista de la nube, se quita
+     de ella todo lo que este dispositivo ya borró y se vuelve a subir limpia.
+
+     Hace falta porque el SDK web de Firebase encola las escrituras pendientes
+     solo en memoria: si se borra una tarea sin conexión (o el móvil suspende la
+     app antes de que la escritura salga) y luego se cierra la pestaña, esa
+     escritura se pierde. La tarea desaparece en el momento —el respaldo local sí
+     se guardó—, pero en la siguiente carga la nube la manda de vuelta y
+     reaparece. Con el id apuntado, el borrado se reaplica y esta vez sí sube.
+
+     Solo ids, sin textos: no reviven ni ocupan. Se podan a los 90 días, cuando
+     ya no hay ninguna copia sin sincronizar que pueda resucitar nada. */
+  const DELETED_TTL_DAYS = 90;
+
+  function saveDeleted() {
+    if (db) idbSet(IDB_KEY_DELETED, deletedIds).catch(() => {});
+  }
+
+  function pushDeleted(id) {
+    if (!id || typeof id !== "string") return false;
+    if (deletedIds.some((d) => d && d.id === id)) return false;
+    deletedIds.push({ id: id, at: todayISO() });
+    return true;
+  }
+
+  // Apunta un borrado. Los ids son únicos en toda la app, así que vale para
+  // cualquier lista (tareas, recados, rutinas, agenda, proyectos…).
+  function rememberDeleted(id) {
+    if (pushDeleted(id)) saveDeleted();
+  }
+
+  // Varios de golpe (p. ej. "Vaciar completadas"), con un solo guardado.
+  function rememberDeletedMany(ids) {
+    let nuevos = false;
+    ids.forEach((id) => {
+      if (pushDeleted(id)) nuevos = true;
+    });
+    if (nuevos) saveDeleted();
+  }
+
+  // Quita de una lista recién llegada de la nube lo que ya se borró aquí.
+  // Devuelve la MISMA lista si no sobraba nada (así quien llama sabe, comparando
+  // con `!==`, si tiene que volver a subirla).
+  function applyDeleted(list) {
+    if (!deletedIds.length || !list.length) return list;
+    const clean = list.filter(
+      (item) => !(item && deletedIds.some((d) => d && d.id === item.id))
+    );
+    return clean.length === list.length ? list : clean;
+  }
+
+  // Poda las tumbas viejas. Devuelve si ha cambiado algo.
+  function pruneDeleted() {
+    const limite = addDaysISO(todayISO(), -DELETED_TTL_DAYS);
+    const kept = deletedIds.filter(
+      (d) => d && typeof d.id === "string" && (d.at || "") >= limite
+    );
+    if (kept.length === deletedIds.length) return false;
+    deletedIds = kept;
+    return true;
+  }
+
   // ¿Hoy está "vacío"? (sin tareas y con las secciones por defecto). Sirve para
   // no persistir un objeto vacío y para el "first upload".
   function hoyIsEmpty() {
@@ -564,6 +667,18 @@
       fdb
         .ref(FB_ROOT + "/" + FB_KEY_HOY)
         .set(payload)
+        .catch((e) =>
+          showError("Al sincronizar: " + (e && e.message ? e.message : e))
+        );
+    }
+  }
+
+  function saveHoyFijadas() {
+    if (db) idbSet(IDB_KEY_HOY_FIJADAS, hoyFijadas).catch(() => {});
+    if (fbReady) {
+      fdb
+        .ref(FB_ROOT + "/" + FB_KEY_HOY_FIJADAS)
+        .set(hoyFijadas && hoyFijadas.length ? hoyFijadas : null)
         .catch((e) =>
           showError("Al sincronizar: " + (e && e.message ? e.message : e))
         );
@@ -671,6 +786,7 @@
   }
 
   function deletePlanned(id) {
+    rememberDeleted(id); // que no vuelva si la nube aún no se enteró
     planned = planned.filter((p) => p.id !== id);
     savePlanned();
     renderPlanned();
@@ -696,10 +812,12 @@
 
     planned.forEach((p) => {
       const isWeekly = p.repeat === "weekly" && p.repeatDay;
+      const isMonthly = p.repeat === "monthly" && p.repeatDom;
       const isYearly = p.repeat === "yearly" && p.repeatMonth && p.repeatDom;
       const isBiennial = p.repeat === "biennial" && p.repeatStart;
       const isQuarterly = p.repeat === "quarterly" && p.repeatStart;
-      if (!isWeekly && !isYearly && !isBiennial && !isQuarterly) return;
+      if (!isWeekly && !isMonthly && !isYearly && !isBiennial && !isQuarterly)
+        return;
 
       // Migración: planificadas antiguas sin fecha de creación
       if (!p.createdAt) {
@@ -805,19 +923,26 @@
     renderAllLists();
   }
 
+  // Rutina de la que salió esta copia (null si no lo es, o si ya no existe)
+  function plannedOf(task) {
+    if (!task || !task.sourcePlannedId) return null;
+    return planned.find((p) => p.id === task.sourcePlannedId) || null;
+  }
+
   function deleteTask(id) {
     const e = findTaskEntry(id);
     if (!e) return;
     const task = e.item;
     // Si es una copia de una planificada, registra el despeje por eliminación
     if (task.sourcePlannedId) {
-      const p = planned.find((pp) => pp.id === task.sourcePlannedId);
+      const p = plannedOf(task);
       if (p && p.currentInstanceId === id) {
         p.lastClearedAt = todayISO();
         p.currentInstanceId = null;
         savePlanned();
       }
     }
+    rememberDeleted(id); // que no vuelva si la nube aún no se enteró
     e.ctx.setItems(e.ctx.items().filter((t) => t.id !== id));
     e.ctx.save();
     renderAllLists();
@@ -827,7 +952,9 @@
     // Solo borra las completadas que pertenecen a esta vista (respeta el filtro,
     // ya que Tareas y Rutinas comparten el array `tasks`).
     const belongs = ctx.filter || (() => true);
-    ctx.setItems(ctx.items().filter((t) => !(t.done && belongs(t))));
+    const fuera = (t) => t.done && belongs(t);
+    rememberDeletedMany(ctx.items().filter(fuera).map((t) => t.id));
+    ctx.setItems(ctx.items().filter((t) => !fuera(t)));
     ctx.save();
     renderAllLists();
   }
@@ -898,9 +1025,34 @@
         ? new Date(x.completada).toISOString().slice(0, 10)
         : undefined,
       subtitle: lactSubtitle(x, node), // 2ª línea (byline)
+      auto: !!x.auto, // copia diaria de la plantilla, no una tarea suelta
       _lact: { node: node, id: x.id }, // marca de origen + enrutado de escritura
     };
   }
+  /* ---------- "Añadir a Hoy" de App lactancia ----------
+     Su modal de tareas tiene un toggle "Añadir a Hoy" en el grupo "Durante el
+     día". Es el equivalente al `addToHoy` de una rutina nuestra: no marca una
+     tarea suelta, marca la PLANTILLA, y así cada copia diaria nace en Hoy.
+     El dato (`hoy`) vive en la plantilla (`tareas-extraccion`, `extra === 0`) y
+     la copia diaria que lactancia deja en `tareas-mama` no lo arrastra: solo
+     lleva el texto y `auto: true`. Por eso se casa por texto contra la
+     plantilla, y solo sobre las copias automáticas. */
+  const LACT_NODE_PLANTILLA = "tareas-extraccion";
+  function lactPlantillaHoyTextos() {
+    const set = {};
+    (lactRaw[LACT_NODE_PLANTILLA] || []).forEach((x) => {
+      if (x && x.extra === 0 && x.hoy && x.texto) set[String(x.texto).trim()] = true;
+    });
+    return set;
+  }
+  // ¿Esta tarea de lactancia va a Hoy porque lo dice su plantilla? Solo aplica a
+  // las copias diarias de "Durante el día" (`tareas-mama` + `auto`).
+  function lactAutoHoy(task) {
+    if (!task || !task._lact || task._lact.node !== "tareas-mama") return false;
+    if (!task.auto) return false;
+    return !!lactPlantillaHoyTextos()[(task.text || "").trim()];
+  }
+
   // Tareas que lactancia genera al registrar una extracción. No salen en Cuanto
   // antes: tienen su propia sección automática en Hoy, completadas incluidas
   // (como el resto de secciones de Hoy, que no las ocultan).
@@ -955,7 +1107,23 @@
   /* ---------- Tareas de App tareas › Cristina (en Rutinas) ---------- */
   // Identidad por índice en el array vivo (App tareas no tiene ids estables).
   function atToItem(t, index) {
-    return { id: "at:" + index, text: t.text, done: !!t.done, _at: { index: index } };
+    return {
+      id: "at:" + index,
+      text: t.text,
+      done: !!t.done,
+      subtitle: atSubtitle(t), // 2ª línea (byline): su fecha en App tareas
+      // `date` es la fecha sin formatear: `subtitle` la pinta como "Hoy" o
+      // "Ayer" y cambia sola de un día para otro, así que no sirve de clave.
+      _at: { index: index, date: (t && t.addedDate) || "" },
+    };
+  }
+  // Fecha que la tarea tiene puesta en App tareas (`addedDate`, ISO). Se pinta
+  // con nuestro formato: hoy / mañana / ayer / 5 sept 2026. Sin fecha, nada.
+  function atSubtitle(t) {
+    const iso = t && typeof t.addedDate === "string" ? t.addedDate : "";
+    if (!iso) return "";
+    const rel = formatDateRel(iso);
+    return rel.charAt(0).toUpperCase() + rel.slice(1);
   }
   function atIsCristina(t) {
     return t && typeof t === "object" && (t.owner || "cristina") === "cristina";
@@ -985,11 +1153,15 @@
         );
     }
     renderRutinas();
+    renderHoyView(); // una fijada con "Añadir a Hoy" también se pinta ahí
   }
   function toggleAtDone(ref) {
     const t = atRaw[ref.index];
     if (!t) return;
     t.done = !t.done;
+    // App tareas no guarda cuándo se completó, así que la fecha la apuntamos
+    // aquí: es lo que mantiene la tarea tachada en Hoy hasta el cambio de día.
+    setFijadaDone(atToItem(t, ref.index), t.done ? todayISO() : null);
     writeAt();
   }
   function deleteAt(ref) {
@@ -1047,6 +1219,7 @@
   const repeatDayWrap = document.getElementById("repeat-day-wrap");
   const repeatDay = document.getElementById("detail-repeat-day");
   const repeatYearWrap = document.getElementById("repeat-year-wrap");
+  const repeatDomWrap = document.getElementById("repeat-dom-wrap");
   const repeatMonth = document.getElementById("detail-repeat-month");
   const repeatDom = document.getElementById("detail-repeat-dom");
   const repeatBiennialWrap = document.getElementById("repeat-biennial-wrap");
@@ -1054,6 +1227,8 @@
   let openTaskId = null;
   let openLactRef = null; // {node,id} si el modal muestra una tarea de lactancia
   let openAtRef = null; // {index} si el modal muestra una tarea de App tareas
+  // La externa abierta, entera: `hoyExternKey` necesita su texto, no solo el ref
+  let openExternTask = null;
 
   function getOpenTask() {
     const e = findTaskEntry(openTaskId);
@@ -1151,6 +1326,20 @@
     return yearlyOccurrenceOnOrAfter(addDaysISO(iso, 1), month, dom);
   }
 
+  // Ocurrencias mensuales en el día `dom` (1-31), recortado al máximo del mes
+  // (día 31 en abril → 30; en febrero → 28/29).
+  function monthlyOccurrenceOnOrAfter(iso, dom) {
+    const p = iso.split("-").map(Number);
+    const cand = yearlyDateISO(p[0], p[1], dom);
+    if (cand >= iso) return cand;
+    const y = p[1] === 12 ? p[0] + 1 : p[0];
+    const m = p[1] === 12 ? 1 : p[1] + 1;
+    return yearlyDateISO(y, m, dom);
+  }
+  function monthlyOccurrenceAfter(iso, dom) {
+    return monthlyOccurrenceOnOrAfter(addDaysISO(iso, 1), dom);
+  }
+
   // Ocurrencias cada 2 años a partir de `start` (mismo día/mes, año +2k).
   function biennialOccurrenceOnOrAfter(iso, start) {
     const sp = start.split("-").map(Number);
@@ -1200,12 +1389,17 @@
     return quarterlyOccurrenceOnOrAfter(addDaysISO(iso, 1), start);
   }
 
-  // Siguiente ocurrencia de una planificada (semanal, anual o cada dos años)
+  // Siguiente ocurrencia de una planificada según su frecuencia
   function plannedNextOccurrence(p, boundary, after) {
     if (p.repeat === "weekly") {
       return after
         ? firstOccurrenceAfter(boundary, p.repeatDay)
         : firstOccurrenceOnOrAfter(boundary, p.repeatDay);
+    }
+    if (p.repeat === "monthly") {
+      return after
+        ? monthlyOccurrenceAfter(boundary, p.repeatDom)
+        : monthlyOccurrenceOnOrAfter(boundary, p.repeatDom);
     }
     if (p.repeat === "yearly") {
       return after
@@ -1394,10 +1588,14 @@
     repeatMode.value = mode;
     repeatDay.value = entity.repeatDay || "1";
     repeatMonth.value = String(entity.repeatMonth || 1);
-    populateDomOptions(repeatMonth.value, entity.repeatDom || 1);
+    // Mensual: el día no depende de un mes concreto, así que se ofrecen los 31
+    // (se recorta al vuelo en los meses cortos). Anual: los del mes elegido.
+    populateDomOptions(mode === "monthly" ? 1 : repeatMonth.value, entity.repeatDom || 1);
     repeatStart.value = entity.repeatStart || "";
     repeatDayWrap.hidden = mode !== "weekly"; // día de la semana → solo semanal
-    repeatYearWrap.hidden = mode !== "yearly"; // mes + día → solo anual
+    repeatYearWrap.hidden = mode !== "yearly"; // mes → solo anual
+    // Día del mes: compartido por anual (con mes) y mensual (solo el día)
+    repeatDomWrap.hidden = !(mode === "yearly" || mode === "monthly");
     // Fecha de inicio: compartida por "cada dos años" y "trimestralmente"
     repeatBiennialWrap.hidden = !(mode === "biennial" || mode === "quarterly");
   }
@@ -1412,17 +1610,32 @@
     renderPlanned();
   });
 
-  // "Añadir a Hoy": las repeticiones de esta rutina se crean en la sección
-  // "Durante el día" de Hoy en vez de en Cuanto antes. Como el resto de la
-  // configuración, solo afecta a las ocurrencias futuras: la copia que ya
-  // exista se queda donde nació.
+  // "Añadir a Hoy". En una rutina (`addToHoy`) dice dónde nacen sus
+  // repeticiones: en la sección "Durante el día" de Hoy en vez de en Cuanto
+  // antes. Como el resto de su configuración, solo afecta a las ocurrencias
+  // futuras: la copia que ya exista se queda donde nació.
+  // En una tarea (`hoyDia`) la fija a ella misma en "Durante el día" hasta que
+  // se complete, tenga la fecha que tenga o no tenga ninguna. Sobre la copia de
+  // una rutina afecta solo a esa repetición: la siguiente nace de nuevo según
+  // el `addToHoy` de la rutina, no según lo que se hiciera con la anterior.
   detailAddHoy.addEventListener("change", () => {
+    // Tarea de otra app: la marca no cabe en ella, va a nuestro `hoyFijadas`.
+    if (openExternTask) {
+      setHoyFijada(openExternTask, detailAddHoy.checked);
+      renderHoyView(); // sigue en Mis tareas: solo cambia si sale en Hoy
+      return;
+    }
     const entity = getOpenEntity();
     if (!entity) return;
-    if (detailAddHoy.checked) entity.addToHoy = true;
-    else delete entity.addToHoy;
+    const esRutina = openPlannedId !== null;
+    const campo = esRutina ? "addToHoy" : "hoyDia";
+    if (detailAddHoy.checked) entity[campo] = true;
+    else delete entity[campo];
     saveOpen();
-    renderPlanned();
+    // Una tarea fijada sale de "Cuanto antes" y entra en Hoy, así que hay que
+    // repintar todas las listas, no solo la suya.
+    if (esRutina) renderPlanned();
+    else renderAllLists();
   });
 
   repeatMode.addEventListener("change", () => {
@@ -1436,6 +1649,8 @@
     delete entity.repeatStart;
     if (entity.repeat === "weekly") {
       entity.repeatDay = repeatDay.value || "1";
+    } else if (entity.repeat === "monthly") {
+      entity.repeatDom = Number(repeatDom.value) || 1;
     } else if (entity.repeat === "yearly") {
       entity.repeatMonth = Number(repeatMonth.value) || 1;
       entity.repeatDom = Number(repeatDom.value) || 1;
@@ -1485,6 +1700,7 @@
     openPlannedId = id;
     openLactRef = null;
     openAtRef = null;
+    openExternTask = null;
     detailTitle.readOnly = false; // restaura edición del título
     detailNote.hidden = false; // restaura la nota
     if (detailNoteLabel) detailNoteLabel.hidden = false;
@@ -1513,6 +1729,7 @@
     openPlannedId = null;
     openAtRef = null;
     openLactRef = task._lact;
+    openExternTask = task;
     detailCheck.hidden = false;
     detailCheck.checked = task.done;
     detailTitle.value = task.text;
@@ -1523,7 +1740,12 @@
     detailProjectWrap.hidden = true;
     detailStateWrap.hidden = true;
     detailCatWrap.hidden = true;
-    detailAddHoyWrap.hidden = true;
+    // "Añadir a Hoy": también en las de otras apps. Se oculta donde no aplica
+    // (las de "antes de la extracción", que ya tienen su sección en Hoy) y
+    // donde ya lo manda la plantilla de lactancia, igual que en la copia de una
+    // rutina que lleva el ajuste puesto: ahí se decide en la otra app.
+    detailAddHoyWrap.hidden = !hoyExternKey(task) || lactAutoHoy(task);
+    detailAddHoy.checked = isHoyFijada(task) || lactAutoHoy(task);
     detailTypeWrap.hidden = true; // no se puede mover de lista
     detailNote.hidden = true; // sin nota
     if (detailNoteLabel) detailNoteLabel.hidden = true;
@@ -1539,6 +1761,7 @@
     openPlannedId = null;
     openLactRef = null;
     openAtRef = task._at;
+    openExternTask = task;
     detailCheck.hidden = false;
     detailCheck.checked = task.done;
     detailTitle.value = task.text;
@@ -1549,7 +1772,10 @@
     detailProjectWrap.hidden = true;
     detailStateWrap.hidden = true;
     detailCatWrap.hidden = true;
-    detailAddHoyWrap.hidden = true;
+    // "Añadir a Hoy": también en las de otras apps. Se oculta donde no aplica
+    // (las de "antes de la extracción", que ya tienen su sección en Hoy).
+    detailAddHoyWrap.hidden = !hoyExternKey(task);
+    detailAddHoy.checked = isHoyFijada(task);
     detailTypeWrap.hidden = true; // no se puede mover de lista
     detailNote.hidden = true; // sin nota
     if (detailNoteLabel) detailNoteLabel.hidden = true;
@@ -1566,6 +1792,7 @@
     openPlannedId = null;
     openLactRef = null;
     openAtRef = null;
+    openExternTask = null;
     detailCheck.hidden = false;
     detailTitle.readOnly = false; // restaura edición del título
     detailNote.hidden = false; // restaura la nota
@@ -1575,7 +1802,13 @@
     detailProjectWrap.hidden = true;
     detailStateWrap.hidden = true;
     detailCatWrap.hidden = true;
-    detailAddHoyWrap.hidden = true;
+    // "Añadir a Hoy": fija esta tarea en "Durante el día". En la copia de una
+    // rutina que ya lo lleva puesto no se ofrece: ahí lo manda la rutina y
+    // todas sus repeticiones nacen en Hoy, así que el interruptor solo
+    // confundiría.
+    const rutinaDeTask = plannedOf(task);
+    detailAddHoyWrap.hidden = !!(rutinaDeTask && rutinaDeTask.addToHoy);
+    detailAddHoy.checked = !!task.hoyDia;
     detailDelete.hidden = false;
     openTaskId = id;
     detailTitle.value = task.text;
@@ -1687,9 +1920,11 @@
     ctx.save();
     // La copia de esta rutina que estuviera pendiente deja de tener sentido
     if (p.currentInstanceId) {
+      rememberDeleted(p.currentInstanceId);
       tasks = tasks.filter((t) => t.id !== p.currentInstanceId);
       save();
     }
+    rememberDeleted(p.id);
     planned = planned.filter((x) => x.id !== p.id);
     savePlanned();
     renderAllLists();
@@ -1909,6 +2144,7 @@
     openPlannedId = null;
     openLactRef = null;
     openAtRef = null;
+    openExternTask = null;
     overlay.hidden = true;
     document.body.classList.remove("no-scroll");
   }
@@ -2104,8 +2340,9 @@
     // Etiqueta de la segunda línea y si lleva 🕑 delante ("A partir de …")
     let dateLabel = "";
     let showClock = false;
-    if (task._lact) {
-      // Tarea de lactancia: su byline (p. ej. "Extracción 2 · 12:40")
+    if (task._lact || task._at) {
+      // Tarea de otra app: su propio byline. Lactancia trae el suyo (p. ej.
+      // "Extracción 2 · 12:40") y App tareas, la fecha que tenga asignada allí.
       dateLabel = task.subtitle || "";
     } else if (task.done) {
       if (task.completedAt) {
@@ -2222,27 +2459,12 @@
       main.appendChild(dateLine);
     }
 
-    // Tarea generada por una planificada o de lactancia: indicador (no "Destacar")
+    // Las tareas automáticas (copias de rutinas y las que vienen de App
+    // lactancia o App tareas) no se destacan y no llevan nada a la derecha: se
+    // reconocen por su color de fondo y por lo que dice su 2ª línea.
+    const esAutomatica = !!(task._lact || task._at || task.sourcePlannedId);
     let trailing;
-    if (task._lact) {
-      trailing = document.createElement("span");
-      trailing.className = "planned-indicator";
-      trailing.textContent = "🍼";
-      trailing.setAttribute("aria-label", "Tarea de lactancia");
-      trailing.setAttribute("title", "Tarea de App lactancia");
-    } else if (task._at) {
-      trailing = document.createElement("span");
-      trailing.className = "planned-indicator";
-      trailing.textContent = "🏠";
-      trailing.setAttribute("aria-label", "Tarea de App tareas");
-      trailing.setAttribute("title", "Tarea de App tareas (Cristina)");
-    } else if (task.sourcePlannedId) {
-      trailing = document.createElement("span");
-      trailing.className = "planned-indicator";
-      trailing.textContent = "🔁";
-      trailing.setAttribute("aria-label", "Rutina");
-      trailing.setAttribute("title", "Rutina");
-    } else if (!o.hideStar) {
+    if (!esAutomatica && !o.hideStar) {
       trailing = document.createElement("button");
       trailing.className = "star-btn";
       trailing.type = "button";
@@ -2303,6 +2525,8 @@
       let repeatLine = "";
       if (item.repeat === "weekly" && item.repeatDay) {
         repeatLine = repeatPhrase(item.repeatDay);
+      } else if (item.repeat === "monthly" && item.repeatDom) {
+        repeatLine = "Todos los " + item.repeatDom + " de cada mes";
       } else if (item.repeat === "yearly" && item.repeatMonth && item.repeatDom) {
         repeatLine =
           "Todos los " +
@@ -2439,6 +2663,11 @@
         (t) => !t.sourcePlannedId && !t.done && !isTaskOnHold(t)
       ).length,
       recados: pend(recados),
+      // Rutinas: las mismas pendientes que pinta su lista (repeticiones
+      // propias + tareas automáticas de otras apps), por eso reusa su contexto.
+      repeticiones:
+        tasks.filter((t) => !t.done && ctxRepeticiones.filter(t)).length +
+        ctxRepeticiones.externalPending().length,
       pendientes: pend(pendientes),
       proyectos: proyectos.length, // los proyectos no se completan
       planificadas: planned.length, // las rutinas no se completan
@@ -2471,6 +2700,7 @@
   function renderAllLists() {
     renderList(ctxTareas);
     renderList(ctxRutinas);
+    renderList(ctxRepeticiones);
     renderList(ctxRecados);
     renderList(ctxPendientes);
     // Ambas muestran tareas/recados con fecha: la Agenda los de la semana y
@@ -2479,13 +2709,20 @@
     renderHoyView();
     renderProyectos(); // cada proyecto lleva su número de tareas
   }
+  // "Mis tareas" y Rutinas se nutren de lo mismo (copias de planificadas y
+  // tareas automáticas de otras apps): lo que repinta una, repinta la otra.
   function renderRutinas() {
     renderList(ctxRutinas);
+    renderList(ctxRepeticiones);
   }
-  // `tasks` alimenta tanto Tareas como Rutinas: repinta ambas.
+  function renderRepeticiones() {
+    renderList(ctxRepeticiones);
+  }
+  // `tasks` alimenta a Tareas, "Mis tareas" y Rutinas: repinta las tres.
   function renderTasksViews() {
     renderList(ctxTareas);
     renderList(ctxRutinas);
+    renderList(ctxRepeticiones);
   }
   function renderRecados() {
     renderList(ctxRecados);
@@ -2495,8 +2732,8 @@
   }
 
   /* ---------- Eventos ---------- */
-  // Tabs de filtro (Mis tareas, Recados y Cuanto antes)
-  [ctxTareas, ctxRecados, ctxRutinas].forEach((ctx) => {
+  // Tabs de filtro (solo "Mis tareas": por procedencia)
+  [ctxRutinas].forEach((ctx) => {
     if (!ctx.tabsEl) return;
     ctx.tabsEl.addEventListener("click", (e) => {
       const tab = e.target.closest(".task-tab");
@@ -2543,11 +2780,18 @@
     ctxRutinas.doneVisible = !ctxRutinas.doneVisible;
     renderList(ctxRutinas);
   });
+  repeticionesToggleDone.addEventListener("click", () => {
+    ctxRepeticiones.doneVisible = !ctxRepeticiones.doneVisible;
+    renderList(ctxRepeticiones);
+  });
 
   clearDoneBtn.addEventListener("click", () => clearDoneIn(ctxTareas));
   recadosClearDone.addEventListener("click", () => clearDoneIn(ctxRecados));
   pendientesClearDone.addEventListener("click", () => clearDoneIn(ctxPendientes));
   rutinasClearDone.addEventListener("click", () => clearDoneIn(ctxRutinas));
+  repeticionesClearDone.addEventListener("click", () =>
+    clearDoneIn(ctxRepeticiones)
+  );
 
   /* ---------- Reordenar con drag & drop (ratón y táctil) ---------- */
   const LONG_PRESS_MS = 300; // mantener pulsado para empezar a arrastrar
@@ -2667,8 +2911,12 @@
       if (handleClass && !e.target.closest("." + handleClass)) return;
       const li = e.target.closest("." + itemClass);
       if (!li) return;
-      // Las tareas externas (App lactancia / App tareas) no se reordenan aquí
+      // Las tareas externas (App lactancia / App tareas) no están en ningún
+      // array nuestro, así que no se pueden colocar donde el orden ES el del
+      // array. Donde el orden es una lista de ids aparte (`onCommit`: el día de
+      // Hoy y de Agenda, que guardan en `dayOrder`) sí se mezclan con el resto.
       if (
+        !onCommit &&
         li.dataset.id &&
         (li.dataset.id.indexOf("lact:") === 0 || li.dataset.id.indexOf("at:") === 0)
       )
@@ -2719,6 +2967,7 @@
 
   enableReorder(list, "task-item", () => tasks, save);
   enableReorder(rutinasList, "task-item", () => tasks, save);
+  enableReorder(repeticionesList, "task-item", () => tasks, save);
   enableReorder(recadosList, "task-item", () => recados, saveRecados);
   enableReorder(pendientesList, "task-item", () => pendientes, savePendientes);
   enableReorder(
@@ -2746,6 +2995,7 @@
     "agenda",
     "tareas",
     "recados",
+    "repeticiones",
     "pendientes",
     "planificadas",
     "proyectos",
@@ -2773,6 +3023,7 @@
     else if (view === "agenda") renderAgenda();
     else if (view === "tareas") render();
     else if (view === "rutinas") renderRutinas();
+    else if (view === "repeticiones") renderRepeticiones();
     else if (view === "recados") renderRecados();
     else if (view === "pendientes") renderPendientes();
     else if (view === "proyectos") {
@@ -3481,16 +3732,17 @@
       // pueden colocar donde se quiera.
       if (sec.auto) {
         // "Durante el día": Agenda de hoy + tareas/recados con fecha exacta de
-        // hoy, en el orden manual compartido con la pestaña Agenda.
+        // hoy + las de "Añadir a Hoy", en el orden manual compartido con la
+        // pestaña Agenda.
         // "Antes de la próxima extracción": las tareas de App lactancia.
         const isDia = sec.id === HOY_AUTO_ID;
         const dow = dowOf(todayISO());
+        // Las de "Añadir a Hoy" entran como una entrada más del día: se
+        // ordenan y se arrastran igual que el resto.
         const entries = isDia
-          ? dayEntries(dow, todayISO())
+          ? dayEntries(dow, todayISO(), hoyPinnedEntries())
           : lactAntesExtraccion();
-        // Rutinas con "Añadir a Hoy": fijas arriba de "Durante el día"
-        const pinned = isDia ? hoyRoutineTasks() : [];
-        const total = entries.length + pinned.length;
+        const total = entries.length;
         if (!hoyEditMode && total === 0) return; // vacía: no se muestra
 
         if (hoyEditMode) {
@@ -3498,14 +3750,14 @@
           const hint = document.createElement("p");
           hint.className = "hoy-view-empty";
           hint.textContent = isDia
-            ? "Automática: Agenda de hoy + tareas y recados con fecha de hoy."
+            ? "Automática: Agenda de hoy, tareas y recados con fecha de hoy y los de “Añadir a Hoy”."
             : "Automática: las tareas de App lactancia de las extracciones de hoy.";
           wrap.appendChild(hint);
         } else {
           // Cabecera con progreso y colapsable (igual que las manuales)
-          const doneCount =
-            entries.filter((e) => (isDia ? dayEntryDone(e) : !!e.done)).length +
-            pinned.filter((t) => t.done).length;
+          const doneCount = entries.filter((e) =>
+            isDia ? dayEntryDone(e) : !!e.done
+          ).length;
           const head = document.createElement("div");
           head.className =
             "hoy-view-head" + (sec.collapsed ? " is-collapsed" : "");
@@ -3527,10 +3779,6 @@
             ul.className = "task-list";
             wrap.appendChild(ul);
             if (isDia) {
-              // Las fijas van primero y sin la clase `day-item` ni asa, así que
-              // quedan fuera del arrastre: no se pueden mover ni se puede
-              // colocar nada por encima de ellas.
-              pinned.forEach((t) => ul.appendChild(createTaskItem(t)));
               // Reordenar desde el asa; el orden se comparte con Agenda
               renderDayList(ul, dow, entries, "hoy");
             } else {
@@ -3629,6 +3877,7 @@
   }
 
   function deleteHoy(id) {
+    rememberDeleted(id); // que no vuelva si la nube aún no se enteró
     hoy = hoy.filter((h) => h.id !== id);
     saveHoy();
     renderHoy();
@@ -3907,13 +4156,20 @@
 
   // Entradas de ese día ya ordenadas: {id, agenda} o {id, task, origin}.
   // Lo que no esté en `dayOrder` va al final, en el orden por defecto.
-  function dayEntries(dow, iso) {
+  // `extra` (opcional): entradas que llegan por otra vía —las fijadas con
+  // "Añadir a Hoy", que salen sin depender de la fecha—. Se mezclan con el
+  // resto antes de ordenar, así que comparten orden manual y arrastre. Una
+  // fijada que además tenga la fecha del día ya viene arriba: no se repite.
+  function dayEntries(dow, iso, extra) {
     const entries = agenda
       .filter((a) => a.day === dow)
       .map((a) => ({ id: a.id, agenda: a }));
     agendaDatedFor(iso).forEach((e) =>
       entries.push({ id: e.task.id, task: e.task, origin: e.origin })
     );
+    (extra || []).forEach((e) => {
+      if (!entries.some((x) => x.id === e.id)) entries.push(e);
+    });
     const order = dayOrder[String(dow)] || [];
     const pos = {};
     order.forEach((id, i) => (pos[id] = i));
@@ -3931,13 +4187,179 @@
     return e.agenda ? !!e.agenda.done : !!e.task.done;
   }
 
-  // Copias de rutinas con "Añadir a Hoy": van fijas arriba de "Durante el día"
-  // y no se reordenan. Las completadas solo se ven el día en que se marcaron,
-  // para que la lista amanezca limpia.
-  function hoyRoutineTasks() {
-    return tasks.filter(
-      (t) => t.hoyDia && (!t.done || t.completedAt === todayISO())
-    );
+  // Tareas con "Añadir a Hoy" (`hoyDia`): las copias de rutinas que nacen ahí
+  // y las que se fijan a mano desde su formulario. Van arriba de "Durante el
+  // día" y no se reordenan, y salen tengan la fecha que tengan o ninguna. Las
+  // completadas solo se ven el día en que se marcaron, para que la lista
+  // amanezca limpia.
+  function hoyPinnedTasks() {
+    const out = [];
+    [tasks, recados, pendientes].forEach((lista) => {
+      lista.forEach((t) => {
+        if (t.hoyDia && (!t.done || t.completedAt === todayISO())) out.push(t);
+      });
+    });
+    // Las de otras apps, con el mismo criterio: pendientes, y las completadas
+    // hoy se quedan tachadas hasta que cambie el día. Lactancia trae su propia
+    // fecha de completado; la de App tareas la apuntamos nosotros al marcarla.
+    lactPending()
+      .concat(atareasPending())
+      .forEach((t) => {
+        if (isHoyFijada(t) || lactAutoHoy(t)) out.push(t);
+      });
+    lactDone().forEach((t) => {
+      if (!isHoyFijada(t) && !lactAutoHoy(t)) return;
+      if (t.completedAt === todayISO()) out.push(t);
+    });
+    atareasDone().forEach((t) => {
+      if (isHoyFijada(t) && fijadaDoneOf(t) === todayISO()) out.push(t);
+    });
+    return out;
+  }
+
+  // Procedencia de una tarea fijada, para su 2ª línea. Las copias de rutinas y
+  // las de otras apps no llevan etiqueta: ya se anuncian como tales.
+  function hoyPinnedOrigin(t) {
+    if (t.sourcePlannedId || t._lact || t._at) return null;
+    if (recados.indexOf(t) !== -1) return ORIGEN.recados;
+    if (pendientes.indexOf(t) !== -1) return ORIGEN.pendientes;
+    return ORIGEN.tareas;
+  }
+
+  /* ---------- "Añadir a Hoy" en tareas de otras apps ----------
+     Las de lactancia y App tareas no son objetos nuestros: se reconstruyen en
+     cada render a partir del nodo de la otra app, así que no se les puede
+     colgar un `hoyDia` como a las nuestras. El fijado vive en `hoyFijadas`,
+     en nuestro propio nodo: no escribimos nada en los datos de esas apps. */
+
+  // Clave con la que se recuerda una tarea externa. Ojo: no vale su `id` de
+  // pantalla. El de App tareas es la posición en el array (`at:3`), porque esa
+  // app no da ids; en cuanto añade, borra o reordena algo, esa posición pasa a
+  // ser de otra tarea y el fijado señalaría a la equivocada. Su texto es lo que
+  // la identifica de verdad, y si lo cambian allí el fijado se pierde sin más
+  // (fallo seguro: nunca acaba fijada otra tarea). Lactancia sí tiene id propio.
+  // Las de "antes de la extracción" quedan fuera: ya tienen su sección en Hoy.
+  function hoyExternKey(task) {
+    if (!task) return null;
+    if (task._lact) {
+      if (task._lact.node === LACT_NODE_EXTRA) return null;
+      return "lact:" + task._lact.node + ":" + task._lact.id;
+    }
+    if (task._at) {
+      const texto = (task.text || "").trim();
+      if (!texto) return null;
+      // Con el texto solo no basta: una rutina de App tareas son varias tareas
+      // con el MISMO texto y distinta fecha, así que una clave por texto las
+      // fijaba todas a la vez (y sacaba a Hoy las repeticiones ya completadas).
+      // Con la fecha delante, la clave señala una ocurrencia concreta. El
+      // prefijo es "atd:" y no "at:" para que distinguir el formato viejo del
+      // nuevo sea mirar el prefijo, sin depender de cómo venga la fecha.
+      return "atd:" + (task._at.date || "") + ":" + texto;
+    }
+    return null;
+  }
+
+  /* Cada registro de `hoyFijadas` es la clave sola ("lact:…", "at:…") o bien
+     {k, d}: la clave más el día en que se completó. La fecha solo hace falta
+     para App tareas, que no guarda cuándo se completa algo; sin ella no habría
+     forma de saber si la marcamos hoy y de dejarla tachada en "Durante el día"
+     hasta que cambie el día. Lactancia sí trae la suya. Se admite la forma
+     antigua (solo texto) para no migrar nada. */
+  function fijadaKey(x) {
+    if (typeof x === "string") return x || null;
+    return x && typeof x === "object" && x.k ? x.k : null;
+  }
+  function fijadaDoneAt(x) {
+    return x && typeof x === "object" && x.d ? x.d : null;
+  }
+  // Normaliza el registro que llega de la nube o de IndexedDB y tira las
+  // claves de App tareas del formato viejo ("at:<texto>", sin fecha): fijaban
+  // todas las ocurrencias de una rutina a la vez. Lo que se hubiera fijado así
+  // hay que volver a marcarlo, que es una casilla.
+  function normalizeFijadas(arr) {
+    return (Array.isArray(arr) ? arr : []).filter((x) => {
+      const k = fijadaKey(x);
+      if (!k) return false;
+      return k.indexOf("at:") !== 0; // "at:" = formato viejo; "atd:"/"lact:" no
+    });
+  }
+
+  function fijadaIndex(key) {
+    for (let i = 0; i < hoyFijadas.length; i++) {
+      if (fijadaKey(hoyFijadas[i]) === key) return i;
+    }
+    return -1;
+  }
+
+  function isHoyFijada(task) {
+    const key = hoyExternKey(task);
+    return !!key && fijadaIndex(key) !== -1;
+  }
+
+  function setHoyFijada(task, on) {
+    const key = hoyExternKey(task);
+    if (!key) return;
+    const i = fijadaIndex(key);
+    if (on && i === -1) hoyFijadas.push(key);
+    else if (!on && i !== -1) hoyFijadas.splice(i, 1);
+    else return; // ya estaba como toca
+    saveHoyFijadas();
+  }
+
+  // Apunta (o borra) el día en que se completó una fijada de App tareas, para
+  // que se quede tachada en Hoy hasta que cambie el día.
+  function setFijadaDone(task, iso) {
+    const key = hoyExternKey(task);
+    if (!key) return;
+    const i = fijadaIndex(key);
+    if (i === -1) return; // no está fijada: no hay nada que recordar
+    hoyFijadas[i] = iso ? { k: key, d: iso } : key;
+    saveHoyFijadas();
+  }
+  // El día en que se completó, si lo tenemos apuntado
+  function fijadaDoneOf(task) {
+    const key = hoyExternKey(task);
+    if (!key) return null;
+    const i = fijadaIndex(key);
+    return i === -1 ? null : fijadaDoneAt(hoyFijadas[i]);
+  }
+
+  /* Mantiene el apunte de "completada" de las fijadas de App tareas al día:
+     `d` puesto equivale a "está completada", y su valor es el día en que la
+     vimos así por primera vez. Hace falta porque esa app no guarda cuándo se
+     completa nada y se puede marcar (o desmarcar) desde ella, sin pasar por
+     `toggleAtDone`. Sin esto, una fijada que ya estaba hecha al fijarla no
+     tenía fecha y desaparecía de Hoy en vez de quedarse tachada. */
+  function reconcileFijadasDone() {
+    let cambios = false;
+    atareasDone().forEach((t) => {
+      const key = hoyExternKey(t);
+      const i = key ? fijadaIndex(key) : -1;
+      if (i === -1 || fijadaDoneAt(hoyFijadas[i])) return;
+      hoyFijadas[i] = { k: key, d: todayISO() }; // completada: se apunta hoy
+      cambios = true;
+    });
+    atareasPending().forEach((t) => {
+      const key = hoyExternKey(t);
+      const i = key ? fijadaIndex(key) : -1;
+      if (i === -1 || !fijadaDoneAt(hoyFijadas[i])) return;
+      hoyFijadas[i] = key; // vuelve a estar pendiente: se borra el apunte
+      cambios = true;
+    });
+    if (cambios) saveHoyFijadas();
+    return cambios;
+  }
+
+  // Las fijadas con el formato de entrada de día, para mezclarlas con el resto
+  // de "Durante el día". `pinned` las distingue al pintarlas: a diferencia de
+  // las demás, su fecha (si tiene) no es la del día, así que se sigue viendo.
+  function hoyPinnedEntries() {
+    return hoyPinnedTasks().map((t) => ({
+      id: t.id,
+      task: t,
+      origin: hoyPinnedOrigin(t),
+      pinned: true,
+    }));
   }
 
   // En Hoy conviven las tres procedencias, así que cada tarea lleva la suya en
@@ -3946,7 +4368,9 @@
     const li = e.agenda
       ? agendaItem(e.agenda, from === "hoy" ? "Agenda" : null)
       : createTaskItem(e.task, e.origin, {
-          hideDate: true,
+          // La fecha sobra cuando es la que coloca la tarea en este día; en
+          // una fijada no lo es, así que ahí sí se muestra.
+          hideDate: !e.pinned,
           hideStar: true,
           dragHandle: true,
         });
@@ -3990,6 +4414,7 @@
   }
 
   function deleteAgenda(id) {
+    rememberDeleted(id); // que no vuelva si la nube aún no se enteró
     agenda = agenda.filter((a) => a.id !== id);
     saveAgenda();
     renderAgenda();
@@ -4271,6 +4696,7 @@
   }
 
   function deleteProyecto(id) {
+    rememberDeleted(id); // que no vuelva si la nube aún no se enteró
     proyectos = proyectos.filter((p) => p.id !== id);
     saveProyectos();
     // Si era el que estaba abierto, se vuelve al índice (y la URL, con él).
@@ -6173,6 +6599,10 @@
     if (db) localProSecciones = await idbGet(IDB_KEY_PRO_SECCIONES);
     proyectoSecciones = Array.isArray(localProSecciones) ? localProSecciones : [];
 
+    let localFijadas = [];
+    if (db) localFijadas = await idbGet(IDB_KEY_HOY_FIJADAS);
+    hoyFijadas = normalizeFijadas(localFijadas);
+
     let rawHoy;
     if (db) rawHoy = await idbGet(IDB_KEY_HOY);
     const parsedHoy = parseHoy(rawHoy);
@@ -6187,6 +6617,13 @@
     let localDayOrder;
     if (db) localDayOrder = await idbGet(IDB_KEY_DAY_ORDER);
     dayOrder = parseDayOrder(localDayOrder);
+
+    // El registro de borrados va antes de los listeners de la nube: en cuanto
+    // llegue la primera lista hay que poder limpiarla.
+    let localDeleted = [];
+    if (db) localDeleted = await idbGet(IDB_KEY_DELETED);
+    deletedIds = Array.isArray(localDeleted) ? localDeleted : [];
+    if (pruneDeleted()) saveDeleted();
 
     let localPlanned = [];
     if (db) localPlanned = await idbGet(IDB_KEY_PLANNED);
@@ -6224,11 +6661,15 @@
       "value",
       (snap) => {
         const raw = snap.val();
-        const remote = Array.isArray(raw)
+        const llegan = Array.isArray(raw)
           ? raw
           : raw
           ? Object.values(raw)
           : [];
+        // La nube puede traer de vuelta algo que ya se borró en este
+        // dispositivo (ver "Borrados definitivos"): se quita antes de nada.
+        const remote = applyDeleted(llegan);
+        const revividas = remote !== llegan;
         // Si la nube está vacía pero este dispositivo ya tiene datos, súbelos
         // para no perderlos (primera sincronización).
         if (first && remote.length === 0 && tasks.length > 0) {
@@ -6240,7 +6681,8 @@
         tasks = remote;
         const migrated = backfillCompletedDates();
         if (db) idbSet(IDB_KEY, tasks).catch(() => {}); // respaldo local al día
-        if (migrated) save(); // sube la migración a la nube
+        // Sube la migración y, si la nube traía borrados, la lista ya limpia
+        if (migrated || revividas) save();
         clearError();
         renderTasksViews();
         // Agenda y "Durante el día" también pintan tareas (con fecha de hoy o
@@ -6262,7 +6704,9 @@
       "value",
       (snap) => {
         const raw = snap.val();
-        const remote = Array.isArray(raw) ? raw : raw ? Object.values(raw) : [];
+        const llegan = Array.isArray(raw) ? raw : raw ? Object.values(raw) : [];
+        const remote = applyDeleted(llegan); // ver "Borrados definitivos"
+        const revividas = remote !== llegan;
         if (firstP && remote.length === 0 && planned.length > 0) {
           firstP = false;
           refP.set(planned).catch(() => {});
@@ -6272,7 +6716,8 @@
         planned = remote;
         const migratedP = backfillPlannedCategory();
         if (db) idbSet(IDB_KEY_PLANNED, planned).catch(() => {});
-        if (migratedP) savePlanned(); // sube la migración a la nube
+        // Sube la migración y, si la nube traía borrados, la lista ya limpia
+        if (migratedP || revividas) savePlanned();
         clearError();
         renderPlanned();
         plannedSynced = true;
@@ -6289,7 +6734,8 @@
       "value",
       (snap) => {
         const raw = snap.val();
-        const remote = Array.isArray(raw) ? raw : raw ? Object.values(raw) : [];
+        const llegan = Array.isArray(raw) ? raw : raw ? Object.values(raw) : [];
+        const remote = applyDeleted(llegan); // ver "Borrados definitivos"
         if (firstR && remote.length === 0 && recados.length > 0) {
           firstR = false;
           refR.set(recados).catch(() => {});
@@ -6298,6 +6744,7 @@
         firstR = false;
         recados = remote;
         if (db) idbSet(IDB_KEY_RECADOS, recados).catch(() => {});
+        if (remote !== llegan) saveRecados(); // sube la lista ya sin lo borrado
         clearError();
         renderRecados();
         renderProyectos(); // cambia el número de tareas por proyecto
@@ -6313,7 +6760,8 @@
       "value",
       (snap) => {
         const raw = snap.val();
-        const remote = Array.isArray(raw) ? raw : raw ? Object.values(raw) : [];
+        const llegan = Array.isArray(raw) ? raw : raw ? Object.values(raw) : [];
+        const remote = applyDeleted(llegan); // ver "Borrados definitivos"
         if (firstPen && remote.length === 0 && pendientes.length > 0) {
           firstPen = false;
           refPen.set(pendientes).catch(() => {});
@@ -6322,6 +6770,7 @@
         firstPen = false;
         pendientes = remote;
         if (db) idbSet(IDB_KEY_PENDIENTES, pendientes).catch(() => {});
+        if (remote !== llegan) savePendientes(); // ya sin lo borrado
         clearError();
         renderPendientes();
         renderProyectos(); // cambia el número de tareas por proyecto
@@ -6337,7 +6786,8 @@
       "value",
       (snap) => {
         const raw = snap.val();
-        const remote = Array.isArray(raw) ? raw : raw ? Object.values(raw) : [];
+        const llegan = Array.isArray(raw) ? raw : raw ? Object.values(raw) : [];
+        const remote = applyDeleted(llegan); // ver "Borrados definitivos"
         if (firstSt && remote.length === 0 && sinTipo.length > 0) {
           firstSt = false;
           refSt.set(sinTipo).catch(() => {});
@@ -6346,6 +6796,7 @@
         firstSt = false;
         sinTipo = remote;
         if (db) idbSet(IDB_KEY_SIN_TIPO, sinTipo).catch(() => {});
+        if (remote !== llegan) saveSinTipo(); // ya sin lo borrado
         clearError();
         renderProyectos(); // su única vista es la página del proyecto
       },
@@ -6360,7 +6811,8 @@
       "value",
       (snap) => {
         const raw = snap.val();
-        const remote = Array.isArray(raw) ? raw : raw ? Object.values(raw) : [];
+        const llegan = Array.isArray(raw) ? raw : raw ? Object.values(raw) : [];
+        const remote = applyDeleted(llegan); // ver "Borrados definitivos"
         if (firstPro && remote.length === 0 && proyectos.length > 0) {
           firstPro = false;
           refPro.set(proyectos).catch(() => {});
@@ -6369,6 +6821,7 @@
         firstPro = false;
         proyectos = remote;
         if (db) idbSet(IDB_KEY_PROYECTOS, proyectos).catch(() => {});
+        if (remote !== llegan) saveProyectos(); // ya sin lo borrado
         clearError();
         renderProyectos();
         renderAllLists(); // sus nombres salen en el byline de las tareas
@@ -6408,7 +6861,8 @@
       "value",
       (snap) => {
         const raw = snap.val();
-        const remote = Array.isArray(raw) ? raw : raw ? Object.values(raw) : [];
+        const llegan = Array.isArray(raw) ? raw : raw ? Object.values(raw) : [];
+        const remote = applyDeleted(llegan); // ver "Borrados definitivos"
         if (firstAg && remote.length === 0 && agenda.length > 0) {
           firstAg = false;
           refAg.set(agenda).catch(() => {});
@@ -6417,6 +6871,7 @@
         firstAg = false;
         agenda = remote;
         if (db) idbSet(IDB_KEY_AGENDA, agenda).catch(() => {});
+        if (remote !== llegan) saveAgenda(); // sube la lista ya sin lo borrado
         clearError();
         renderAgenda();
         renderHoyView(); // "Durante el día" muestra estas tareas
@@ -6452,6 +6907,32 @@
         showError("Al leer la nube: " + (err && err.message ? err.message : err))
     );
 
+    // Listener: tareas de otras apps fijadas a "Durante el día"
+    let firstFij = true;
+    const refFij = fdb.ref(FB_ROOT + "/" + FB_KEY_HOY_FIJADAS);
+    refFij.on(
+      "value",
+      (snap) => {
+        const raw = snap.val();
+        const remote = Array.isArray(raw) ? raw : raw ? Object.values(raw) : [];
+        if (firstFij && remote.length === 0 && hoyFijadas.length > 0) {
+          firstFij = false;
+          refFij.set(hoyFijadas).catch(() => {});
+          return;
+        }
+        firstFij = false;
+        hoyFijadas = normalizeFijadas(remote); // texto o {k,d}
+        // Si la normalización tiró claves del formato viejo, sube la lista ya
+        // limpia: si no, cada carga volvería a recibirlas y a filtrarlas.
+        if (hoyFijadas.length !== remote.length) saveHoyFijadas();
+        if (db) idbSet(IDB_KEY_HOY_FIJADAS, hoyFijadas).catch(() => {});
+        clearError();
+        renderHoyView(); // lo único que depende del fijado
+      },
+      (err) =>
+        showError("Al leer la nube: " + (err && err.message ? err.message : err))
+    );
+
     // Quinto listener: tareas de "Hoy" (secciones mañana/tarde)
     let firstH = true;
     const refH = fdb.ref(FB_ROOT + "/" + FB_KEY_HOY);
@@ -6466,12 +6947,14 @@
           return;
         }
         firstH = false;
-        hoy = parsed.items;
+        hoy = applyDeleted(parsed.items); // ver "Borrados definitivos"
+        const revividasHoy = hoy !== parsed.items;
         hoyDay = parsed.day;
         hoySections = parsed.sections;
         if (db) idbSet(IDB_KEY_HOY, snap.val()).catch(() => {});
         clearError();
         hoyReady = true;
+        if (revividasHoy) saveHoy(); // sube el nodo ya sin lo borrado
         // Una sola vez por carga y ya con los datos de la nube delante, para
         // no escribir sobre un estado a medio sincronizar.
         if (!doneLogsLimpios) {
@@ -6515,7 +6998,11 @@
         const raw = snap.val();
         atRaw = Array.isArray(raw) ? raw : raw ? Object.values(raw) : [];
         clearError();
+        reconcileFijadasDone(); // pone al día el "completada" de las fijadas
         renderRutinas();
+        // También Hoy: sus tareas fijadas se pintan en "Durante el día", y
+        // hasta que llega este snapshot `atareasPending()` está vacío.
+        renderHoyView();
       },
       (err) =>
         showError(

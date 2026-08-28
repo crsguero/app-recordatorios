@@ -42,7 +42,7 @@
     <!-- Navegación de escritorio: barra lateral (en móvil manda la barra inferior) -->
     <nav class="app-nav" id="app-nav" aria-label="Navegación principal">
       <div class="app-nav-head">
-        <span class="app-nav-brand">Menú</span>
+        <span class="app-nav-brand">Tareas</span>
       </div>
       <button type="button" class="app-nav-item" data-view="hoy">Hoy</button>
       <button type="button" class="app-nav-item" data-view="agenda">Agenda</button>
@@ -50,9 +50,10 @@
       <hr class="app-nav-sep" />
       <button type="button" class="app-nav-item is-active" data-view="tareas">Tareas</button>
       <button type="button" class="app-nav-item" data-view="recados">Recados</button>
-      <button type="button" class="app-nav-item" data-view="planificadas">Rutinas</button>
+      <button type="button" class="app-nav-item" data-view="repeticiones">Rutinas</button>
       <button type="button" class="app-nav-item" data-view="pendientes">Pendientes</button>
       <hr class="app-nav-sep" />
+      <button type="button" class="app-nav-item" data-view="planificadas">Planificadas</button>
       <button type="button" class="app-nav-item" data-view="proyectos">Proyectos</button>
       <button type="button" class="app-nav-item app-nav-settings" id="settings-btn">⚙️ Ajustes</button>
     </nav>
@@ -90,11 +91,14 @@
         <button type="button" class="menu-item" data-view="recados">
           <span class="menu-item-ico">🛒</span> Recados
         </button>
-        <button type="button" class="menu-item" data-view="planificadas">
+        <button type="button" class="menu-item" data-view="repeticiones">
           <span class="menu-item-ico">🔁</span> Rutinas
         </button>
         <button type="button" class="menu-item" data-view="pendientes">
           <span class="menu-item-ico">⏳</span> Pendientes
+        </button>
+        <button type="button" class="menu-item" data-view="planificadas">
+          <span class="menu-item-ico">🔁</span> Planificadas
         </button>
         <button type="button" class="menu-item" data-view="proyectos">
           <span class="menu-item-ico">📁</span> Proyectos
@@ -234,6 +238,32 @@
         </div>
       </section>
 
+      <!-- Vista: "Rutinas" (interna: repeticiones). Las repeticiones que
+           generan las Planificadas (más las tareas automáticas de otras apps).
+           Son las mismas que salen en "Mis tareas" con el filtro Rutinas. -->
+      <section class="view" id="view-repeticiones" hidden>
+        <header class="app-header">
+          <div class="header-top">
+            <h1>Rutinas</h1>
+          </div>
+          <p class="subtitle" id="repeticiones-summary">Sin tareas todavía</p>
+        </header>
+
+        <ul class="task-list" id="repeticiones-list"></ul>
+
+        <p class="empty-state" id="repeticiones-empty" hidden>
+          No hay rutinas ahora mismo.
+        </p>
+
+        <div class="done-section" id="repeticiones-done-section" hidden>
+          <div class="done-header">
+            <button type="button" class="toggle-done-btn" id="repeticiones-toggle-done"></button>
+            <button type="button" class="clear-btn" id="repeticiones-clear-done">Borrar completadas</button>
+          </div>
+          <ul class="task-list done-list" id="repeticiones-done-list" hidden></ul>
+        </div>
+      </section>
+
       <!-- Vista: Tareas -->
       <section class="view" id="view-tareas">
         <header class="app-header">
@@ -254,13 +284,6 @@
           />
           <button type="submit" class="add-btn" aria-label="Añadir tarea">+</button>
         </form>
-
-        <!-- Filtro por destacadas: Todo / Cuanto antes / Cuando se pueda -->
-        <div class="task-tabs" id="tareas-tabs" role="tablist" aria-label="Filtrar tareas">
-          <button type="button" class="task-tab is-active" data-tab="all" data-label="Todo" role="tab" aria-selected="true">Todo</button>
-          <button type="button" class="task-tab" data-tab="starred" data-label="Cuanto antes" role="tab" aria-selected="false">Cuanto antes</button>
-          <button type="button" class="task-tab" data-tab="unstarred" data-label="Cuando se pueda" role="tab" aria-selected="false">Cuando se pueda</button>
-        </div>
 
         <ul class="task-list" id="task-list"></ul>
 
@@ -297,13 +320,6 @@
           />
           <button type="submit" class="add-btn" aria-label="Añadir recado">+</button>
         </form>
-
-        <!-- Filtro por destacados: Todo / Cuanto antes / Cuando se pueda -->
-        <div class="task-tabs" id="recados-tabs" role="tablist" aria-label="Filtrar recados">
-          <button type="button" class="task-tab is-active" data-tab="all" data-label="Todo" role="tab" aria-selected="true">Todo</button>
-          <button type="button" class="task-tab" data-tab="starred" data-label="Cuanto antes" role="tab" aria-selected="false">Cuanto antes</button>
-          <button type="button" class="task-tab" data-tab="unstarred" data-label="Cuando se pueda" role="tab" aria-selected="false">Cuando se pueda</button>
-        </div>
 
         <ul class="task-list" id="recados-list"></ul>
 
@@ -425,12 +441,12 @@
         </div>
       </section>
 
-      <!-- Vista: "Rutinas" (interna: planificadas). El id/hash sigue siendo
-           `planificadas`. -->
+      <!-- Vista: "Planificadas" (interna: planificadas). El id/hash sigue
+           siendo `planificadas`. -->
       <section class="view" id="view-planificadas" hidden>
         <header class="app-header">
           <div class="header-top">
-            <h1>Rutinas</h1>
+            <h1>Planificadas</h1>
           </div>
           <p class="subtitle">Tareas anotadas. Se quedan aquí (no se completan).</p>
         </header>
@@ -494,7 +510,8 @@
           <select id="detail-cat" class="date-mode" aria-label="Categoría"></select>
         </div>
 
-        <!-- Solo rutinas: su repetición va a "Durante el día" (Hoy) -->
+        <!-- Rutinas: sus repeticiones nacen en "Durante el día" (Hoy).
+             Tareas: la fija ahí hasta completarla, tenga fecha o no. -->
         <label class="hoy-switch hoy-switch-wide" id="detail-addhoy-wrap" hidden>
           <span class="hoy-switch-text">Añadir a Hoy</span>
           <input type="checkbox" id="detail-addhoy" aria-label="Añadir a Hoy" />
@@ -560,6 +577,7 @@
             <select id="detail-repeat-mode" class="date-mode" aria-label="Repetir">
               <option value="never">Nunca</option>
               <option value="weekly">Semanalmente</option>
+              <option value="monthly">Mensualmente</option>
               <option value="yearly">Anualmente</option>
               <option value="quarterly">Trimestralmente</option>
               <option value="biennial">Cada dos años</option>
@@ -592,6 +610,9 @@
                 <option value="11">Noviembre</option>
                 <option value="12">Diciembre</option>
               </select>
+            </div>
+            <!-- "Día del mes": lo comparten anual (junto al mes) y mensual -->
+            <div class="repeat-dom-wrap" id="repeat-dom-wrap" hidden>
               <label class="detail-subtle-label" for="detail-repeat-dom">Día del mes</label>
               <select id="detail-repeat-dom" class="date-mode" aria-label="Día del mes"></select>
             </div>

@@ -10,6 +10,8 @@ Las tareas de la pestaña **Planificadas** con "Repetir" distinto de "Nunca" se
 **materializan** automáticamente como tareas normales en **Mis tareas**. Hay dos
 frecuencias:
 - **Semanalmente** (`repeat: "weekly"`, `repeatDay` 1=Lunes … 7=Domingo).
+- **Mensualmente** (`repeat: "monthly"`, `repeatDom` 1-31; el día se recorta al
+  máximo del mes, así el 31 cae el 30 en abril y el 28/29 en febrero).
 - **Anualmente** (`repeat: "yearly"`, `repeatMonth` 1-12, `repeatDom` 1-31; el
   día se recorta al máximo del mes, así 29-feb en año no bisiesto pasa a 28-feb).
 - **Trimestralmente** (`repeat: "quarterly"`, `repeatStart` ISO): ocurrencias en
@@ -24,8 +26,9 @@ Toda la lógica está en `app.js` y es común a las frecuencias (solo cambia el
 cálculo de la "siguiente ocurrencia").
 
 ### Reglas
-- Solo materializan las planificadas semanales (`repeatDay`), anuales
-  (`repeatMonth` + `repeatDom`) o cada dos años (`repeatStart`).
+- Solo materializan las planificadas semanales (`repeatDay`), mensuales
+  (`repeatDom`), anuales (`repeatMonth` + `repeatDom`), trimestrales o cada dos
+  años (`repeatStart`).
 - **Sin duplicados:** como máximo una copia *pendiente* por planificada.
   Mientras esa copia siga pendiente, no se crea otra.
 - **Siguiente ocurrencia:** cuando la copia se **completa** o **elimina**, la
@@ -53,12 +56,15 @@ cálculo de la "siguiente ocurrencia").
   algoritmo (resolver estado de la copia actual → generar la siguiente si toca).
 - `plannedNextOccurrence(p, boundary, after)`: calcula la siguiente ocurrencia
   según `p.repeat`. Helpers de fecha: `dowOf`, `addDaysISO`,
-  `firstOccurrenceOnOrAfter/After` (semanal); `yearlyDateISO`,
+  `firstOccurrenceOnOrAfter/After` (semanal);
+  `monthlyOccurrenceOnOrAfter/After` (mensual, con recorte de día); `yearlyDateISO`,
   `yearlyOccurrenceOnOrAfter/After` (anual, con recorte de día);
   `biennialOccurrenceOnOrAfter/After` (cada dos años a partir de `repeatStart`);
   `addMonthsISO` + `quarterlyOccurrenceOnOrAfter/After` (cada 3 meses).
 - UI del selector: `renderRepeat`, `populateDomOptions` (rellena "Día del mes"
-  según el mes elegido).
+  según el mes elegido; en mensual siempre ofrece los 31). El wrap
+  `repeat-dom-wrap` ("Día del mes") lo comparten anual y mensual; el
+  `repeat-year-wrap` ("Mes") es solo anual.
 - Se ejecuta **una sola vez por carga**, tras la primera sincronización de la
   nube de `tasks` **y** `planned` (flags `tasksSynced`/`plannedSynced` +
   `materializationDone` en `startFirebaseSync`), para evitar duplicados entre
@@ -72,3 +78,28 @@ cálculo de la "siguiente ocurrencia").
 ### Almacenamiento
 - Tareas: ruta Firebase `recordatorios/tasks` + IndexedDB (`tasks`).
 - Planificadas: ruta Firebase `recordatorios/planned` + IndexedDB (`planned`).
+
+## Borrados definitivos (que lo borrado no reaparezca)
+
+El SDK web de Firebase encola las escrituras pendientes **solo en memoria**: si
+se borra algo sin conexión (o el móvil suspende la app antes de que salga la
+escritura) y luego se cierra la pestaña, esa escritura se pierde. La tarea
+desaparece en el momento —el respaldo de IndexedDB sí se guardó—, pero en la
+siguiente carga la nube la manda de vuelta y reaparece.
+
+Solución: un **registro local de borrados** ("tumbas") en IndexedDB
+(`deletedIds`, array de `{id, at}`), que **no** se sincroniza: hay que poder
+apuntarlo sin conexión.
+
+- `rememberDeleted(id)` / `rememberDeletedMany(ids)`: apuntan el borrado. Se
+  llaman desde `deleteTask`, `clearDoneIn`, `deleteAgenda`, `deletePlanned`,
+  `deleteHoy`, `deleteProyecto` y `plannedToTask`. **Mover** una tarea de lista
+  (`moveTaskToList`, `taskToPlanned`) no apunta nada: conserva el id.
+- `applyDeleted(lista)`: quita de una lista recién llegada de la nube lo ya
+  borrado aquí. Devuelve la **misma** lista si no sobraba nada, así el listener
+  sabe (comparando con `!==`) si tiene que volver a subirla ya limpia.
+- Cada listener de `startFirebaseSync` la aplica antes de adoptar los datos, y
+  si sobraba algo llama a su `save*()` para que el borrado llegue por fin a la
+  nube y al resto de dispositivos.
+- Los ids son únicos en toda la app, así que el mismo registro sirve para todas
+  las listas. Se podan a los 90 días (`DELETED_TTL_DAYS`) en cada carga.
