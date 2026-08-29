@@ -10,6 +10,9 @@
   --danger: #ef4444;
   --star: #7d50ba;
   --star-bg: #f2ecfa;
+  /* Verde de "hecho del todo": pastilla del contador de una sección completa */
+  --ok: #256d45;
+  --ok-bg: #e3f2e9;
   --shadow: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04);
   /* Fondo de las columnas del board (vista lista de un proyecto): un punto
      más apagado que la página, para que las tarjetas blancas destaquen */
@@ -99,9 +102,36 @@ body {
   border-top: 1px solid var(--border);
 }
 
-/* Ajustes: al fondo de la barra de navegación */
-.app-nav-settings {
+/* Pie de la barra de navegación: Ajustes + botón de pestaña en blanco */
+.app-nav-foot {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   margin-top: auto;
+}
+
+.app-nav-settings {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Esquina inferior derecha: abre una pestaña nueva en blanco */
+.app-nav-blank {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  color: var(--text-soft);
+  border-radius: 10px;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.app-nav-blank:hover {
+  color: var(--primary);
+  background: var(--star-bg);
 }
 
 .app-nav-head {
@@ -112,7 +142,7 @@ body {
 }
 
 .app-nav-brand {
-  padding: 12px 0 0 14px; /* alineado con el texto de las entradas del menú */
+  padding: 12px 0 12px 14px; /* alineado con el texto de las entradas del menú */
   font-weight: 700;
   font-size: 22px;
   color: var(--text);
@@ -997,6 +1027,21 @@ body {
   font-weight: 600;
 }
 
+/* Distintivo de "añadida a Hoy" en la 2ª línea. En pastilla, para no
+   confundirlo con la fecha "Hoy" de una tarea fechada para hoy. */
+.task-hoy {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 1px 7px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--primary);
+  background: var(--star-bg);
+  border-radius: 10px;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
 /* Proyecto asignado, también en la 2ª línea */
 .task-project {
   font-weight: 600;
@@ -1282,11 +1327,29 @@ body {
   margin-bottom: 0;
 }
 
+/* El progreso de una sección va siempre en pastilla. En curso, con el mismo
+   fondo que el botón Editar de la cabecera de Hoy, sin borde. */
 .hoy-view-count {
   flex: 0 0 auto;
+  padding: 1px 8px;
   font-size: 0.85rem;
   font-weight: 500;
   color: var(--text-soft);
+  background: var(--card);
+  border-radius: 10px;
+}
+
+/* Sección terminada (4/4): el título se apaga, en el mismo gris que el texto de
+   una tarea completada. */
+.hoy-view-head.is-complete .hoy-view-title {
+  color: var(--done);
+}
+
+/* Sección terminada (4/4): la misma pastilla, en verde. */
+.hoy-view-count.is-complete {
+  font-weight: 600;
+  color: var(--ok);
+  background: var(--ok-bg);
 }
 
 .hoy-view-section .task-list {

@@ -55,7 +55,17 @@
       <hr class="app-nav-sep" />
       <button type="button" class="app-nav-item" data-view="planificadas">Planificadas</button>
       <button type="button" class="app-nav-item" data-view="proyectos">Proyectos</button>
-      <button type="button" class="app-nav-item app-nav-settings" id="settings-btn">⚙️ Ajustes</button>
+      <div class="app-nav-foot">
+        <button type="button" class="app-nav-item app-nav-settings" id="settings-btn">⚙️ Ajustes</button>
+        <!-- Abre en una pestaña nueva la página del sistema de diseño (de momento, en blanco) -->
+        <a class="app-nav-blank" id="blank-tab-btn" href="sistema-diseno.html" target="_blank" rel="noopener" title="Sistema de diseño" aria-label="Sistema de diseño">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M14 4h6v6" />
+            <path d="M20 4l-8 8" />
+            <path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" />
+          </svg>
+        </a>
+      </div>
     </nav>
 
     <!-- Barra de navegación inferior (solo móvil) -->

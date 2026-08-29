@@ -1622,7 +1622,10 @@
     // Tarea de otra app: la marca no cabe en ella, va a nuestro `hoyFijadas`.
     if (openExternTask) {
       setHoyFijada(openExternTask, detailAddHoy.checked);
-      renderHoyView(); // sigue en Mis tareas: solo cambia si sale en Hoy
+      // Sigue en Mis tareas y en Rutinas, pero ahí se le pone (o se le quita)
+      // el distintivo de Hoy, así que hay que repintarlas también.
+      renderRutinas();
+      renderHoyView();
       return;
     }
     const entity = getOpenEntity();
@@ -2314,15 +2317,25 @@
     return handle;
   }
 
+  // ¿Esta tarea está puesta en "Durante el día" (Hoy)? Las nuestras lo llevan
+  // en `hoyDia`; las de otras apps no admiten campos propios y su fijado vive
+  // en `hoyFijadas` (o lo dice su plantilla, en lactancia). Ver hoyPinnedTasks.
+  function isEnHoy(task) {
+    if (!task) return false;
+    if (task._lact || task._at) return isHoyFijada(task) || lactAutoHoy(task);
+    return !!task.hoyDia;
+  }
+
   // Construye el <li> de una tarea (se usa en la lista de pendientes y en la
   // de completadas). `origin` (opcional): etiqueta de procedencia, p. ej.
   // "Tarea" o "Recado" (ver ORIGEN), para las destacadas que se agrupan en
   // Cuanto antes.
-  // `opts` (opcional): { hideDate, hideStar, hideProject, hideCheck, dragHandle } — en la
-  // Agenda la fecha y el destacado sobran, porque la tarea ya está colocada en
-  // su día; `hideCheck` quita la casilla (el board de un proyecto, donde el
-  // estado lo dice la columna), y `dragHandle` añade el asa para reordenarla
-  // dentro del día.
+  // `opts` (opcional): { hideDate, hideStar, hideProject, hideCheck, hideHoy,
+  // dragHandle } — en la Agenda la fecha y el destacado sobran, porque la tarea
+  // ya está colocada en su día; `hideCheck` quita la casilla (el board de un
+  // proyecto, donde el estado lo dice la columna), `hideHoy` quita el
+  // distintivo de Hoy (dentro de Hoy sobra) y `dragHandle` añade el asa para
+  // reordenarla dentro del día.
   function createTaskItem(task, origin, opts) {
     const o = opts || {};
     const li = document.createElement("li");
@@ -2422,13 +2435,16 @@
 
     main.appendChild(span);
 
-    // 2ª línea: procedencia (Tareas / Recados), proyecto asignado y fecha,
-    // separados por " · ".
+    // 2ª línea: distintivo de Hoy, procedencia (Tareas / Recados), proyecto
+    // asignado y fecha; los tres últimos separados por " · ".
     const dateText =
       dateLabel && !o.hideDate ? (showClock ? "🕑 " : "") + dateLabel : "";
     // Dentro de la página del proyecto, su nombre sobra en cada tarea
     const project = o.hideProject ? null : taskProjectOf(task);
-    if (origin || project || dateText) {
+    // Una completada ya no está en Hoy (sale al cambiar el día) y su 2ª línea
+    // ya dice "Completada hoy": el distintivo ahí solo confundiría.
+    const enHoy = !task.done && !o.hideHoy && isEnHoy(task);
+    if (enHoy || origin || project || dateText) {
       const dateLine = document.createElement("span");
       dateLine.className = "task-date";
       let first = true;
@@ -2436,6 +2452,16 @@
         if (!first) dateLine.appendChild(document.createTextNode(" · "));
         first = false;
       };
+      if (enHoy) {
+        // Va en pastilla, no como un trozo más de la línea: si no, se
+        // confundiría con la fecha "Hoy" de una tarea fechada para hoy.
+        // Por eso tampoco cuenta para `first`: lleva su propia separación.
+        const hoyEl = document.createElement("span");
+        hoyEl.className = "task-hoy";
+        hoyEl.textContent = "Hoy";
+        hoyEl.title = "Añadida a Hoy";
+        dateLine.appendChild(hoyEl);
+      }
       if (origin) {
         // La procedencia va en el color de acento
         addSep();
@@ -3719,6 +3745,31 @@
   // Vista "Hoy": una sección por cada `hoySections`. Las completadas NO se
   // ocultan. En modo edición aparecen las cabeceras de sección editables y el
   // formulario de creación.
+  // ¿Sección terminada? Una vacía no cuenta: no hay nada que celebrar. Lo usan
+  // el contador y la cabecera, para que la marca sea la misma en los dos.
+  function hoySectionComplete(done, total) {
+    return total > 0 && done >= total;
+  }
+
+  // Clase de la cabecera de una sección de Hoy. Terminada, `is-complete` pinta
+  // el contador en pastilla verde y apaga el título (ver CSS).
+  function hoyHeadClass(sec, done, total) {
+    return (
+      "hoy-view-head" +
+      (sec.collapsed ? " is-collapsed" : "") +
+      (hoySectionComplete(done, total) ? " is-complete" : "")
+    );
+  }
+
+  // Contador "hechas/total" de la cabecera de una sección de Hoy.
+  function hoyCountEl(done, total) {
+    const count = document.createElement("span");
+    count.className =
+      "hoy-view-count" + (hoySectionComplete(done, total) ? " is-complete" : "");
+    count.textContent = done + "/" + total;
+    return count;
+  }
+
   function renderHoyView() {
     if (!hoyViewSectionsEl) return;
     const focusKey = hoyEditMode ? hoyCaptureFocus() : null;
@@ -3759,14 +3810,11 @@
             isDia ? dayEntryDone(e) : !!e.done
           ).length;
           const head = document.createElement("div");
-          head.className =
-            "hoy-view-head" + (sec.collapsed ? " is-collapsed" : "");
+          head.className = hoyHeadClass(sec, doneCount, total);
           const title = document.createElement("h2");
           title.className = "hoy-view-title";
           title.textContent = sec.name;
-          const count = document.createElement("span");
-          count.className = "hoy-view-count";
-          count.textContent = doneCount + "/" + total;
+          const count = hoyCountEl(doneCount, total);
           const chevron = document.createElement("span");
           chevron.className = "hoy-view-chevron";
           chevron.textContent = sec.collapsed ? "▸" : "▾";
@@ -3784,7 +3832,9 @@
             } else {
               // Las de lactancia mantienen el orden que les da su app
               entries.forEach((t) =>
-                ul.appendChild(createTaskItem(t, null, { hideStar: true }))
+                ul.appendChild(
+                  createTaskItem(t, null, { hideStar: true, hideHoy: true })
+                )
               );
             }
           }
@@ -3805,16 +3855,14 @@
         wrap.appendChild(form);
       } else {
         const head = document.createElement("div");
-        head.className = "hoy-view-head" + (sec.collapsed ? " is-collapsed" : "");
+        head.className = hoyHeadClass(sec, doneCount, secItems.length);
         const chevron = document.createElement("span");
         chevron.className = "hoy-view-chevron";
         chevron.textContent = sec.collapsed ? "▸" : "▾";
         const title = document.createElement("h2");
         title.className = "hoy-view-title";
         title.textContent = sec.name;
-        const count = document.createElement("span");
-        count.className = "hoy-view-count";
-        count.textContent = doneCount + "/" + secItems.length;
+        const count = hoyCountEl(doneCount, secItems.length);
         head.append(title, count, chevron);
         head.addEventListener("click", () => toggleSectionCollapse(sec.id));
         wrap.appendChild(head);
@@ -4217,10 +4265,12 @@
     return out;
   }
 
-  // Procedencia de una tarea fijada, para su 2ª línea. Las copias de rutinas y
-  // las de otras apps no llevan etiqueta: ya se anuncian como tales.
+  // Procedencia de una tarea fijada, para su 2ª línea. Las de otras apps son las
+  // únicas sin etiqueta: ya se anuncian con su indicador (🍼 / 🏠), su color de
+  // fondo y su propio byline.
   function hoyPinnedOrigin(t) {
-    if (t.sourcePlannedId || t._lact || t._at) return null;
+    if (t._lact || t._at) return null;
+    if (t.sourcePlannedId) return ORIGEN.rutinas;
     if (recados.indexOf(t) !== -1) return ORIGEN.recados;
     if (pendientes.indexOf(t) !== -1) return ORIGEN.pendientes;
     return ORIGEN.tareas;
@@ -4372,6 +4422,8 @@
           // una fijada no lo es, así que ahí sí se muestra.
           hideDate: !e.pinned,
           hideStar: true,
+          // Dentro de Hoy el distintivo sobra; en la Agenda sí informa.
+          hideHoy: from === "hoy",
           dragHandle: true,
         });
     li.classList.add("day-item"); // clase común: el arrastre las mezcla

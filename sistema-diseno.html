@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sistema de diseño</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+  <!-- Reutiliza las variables reales del proyecto: las muestras son el color de verdad -->
+  <link rel="stylesheet" href="styles.css" />
+  <style>
+    .ds {
+      display: flex;
+      align-items: flex-start;
+      min-height: 100vh;
+    }
+
+    /* --- Barra lateral --- */
+    .ds-nav {
+      flex: 0 0 220px;
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      box-sizing: border-box;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      padding: 16px;
+      background: var(--card);
+      border-right: 1px solid var(--border);
+    }
+
+    .ds-brand {
+      padding: 12px 0 12px 14px; /* alineado con el texto de las entradas */
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .ds-section {
+      padding: 12px 14px 6px;
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--text-soft);
+    }
+
+    .ds-item {
+      display: flex;
+      align-items: center;
+      padding: 12px 14px;
+      font-size: 1rem;
+      font-weight: 500;
+      color: var(--text-soft);
+      border-radius: 10px;
+      text-decoration: none;
+      cursor: pointer;
+    }
+
+    .ds-item:hover {
+      background: var(--bg);
+    }
+
+    .ds-item.is-active {
+      color: var(--primary);
+      background: var(--star-bg);
+    }
+
+    /* --- Contenido --- */
+    .ds-main {
+      flex: 1;
+      min-width: 0;
+      padding: 32px 28px 64px;
+    }
+
+    .ds-head {
+      max-width: 760px;
+      margin-bottom: 28px;
+    }
+
+    .ds-head h1 {
+      font-size: 28px;
+      font-weight: 700;
+    }
+
+    .ds-head p {
+      margin-top: 8px;
+      color: var(--text-soft);
+    }
+
+    .ds-head code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.9em;
+    }
+
+    .ds-group {
+      margin-bottom: 32px;
+    }
+
+    .ds-group h2 {
+      margin-bottom: 4px;
+      font-size: 1.05rem;
+      font-weight: 700;
+    }
+
+    .ds-group-note {
+      margin-bottom: 14px;
+      font-size: 0.875rem;
+      color: var(--text-soft);
+    }
+
+    .ds-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 12px;
+    }
+
+    .ds-card {
+      display: flex;
+      gap: 12px;
+      padding: 12px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      box-shadow: var(--shadow);
+    }
+
+    /* Tablero de cuadros: deja ver la transparencia de los colores translúcidos */
+    .ds-swatch {
+      flex: 0 0 auto;
+      width: 48px;
+      height: 48px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background-image:
+        linear-gradient(45deg, rgba(128, 128, 128, 0.22) 25%, transparent 25%),
+        linear-gradient(-45deg, rgba(128, 128, 128, 0.22) 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, rgba(128, 128, 128, 0.22) 75%),
+        linear-gradient(-45deg, transparent 75%, rgba(128, 128, 128, 0.22) 75%);
+      background-size: 12px 12px;
+      background-position: 0 0, 0 6px, 6px -6px, -6px 0;
+      overflow: hidden;
+    }
+
+    .ds-swatch span {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+
+    .ds-info {
+      min-width: 0;
+    }
+
+    .ds-name {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.875rem;
+      font-weight: 700;
+      color: var(--text);
+      word-break: break-all;
+    }
+
+    .ds-use {
+      margin: 2px 0 8px;
+      font-size: 0.8125rem;
+      color: var(--text-soft);
+    }
+
+    .ds-values {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.75rem;
+      color: var(--text-soft);
+    }
+
+    .ds-values b {
+      display: inline-block;
+      width: 46px;
+      font-weight: 700;
+      color: var(--text-soft);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+
+    .ds-same {
+      opacity: 0.65;
+    }
+
+    /* --- Categorías: cada una tiene fondo suave + color de texto --- */
+    .ds-cat {
+      display: block;
+      padding: 0;
+      overflow: hidden;
+    }
+
+    /* La muestra es la propia tarea: fondo de la categoría, nombre en su color */
+    .ds-cat-demo {
+      padding: 14px 12px;
+      font-weight: 600;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .ds-cat-body {
+      padding: 12px;
+    }
+
+    .ds-cat-id {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.8125rem;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .ds-cat-values {
+      margin-top: 6px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.75rem;
+      color: var(--text-soft);
+    }
+
+    .ds-cat-values div {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .ds-dot {
+      flex: 0 0 auto;
+      width: 12px;
+      height: 12px;
+      border-radius: 3px;
+      border: 1px solid var(--border);
+    }
+
+    .ds-cat-values em {
+      font-style: normal;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      font-weight: 700;
+    }
+
+    /* Aviso: algo que la documentación destapa y conviene tener a la vista */
+    .ds-warn {
+      margin-top: 14px;
+      padding: 12px 14px;
+      font-size: 0.8125rem;
+      color: var(--text-soft);
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--danger);
+      border-radius: 10px;
+    }
+
+    /* La sombra no es un color: se documenta sobre una tarjeta de muestra */
+    .ds-shadow-demo {
+      width: 48px;
+      height: 48px;
+      border-radius: 10px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow);
+    }
+
+    /* Móvil: la barra lateral pasa a cabecera */
+    @media (max-width: 767px) {
+      .ds {
+        display: block;
+      }
+
+      .ds-nav {
+        position: static;
+        height: auto;
+        flex-direction: row;
+        align-items: center;
+        flex-wrap: wrap;
+        border-right: none;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .ds-brand {
+        width: 100%;
+        padding-left: 0;
+      }
+
+      .ds-section {
+        padding: 0 8px 0 0;
+      }
+
+      .ds-main {
+        padding: 24px 16px 48px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="ds">
+    <nav class="ds-nav" aria-label="Navegación del sistema de diseño">
+      <span class="ds-brand">Sistema de diseño</span>
+      <span class="ds-section">Estilos</span>
+      <a class="ds-item is-active" href="#colores" aria-current="page">Colores</a>
+    </nav>
+
+    <main class="ds-main" id="colores">
+      <div class="ds-head">
+        <h1>Colores</h1>
+        <p>
+          Todos los colores del proyecto. La mayoría son variables declaradas en
+          <code>styles.css</code>: los valores claros en <code>:root</code> y los
+          que cambian en modo oscuro dentro de
+          <code>@media (prefers-color-scheme: dark)</code>. Las que no aparecen
+          en el bloque oscuro conservan su valor claro en ambos temas.
+        </p>
+        <p>
+          Los colores de <a href="#categorias">categoría</a> son la excepción: no
+          pasan por variables, van como hex directos en las clases
+          <code>.cat-&lt;id&gt;</code>.
+        </p>
+        <p>
+          Las muestras usan las variables reales, así que reflejan el tema activo
+          del sistema.
+        </p>
+      </div>
+
+      <!-- Superficies -->
+      <section class="ds-group">
+        <h2>Superficies</h2>
+        <p class="ds-group-note">Fondos y separadores de la interfaz.</p>
+        <div class="ds-grid">
+          <div class="ds-card">
+            <div class="ds-swatch"><span style="background: var(--bg)"></span></div>
+            <div class="ds-info">
+              <div class="ds-name">--bg</div>
+              <p class="ds-use">Fondo de la página.</p>
+              <div class="ds-values">
+                <div><b>Claro</b> #f3f4f6</div>
+                <div><b>Oscuro</b> #111827</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="ds-card">
+            <div class="ds-swatch"><span style="background: var(--card)"></span></div>
+            <div class="ds-info">
+              <div class="ds-name">--card</div>
+              <p class="ds-use">Tarjetas, modales y barras de navegación.</p>
+              <div class="ds-values">
+                <div><b>Claro</b> #ffffff</div>
+                <div><b>Oscuro</b> #1f2937</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="ds-card">
+            <div class="ds-swatch"><span style="background: var(--border)"></span></div>
+            <div class="ds-info">
+              <div class="ds-name">--border</div>
+              <p class="ds-use">Bordes, divisores y separadores.</p>
+              <div class="ds-values">
+                <div><b>Claro</b> #e5e7eb</div>
+                <div><b>Oscuro</b> #374151</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="ds-card">
+            <div class="ds-swatch"><span style="background: var(--board-col)"></span></div>
+            <div class="ds-info">
+              <div class="ds-name">--board-col</div>
+              <p class="ds-use">
+                Fondo de las columnas del board (vista lista de un proyecto): un
+                punto más apagado que la página, para que las tarjetas destaquen.
+                Es translúcido.
+              </p>
+              <div class="ds-values">
+                <div><b>Claro</b> rgba(0, 0, 0, 0.035)</div>
+                <div><b>Oscuro</b> rgba(255, 255, 255, 0.03)</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Texto -->
+      <section class="ds-group">
+        <h2>Texto</h2>
+        <p class="ds-group-note">Jerarquía tipográfica por color.</p>
+        <div class="ds-grid">
+          <div class="ds-card">
+            <div class="ds-swatch"><span style="background: var(--text)"></span></div>
+            <div class="ds-info">
+              <div class="ds-name">--text</div>
+              <p class="ds-use">Texto principal.</p>
+              <div class="ds-values">
+                <div><b>Claro</b> #1f2937</div>
+                <div><b>Oscuro</b> #f9fafb</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="ds-card">
+            <div class="ds-swatch"><span style="background: var(--text-soft)"></span></div>
+            <div class="ds-info">
+              <div class="ds-name">--text-soft</div>
+              <p class="ds-use">Texto secundario: notas, contadores, etiquetas.</p>
+              <div class="ds-values">
+                <div><b>Claro</b> #6b7280</div>
+                <div><b>Oscuro</b> #9ca3af</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="ds-card">
+            <div class="ds-swatch"><span style="background: var(--done)"></span></div>
+            <div class="ds-info">
+              <div class="ds-name">--done</div>
+              <p class="ds-use">Tareas completadas (texto tachado).</p>
+              <div class="ds-values">
+                <div><b>Claro</b> #9ca3af</div>
+                <div class="ds-same"><b>Oscuro</b> igual (#9ca3af)</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Marca -->
+      <section class="ds-group">
+        <h2>Marca y acento</h2>
+        <p class="ds-group-note">
+          El morado de la app: estados activos, botones principales y destacados.
+        </p>
+        <div class="ds-grid">
+          <div class="ds-card">
+            <div class="ds-swatch"><span style="background: var(--primary)"></span></div>
+            <div class="ds-info">
+              <div class="ds-name">--primary</div>
+              <p class="ds-use">Color de acento: elemento activo, botones, enlaces.</p>
+              <div class="ds-values">
+                <div><b>Claro</b> #7d50ba</div>
+                <div class="ds-same"><b>Oscuro</b> igual (#7d50ba)</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="ds-card">
+            <div class="ds-swatch"><span style="background: var(--primary-dark)"></span></div>
+            <div class="ds-info">
+              <div class="ds-name">--primary-dark</div>
+              <p class="ds-use">Variante oscura del acento: hover y estado pulsado.</p>
+              <div class="ds-values">
+                <div><b>Claro</b> #68409c</div>
+                <div class="ds-same"><b>Oscuro</b> igual (#68409c)</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="ds-card">
+            <div class="ds-swatch"><span style="background: var(--star)"></span></div>
+            <div class="ds-info">
+              <div class="ds-name">--star</div>
+              <p class="ds-use">Destacado (estrella). Mismo valor que <code>--primary</code>.</p>
+              <div class="ds-values">
+                <div><b>Claro</b> #7d50ba</div>
+                <div class="ds-same"><b>Oscuro</b> igual (#7d50ba)</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="ds-card">
+            <div class="ds-swatch"><span style="background: var(--star-bg)"></span></div>
+            <div class="ds-info">
+              <div class="ds-name">--star-bg</div>
+              <p class="ds-use">Fondo suave del acento: pestaña activa, píldoras, destacados.</p>
+              <div class="ds-values">
+                <div><b>Claro</b> #f2ecfa</div>
+                <div><b>Oscuro</b> #2a2545</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Categorías -->
+      <section class="ds-group" id="categorias">
+        <h2>Categorías</h2>
+        <p class="ds-group-note">
+          Las seis categorías de <code>HOY_CATEGORIES</code> (<code>app.js</code>).
+          A diferencia del resto, <strong>no son variables</strong>: son hex
+          escritos directamente en <code>styles.css</code> y se aplican por la
+          clase <code>.cat-&lt;id&gt;</code>. Cada una tiene dos colores: un
+          <em>fondo suave</em> que tiñe la tarea entera en Hoy y en Rutinas, y un
+          <em>color de texto</em> más oscuro para el nombre del proyecto en el
+          byline y en la pestaña Proyectos.
+        </p>
+        <div class="ds-grid">
+          <div class="ds-card ds-cat">
+            <div class="ds-cat-demo" style="background: #fff8e1; color: #a16207">Hogar</div>
+            <div class="ds-cat-body">
+              <div class="ds-cat-id">.cat-hogar</div>
+              <div class="ds-cat-values">
+                <div><span class="ds-dot" style="background: #fff8e1"></span><em>Fondo</em> #fff8e1</div>
+                <div><span class="ds-dot" style="background: #a16207"></span><em>Texto</em> #a16207</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="ds-card ds-cat">
+            <div class="ds-cat-demo" style="background: #f3e8ff; color: #7e22ce">Personal</div>
+            <div class="ds-cat-body">
+              <div class="ds-cat-id">.cat-personal</div>
+              <div class="ds-cat-values">
+                <div><span class="ds-dot" style="background: #f3e8ff"></span><em>Fondo</em> #f3e8ff</div>
+                <div><span class="ds-dot" style="background: #7e22ce"></span><em>Texto</em> #7e22ce</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="ds-card ds-cat">
+            <div class="ds-cat-demo" style="background: #eaf7ef; color: #15803d">Salud</div>
+            <div class="ds-cat-body">
+              <div class="ds-cat-id">.cat-salud</div>
+              <div class="ds-cat-values">
+                <div><span class="ds-dot" style="background: #eaf7ef"></span><em>Fondo</em> #eaf7ef</div>
+                <div><span class="ds-dot" style="background: #15803d"></span><em>Texto</em> #15803d</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="ds-card ds-cat">
+            <div class="ds-cat-demo" style="background: #eaf2ff; color: #1d4ed8">Profesional</div>
+            <div class="ds-cat-body">
+              <div class="ds-cat-id">.cat-profesional</div>
+              <div class="ds-cat-values">
+                <div><span class="ds-dot" style="background: #eaf2ff"></span><em>Fondo</em> #eaf2ff</div>
+                <div><span class="ds-dot" style="background: #1d4ed8"></span><em>Texto</em> #1d4ed8</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="ds-card ds-cat">
+            <div class="ds-cat-demo" style="background: #fff0e0; color: #c2410c">Relaciones</div>
+            <div class="ds-cat-body">
+              <div class="ds-cat-id">.cat-relaciones</div>
+              <div class="ds-cat-values">
+                <div><span class="ds-dot" style="background: #fff0e0"></span><em>Fondo</em> #fff0e0</div>
+                <div><span class="ds-dot" style="background: #c2410c"></span><em>Texto</em> #c2410c</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="ds-card ds-cat">
+            <div class="ds-cat-demo" style="background: #fce7f3; color: #be185d">Maternidad</div>
+            <div class="ds-cat-body">
+              <div class="ds-cat-id">.cat-maternidad</div>
+              <div class="ds-cat-values">
+                <div><span class="ds-dot" style="background: #fce7f3"></span><em>Fondo</em> #fce7f3</div>
+                <div><span class="ds-dot" style="background: #be185d"></span><em>Texto</em> #be185d</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <p class="ds-warn">
+          <strong>Sin modo oscuro.</strong> El bloque
+          <code>@media (prefers-color-scheme: dark)</code> no redefine ninguna
+          categoría, así que en tema oscuro las tareas mantienen estos fondos
+          claros. Por eso existe la regla que pone el círculo del check en blanco
+          sobre las tareas con color: sin ella no se vería.
+        </p>
+      </section>
+
+      <!-- Estado -->
+      <section class="ds-group">
+        <h2>Estado</h2>
+        <p class="ds-group-note">Acciones destructivas y avisos.</p>
+        <div class="ds-grid">
+          <div class="ds-card">
+            <div class="ds-swatch"><span style="background: var(--danger)"></span></div>
+            <div class="ds-info">
+              <div class="ds-name">--danger</div>
+              <p class="ds-use">Eliminar y otras acciones irreversibles.</p>
+              <div class="ds-values">
+                <div><b>Claro</b> #ef4444</div>
+                <div class="ds-same"><b>Oscuro</b> igual (#ef4444)</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Elevación -->
+      <section class="ds-group">
+        <h2>Elevación</h2>
+        <p class="ds-group-note">
+          No es un color, pero se declara junto a ellos y también cambia con el tema.
+        </p>
+        <div class="ds-grid">
+          <div class="ds-card">
+            <div class="ds-shadow-demo"></div>
+            <div class="ds-info">
+              <div class="ds-name">--shadow</div>
+              <p class="ds-use">Sombra de tarjetas y elementos flotantes.</p>
+              <div class="ds-values">
+                <div><b>Claro</b> 0 1px 3px rgba(0,0,0,.08), 0 1px 2px rgba(0,0,0,.04)</div>
+                <div><b>Oscuro</b> 0 1px 3px rgba(0,0,0,.3)</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+</body>
+</html>
