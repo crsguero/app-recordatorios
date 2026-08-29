@@ -37,6 +37,14 @@
   const proyectosListEl = document.getElementById("proyectos-list");
   const proyectosEmpty = document.getElementById("proyectos-empty");
   const proyectosAddBtn = document.getElementById("proyectos-add-btn");
+  // Listado de archivados: la tercera página de la pestaña Proyectos
+  const proyectosArchEl = document.getElementById("proyectos-archivados");
+  const proyectosArchList = document.getElementById("proyectos-archivados-list");
+  const proyectosArchEmpty = document.getElementById(
+    "proyectos-archivados-empty"
+  );
+  const proyectosArchBtn = document.getElementById("proyectos-archivados-btn");
+  const proyectosArchBack = document.getElementById("proyectos-archivados-back");
   // Página de un proyecto (sus tareas), dentro de la misma pestaña
   const proyectosIndexEl = document.getElementById("proyectos-index");
   const proyectosDetailEl = document.getElementById("proyectos-detail");
@@ -57,6 +65,7 @@
   const proyectoTasksCanvas = document.getElementById("proyecto-tasks-canvas");
   let proyectoOpenId = null; // proyecto cuya página de tareas está abierta
   let proyectoTasksTab = "grafo"; // "grafo" | "lista" (no se persiste)
+  let proyectosArchivadosOpen = false; // se está viendo el listado de archivados
 
   // Vista Rutinas: tareas automáticas (planificadas + lactancia)
   const rutinasList = document.getElementById("rutinas-list");
@@ -1964,29 +1973,41 @@
     none.value = "";
     none.textContent = "Sin proyecto";
     detailProject.appendChild(none);
+    // Los archivados no se ofrecen, salvo que sea el de esta misma tarea (si
+    // no, el selector saldría en blanco y perdería el proyecto al tocarlo)
     proyectos.forEach((p) => {
+      if (p.archived && p.id !== task.projectId) return;
       const opt = document.createElement("option");
       opt.value = p.id;
-      opt.textContent = p.text;
+      opt.textContent = p.text + (p.archived ? " (archivado)" : "");
       detailProject.appendChild(opt);
     });
     detailProject.value = taskProjectName(task) ? task.projectId : "";
   }
 
   /* ---------- Estado de una tarea dentro de su proyecto ----------
-     Cinco estados. "Completada" es el `done` de siempre (el mismo que la
-     casilla), "Bloqueada" sale sola de las flechas del grafo, y los otros tres
-     se eligen a mano. Orden de mando: completada > bloqueada > lo elegido.
-     "En espera" y "Bloqueada" comparten efecto fuera del proyecto: la tarea no
-     se ve en ninguna lista (la diferencia es quién lo decide, el diagrama o
-     tú). Se guarda en `projectState`, igual que "En proceso". */
+     Seis estados. "Completada" es el `done` de siempre (el mismo que la
+     casilla), "Bloqueada" sale sola de las flechas del grafo, y los demás se
+     eligen a mano. Orden de mando: completada > bloqueada > lo elegido.
+     "En espera", "Descartada" y "Bloqueada" comparten efecto fuera del
+     proyecto: la tarea no se ve en ninguna lista (la diferencia es quién lo
+     decide, el diagrama o tú). Se guardan en `projectState`, igual que "En
+     proceso". */
   const TASK_STATES = [
     { id: "proceso", name: "En proceso" },
     { id: "sin-empezar", name: "Sin empezar" },
     { id: "espera", name: "En espera" },
     { id: "bloqueada", name: "Bloqueadas" },
     { id: "completada", name: "Completadas" },
+    { id: "descartada", name: "Descartadas" },
   ];
+
+  // Los que se eligen a mano y viajan en `projectState`. "Sin empezar" es la
+  // ausencia de valor, y "completada"/"bloqueada" no se guardan ahí.
+  const PROJECT_STATES_MANUAL = ["proceso", "espera", "descartada"];
+  function esEstadoManual(v) {
+    return PROJECT_STATES_MANUAL.indexOf(v) !== -1;
+  }
 
   // ¿El proyecto usa la vista de diagrama? Es lo normal: solo está apagada si
   // se ha desactivado a mano en sus ajustes. Sin diagrama no hay flechas, y por
@@ -2021,24 +2042,26 @@
     return proyectoBlockedIds(proyecto).has(task.id);
   }
 
-  // ¿Está "En espera" dentro de su proyecto? Es la versión a mano de lo mismo:
-  // la tarea existe, pero ahora no toca.
-  function isTaskWaiting(task) {
+  // ¿Está "En espera" o "Descartada" dentro de su proyecto? Son las versiones a
+  // mano de lo mismo: la tarea existe, pero ahora no toca (o ya no va a tocar).
+  function isTaskParked(task) {
+    if (!task || !task.projectId || task.done) return false;
     return (
-      !!task && !!task.projectId && !task.done && task.projectState === "espera"
+      task.projectState === "espera" || task.projectState === "descartada"
     );
   }
 
-  // Tareas que no salen de su proyecto: bloqueadas por el diagrama o en espera.
-  // Es el filtro que usan todas las listas de tareas.
+  // Tareas que no salen de su proyecto: bloqueadas por el diagrama, en espera o
+  // descartadas. Es el filtro que usan todas las listas de tareas.
   function isTaskOnHold(task) {
-    return isTaskWaiting(task) || isTaskBlocked(task);
+    return isTaskParked(task) || isTaskBlocked(task);
   }
 
   function taskStateOf(task, bloqueadas) {
     if (task.done) return "completada";
     if (bloqueadas && bloqueadas.has(task.id)) return "bloqueada";
     if (task.projectState === "espera") return "espera";
+    if (task.projectState === "descartada") return "descartada";
     return task.projectState === "proceso" ? "proceso" : "sin-empezar";
   }
 
@@ -2048,6 +2071,7 @@
     // En singular para la etiqueta de una tarea
     if (id === "bloqueada") return "Bloqueada";
     if (id === "completada") return "Completada";
+    if (id === "descartada") return "Descartada";
     return s.name;
   }
 
@@ -2060,7 +2084,7 @@
     }
     detailState.value = task.done
       ? "completada"
-      : task.projectState === "proceso" || task.projectState === "espera"
+      : esEstadoManual(task.projectState)
       ? task.projectState
       : "sin-empezar";
     const bloqueada =
@@ -2086,7 +2110,7 @@
         task.done = false;
         delete task.completedAt;
       }
-      if (valor === "proceso" || valor === "espera") task.projectState = valor;
+      if (esEstadoManual(valor)) task.projectState = valor;
       else delete task.projectState;
     }
     saveOpenTask();
@@ -2695,7 +2719,8 @@
         tasks.filter((t) => !t.done && ctxRepeticiones.filter(t)).length +
         ctxRepeticiones.externalPending().length,
       pendientes: pend(pendientes),
-      proyectos: proyectos.length, // los proyectos no se completan
+      // Los proyectos no se completan; los archivados no cuentan
+      proyectos: proyectos.filter((p) => !p.archived).length,
       planificadas: planned.length, // las rutinas no se completan
     };
   }
@@ -3055,6 +3080,7 @@
     else if (view === "proyectos") {
       // Sin id en el hash se entra por el índice; con él, al proyecto
       proyectoOpenId = proyectoId || null;
+      proyectosArchivadosOpen = false;
       clearProyectoSel();
       renderProyectos();
     }
@@ -4714,24 +4740,31 @@
     return /^https?:\/\//i.test(full) ? full : "";
   }
 
-  // Progreso del proyecto: {done, total, ready} sobre todas sus tareas (las de
-  // las tres listas que admiten proyecto y las que no tienen tipo). `ready` son
-  // las ejecutables: pendientes, sin flecha del grafo que las bloquee y sin
-  // dejar a mano en espera.
+  // Progreso del proyecto: {done, total, ready, waiting} sobre todas sus tareas
+  // (las de las tres listas que admiten proyecto y las que no tienen tipo).
+  // `ready` son las ejecutables: pendientes, sin flecha del grafo que las
+  // bloquee y sin dejar a mano en espera. `waiting` son justo esas últimas: las
+  // que podrían hacerse pero están en espera. Las descartadas quedan fuera de
+  // todo, incluido el total: si contasen, el proyecto no llegaría nunca a estar
+  // al día.
   function proyectoProgreso(id) {
     let done = 0;
     let total = 0;
     let ready = 0;
+    let waiting = 0;
     const bloqueadas = proyectoBlockedIds(proyectos.find((p) => p.id === id));
     [tasks, recados, pendientes, sinTipo].forEach((arr) =>
       arr.forEach((t) => {
         if (t.projectId !== id) return;
+        if (!t.done && t.projectState === "descartada") return;
         total++;
         if (t.done) done++;
-        else if (!bloqueadas.has(t.id) && t.projectState !== "espera") ready++;
+        else if (bloqueadas.has(t.id)) return; // el diagrama manda: no cuenta
+        else if (t.projectState === "espera") waiting++;
+        else ready++;
       })
     );
-    return { done: done, total: total, ready: ready };
+    return { done: done, total: total, ready: ready, waiting: waiting };
   }
 
   function addProyecto(text, url, category) {
@@ -4791,13 +4824,16 @@
   // Pinta lo que toque: el índice y, si hay un proyecto abierto, su página.
   // Todas las llamadas existentes siguen valiendo (se repinta lo visible).
   function renderProyectos() {
-    // Primero se decide qué página se ve: el lienzo del grafo necesita estar
-    // visible para poder medir su ancho y repartir los post-it.
-    const open = !!getProyectoOpen();
-    if (proyectosIndexEl) proyectosIndexEl.hidden = open;
+    // Primero se decide cuál de las tres páginas se ve: el lienzo del grafo
+    // necesita estar visible para poder medir su ancho y repartir los post-it.
+    const archivados = proyectosArchivadosOpen;
+    const open = !archivados && !!getProyectoOpen();
+    if (proyectosIndexEl) proyectosIndexEl.hidden = open || archivados;
     if (proyectosDetailEl) proyectosDetailEl.hidden = !open;
+    if (proyectosArchEl) proyectosArchEl.hidden = !archivados;
     renderProyectosIndex();
     renderProyectoTasks();
+    renderProyectosArchivados();
     updateNavCounts();
   }
 
@@ -4814,6 +4850,7 @@
 
   function openProyectoTasks(id) {
     proyectoOpenId = id;
+    proyectosArchivadosOpen = false;
     // Cada proyecto se abre por su diagrama; si lo tiene apagado, por su lista
     const item = proyectos.find((p) => p.id === id);
     proyectoTasksTab = proyectoConDiagrama(item) ? "grafo" : "lista";
@@ -4884,6 +4921,7 @@
     "sin-empezar",
     "proceso",
     "completada",
+    "descartada",
   ];
 
   function renderProyectoLista(proyecto, entries) {
@@ -4973,8 +5011,7 @@
         task.done = false;
         delete task.completedAt;
       }
-      if (estado === "proceso" || estado === "espera")
-        task.projectState = estado;
+      if (esEstadoManual(estado)) task.projectState = estado;
       else delete task.projectState;
     }
     e.ctx.save();
@@ -5145,7 +5182,12 @@
   const POSTIT_SIZE = 150; // lado del post-it (cuadrado), en px
   const POSTIT_GAP = 16;
   // Estados que colorean la tarjeta entera: en la esquina va solo su icono
-  const POSTIT_STATE_ICONS = { completada: "✅", proceso: "🔄", espera: "🕑" };
+  const POSTIT_STATE_ICONS = {
+    completada: "✅",
+    proceso: "🔄",
+    espera: "🕑",
+    descartada: "❌",
+  };
   // En móvil el grafo es de solo lectura: se consulta, pero no se recolocan
   // los post-it ni se tocan las flechas (mismo corte que el CSS: 768px).
   const movilQuery = window.matchMedia("(max-width: 767px)");
@@ -5948,10 +5990,7 @@
     if (proyectoTaskEstado === "completada") {
       nueva.done = true;
       nueva.completedAt = todayISO();
-    } else if (
-      proyectoTaskEstado === "proceso" ||
-      proyectoTaskEstado === "espera"
-    ) {
+    } else if (esEstadoManual(proyectoTaskEstado)) {
       nueva.projectState = proyectoTaskEstado;
     }
     const ctx = CTX_BY_TYPE[proyectoTaskListSel.value]();
@@ -6001,12 +6040,16 @@
     return proyectoSecciones.some((s) => s.id === id) ? id : "";
   }
 
-  function proyectoItemEl(item) {
+  // `conHueco`: reservar el avatar aunque el proyecto no tenga enlace, para que
+  // todas las filas de la sección empiecen igual. En "Sin sección" no se
+  // reserva: allí solo lleva avatar el que tenga enlace a Notion.
+  function proyectoItemEl(item, conHueco) {
     const li = document.createElement("li");
     li.className = "proyecto-item";
     li.dataset.id = item.id;
 
-    // Enlace a Notion, a modo avatar al principio de la fila (si lo tiene)
+    // Avatar al principio de la fila: el enlace a Notion o, si el proyecto no
+    // tiene, un hueco vacío del mismo tamaño.
     const url = proyectoUrl(item);
     if (url) {
       const link = document.createElement("a");
@@ -6018,6 +6061,11 @@
       link.setAttribute("aria-label", "Abrir " + item.text + " en Notion");
       link.innerHTML = NOTION_ICON;
       li.appendChild(link);
+    } else if (conHueco) {
+      const hueco = document.createElement("span");
+      hueco.className = "proyecto-avatar-empty";
+      hueco.setAttribute("aria-hidden", "true");
+      li.appendChild(hueco);
     }
 
     // La fila entera abre la lista de tareas del proyecto
@@ -6038,22 +6086,42 @@
     }
     li.appendChild(main);
 
-    // Ejecutables: pendientes que ya se pueden hacer. Solo si hay alguna.
+    // Estado del proyecto de un vistazo: terminado, con trabajo disponible, o
+    // esperando a algo. Un proyecto sin tareas no dice nada (no está
+    // "completado": está vacío).
     const prog = proyectoProgreso(item.id);
-    if (prog.ready) {
+    if (prog.total && prog.done === prog.total) {
+      const fin = document.createElement("span");
+      fin.className = "proyecto-fin";
+      fin.textContent = "✅ Completado";
+      fin.title = "Todas sus tareas están completadas";
+      li.appendChild(fin);
+    } else if (prog.ready) {
       const ready = document.createElement("span");
       ready.className = "proyecto-ready";
-      ready.textContent = prog.ready;
-      ready.title = "Tareas ejecutables ahora";
+      ready.textContent =
+        prog.ready + (prog.ready === 1 ? " accionable" : " accionables");
+      ready.title = "Tareas que se pueden hacer ahora";
       li.appendChild(ready);
+    } else if (prog.waiting) {
+      const espera = document.createElement("span");
+      espera.className = "proyecto-espera";
+      espera.textContent = "🕑 En espera";
+      espera.title =
+        "Nada que hacer ahora: sus tareas disponibles están en espera";
+      li.appendChild(espera);
     }
 
-    // Progreso: completadas / total
+    // Progreso: completadas / total. Va en un hueco de ancho fijo (la pastilla
+    // se ajusta a su texto) para que las de estado alineen entre filas.
+    const slot = document.createElement("span");
+    slot.className = "proyecto-count-slot";
     const count = document.createElement("span");
     count.className = "proyecto-count";
     count.textContent = prog.done + "/" + prog.total;
     count.title = "Tareas completadas del total";
-    li.appendChild(count);
+    slot.appendChild(count);
+    li.appendChild(slot);
 
     return li;
   }
@@ -6072,8 +6140,9 @@
       .concat([{ id: "", name: "Sin sección" }]);
 
     bloques.forEach((bloque) => {
+      // Los archivados tienen su propio listado: aquí no salen
       const items = proyectos.filter(
-        (p) => proyectoSeccionOf(p) === bloque.id
+        (p) => !p.archived && proyectoSeccionOf(p) === bloque.id
       );
       // Sin secciones no hay cabeceras ni bloques vacíos que enseñar
       if (!conSecciones && !items.length) return;
@@ -6101,7 +6170,10 @@
 
       const ul = document.createElement("ul");
       ul.className = "proyecto-list";
-      items.forEach((item) => ul.appendChild(proyectoItemEl(item)));
+      // El hueco del avatar solo se reserva dentro de una sección con nombre
+      items.forEach((item) =>
+        ul.appendChild(proyectoItemEl(item, bloque.id !== ""))
+      );
       wrap.appendChild(ul);
 
       if (conSecciones && !items.length) {
@@ -6116,8 +6188,112 @@
       proyectosListEl.appendChild(wrap);
     });
 
-    if (proyectosEmpty) proyectosEmpty.hidden = proyectos.length !== 0;
+    if (proyectosEmpty)
+      proyectosEmpty.hidden = proyectos.some((p) => !p.archived);
   }
+
+  /* ---------- Proyectos archivados ----------
+     Archivar saca el proyecto del índice sin tocar nada más: sus tareas siguen
+     donde están y funcionando igual. Desde este listado se devuelve al índice. */
+  function archiveProyecto(id) {
+    const item = proyectos.find((p) => p.id === id);
+    if (!item) return;
+    item.archived = true;
+    saveProyectos();
+    // Si era el que estaba abierto, se sale de su página
+    if (proyectoOpenId === id) closeProyectoTasks();
+    else renderProyectos();
+  }
+
+  function unarchiveProyecto(id) {
+    const item = proyectos.find((p) => p.id === id);
+    if (!item) return;
+    delete item.archived;
+    saveProyectos();
+    renderProyectos();
+  }
+
+  // Fila del listado de archivados: como la del índice pero sin abrir nada, y
+  // con el botón de devolverlo al índice.
+  function proyectoArchivadoEl(item) {
+    const li = document.createElement("li");
+    li.className = "proyecto-item";
+    li.dataset.id = item.id;
+
+    const url = proyectoUrl(item);
+    if (url) {
+      const link = document.createElement("a");
+      link.className = "proyecto-link";
+      link.href = url;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      link.title = "Abrir en Notion";
+      link.setAttribute("aria-label", "Abrir " + item.text + " en Notion");
+      link.innerHTML = NOTION_ICON;
+      li.appendChild(link);
+    }
+
+    const main = document.createElement("div");
+    main.className = "proyecto-main";
+    const text = document.createElement("span");
+    text.className = "proyecto-text";
+    text.textContent = item.text;
+    main.appendChild(text);
+    const cat = HOY_CATEGORIES.find((c) => c.id === item.category);
+    if (cat) {
+      const catEl = document.createElement("span");
+      catEl.className = "proyecto-cat cat-" + cat.id;
+      catEl.textContent = cat.name;
+      main.appendChild(catEl);
+    }
+    li.appendChild(main);
+
+    const prog = proyectoProgreso(item.id);
+    const slot = document.createElement("span");
+    slot.className = "proyecto-count-slot";
+    const count = document.createElement("span");
+    count.className = "proyecto-count";
+    count.textContent = prog.done + "/" + prog.total;
+    count.title = "Tareas completadas del total";
+    slot.appendChild(count);
+    li.appendChild(slot);
+
+    const volver = document.createElement("button");
+    volver.type = "button";
+    volver.className = "proyecto-unarchive";
+    volver.textContent = "Desarchivar";
+    volver.setAttribute("aria-label", "Desarchivar " + item.text);
+    volver.addEventListener("click", () => unarchiveProyecto(item.id));
+    li.appendChild(volver);
+
+    return li;
+  }
+
+  function renderProyectosArchivados() {
+    if (!proyectosArchList) return;
+    proyectosArchList.innerHTML = "";
+    const items = proyectos.filter((p) => p.archived);
+    items.forEach((item) =>
+      proyectosArchList.appendChild(proyectoArchivadoEl(item))
+    );
+    if (proyectosArchEmpty) proyectosArchEmpty.hidden = items.length !== 0;
+  }
+
+  function openProyectosArchivados() {
+    proyectosArchivadosOpen = true;
+    proyectoOpenId = null;
+    clearProyectoSel();
+    renderProyectos();
+    window.scrollTo(0, 0);
+  }
+
+  function closeProyectosArchivados() {
+    proyectosArchivadosOpen = false;
+    renderProyectos();
+  }
+
+  proyectosArchBtn.addEventListener("click", openProyectosArchivados);
+  proyectosArchBack.addEventListener("click", closeProyectosArchivados);
 
   proyectoTasksBack.addEventListener("click", closeProyectoTasks);
   proyectoSettingsBtn.addEventListener("click", () => {
@@ -6478,6 +6654,9 @@
   const proyectoDetailDiagram = document.getElementById(
     "proyecto-detail-diagram"
   );
+  const proyectoDetailArchive = document.getElementById(
+    "proyecto-detail-archive"
+  );
   fillCategorySelect(proyectoDetailCat);
   let proyectoDetailId = null;
 
@@ -6592,6 +6771,14 @@
     clearProyectoSel();
     renderProyectos();
     renderAllLists(); // las que estaban bloqueadas vuelven a sus listas
+  });
+
+  proyectoDetailArchive.addEventListener("click", () => {
+    const item = getProyectoDetailItem();
+    if (!item) return;
+    const id = item.id;
+    closeProyectoDetail();
+    archiveProyecto(id);
   });
 
   proyectoDetailDelete.addEventListener("click", () => {

@@ -394,6 +394,13 @@
                 <button
                   type="button"
                   class="header-icon-btn"
+                  id="proyectos-archivados-btn"
+                  aria-label="Proyectos archivados"
+                  title="Archivados"
+                >📦</button>
+                <button
+                  type="button"
+                  class="header-icon-btn"
                   id="proyectos-secciones-btn"
                   aria-label="Secciones de proyectos"
                   title="Secciones"
@@ -415,6 +422,22 @@
 
           <p class="empty-state" id="proyectos-empty" hidden>
             No hay proyectos. ¡Añade uno con el botón + ! 🎉
+          </p>
+        </div>
+
+        <!-- Listado de los proyectos archivados (se abre desde el 📦) -->
+        <div id="proyectos-archivados" hidden>
+          <header class="app-header">
+            <button class="detail-close" id="proyectos-archivados-back" type="button">‹ Proyectos</button>
+            <div class="header-top">
+              <h1>Archivados</h1>
+            </div>
+          </header>
+
+          <ul class="proyecto-list" id="proyectos-archivados-list"></ul>
+
+          <p class="empty-state" id="proyectos-archivados-empty" hidden>
+            No hay proyectos archivados.
           </p>
         </div>
 
@@ -540,9 +563,11 @@
           <select id="detail-state" class="date-mode" aria-label="Estado">
             <option value="sin-empezar">Sin empezar</option>
             <option value="proceso">En proceso</option>
-            <!-- En espera: como bloqueada, no sale en ninguna lista de tareas -->
+            <!-- En espera y Descartada: como bloqueada, no salen en ninguna
+                 lista de tareas -->
             <option value="espera">En espera</option>
             <option value="completada">Completada</option>
+            <option value="descartada">Descartada</option>
           </select>
           <p class="detail-state-hint" id="detail-state-hint" hidden>
             Ahora mismo está bloqueada: otra tarea del diagrama apunta a ella.
@@ -874,9 +899,15 @@
         <span class="hoy-switch-slider"></span>
       </label>
 
-      <button class="detail-delete" id="proyecto-detail-delete" type="button">
-        🗑 Eliminar proyecto
-      </button>
+      <!-- Archivar lo saca del listado sin borrar nada; eliminar sí borra -->
+      <div class="proyecto-detail-acciones">
+        <button class="detail-archive" id="proyecto-detail-archive" type="button">
+          📦 Archivar
+        </button>
+        <button class="detail-delete" id="proyecto-detail-delete" type="button">
+          🗑 Eliminar
+        </button>
+      </div>
 
       <div class="fab-actions">
         <button type="button" class="fab-submit" id="proyecto-detail-close">Cerrar</button>
