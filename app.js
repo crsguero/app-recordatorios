@@ -725,6 +725,9 @@
       // `lastDoneAt` NO se toca: es el histórico de la última compleción.
       delete h.prevDoneAt;
       h.done = false;
+      // Subtareas y nota son del día que termina, no de la tarea: se vacían.
+      delete h.subtasks;
+      delete h.note;
     });
     // Día nuevo: todas las secciones vuelven a verse desplegadas
     hoySections.forEach((s) => delete s.collapsed);
@@ -1035,17 +1038,22 @@
         : undefined,
       subtitle: lactSubtitle(x, node), // 2ª línea (byline)
       auto: !!x.auto, // copia diaria de la plantilla, no una tarea suelta
+      hoyFlag: !!x.hoy, // "Añadir a Hoy" puesto en la propia tarea (ver lactAutoHoy)
       _lact: { node: node, id: x.id }, // marca de origen + enrutado de escritura
     };
   }
   /* ---------- "Añadir a Hoy" de App lactancia ----------
-     Su modal de tareas tiene un toggle "Añadir a Hoy" en el grupo "Durante el
-     día". Es el equivalente al `addToHoy` de una rutina nuestra: no marca una
-     tarea suelta, marca la PLANTILLA, y así cada copia diaria nace en Hoy.
-     El dato (`hoy`) vive en la plantilla (`tareas-extraccion`, `extra === 0`) y
-     la copia diaria que lactancia deja en `tareas-mama` no lo arrastra: solo
-     lleva el texto y `auto: true`. Por eso se casa por texto contra la
-     plantilla, y solo sobre las copias automáticas. */
+     Es el equivalente al `addToHoy` de una rutina nuestra, y llega por dos vías
+     porque lactancia lo escribe en dos sitios:
+
+     1. En la propia tarea (`x.hoy`). Es lo que hace al registrar un baño:
+        "Recoger baño" y "Bañar a Sofía" nacen con el flag puesto y fijo. Es la
+        señal directa, así que basta con leerla.
+     2. En la PLANTILLA de "Durante el día" (`tareas-extraccion`, `extra === 0`),
+        que es donde vive su toggle. Ahí marca el molde, para que cada copia
+        diaria nazca en Hoy; pero el copiado de lactancia no arrastra el flag a
+        la copia (solo texto y `auto: true`), así que esa vía hay que casarla
+        por texto contra la plantilla, y solo sobre las copias automáticas. */
   const LACT_NODE_PLANTILLA = "tareas-extraccion";
   function lactPlantillaHoyTextos() {
     const set = {};
@@ -1054,11 +1062,11 @@
     });
     return set;
   }
-  // ¿Esta tarea de lactancia va a Hoy porque lo dice su plantilla? Solo aplica a
-  // las copias diarias de "Durante el día" (`tareas-mama` + `auto`).
+  // ¿Esta tarea de lactancia va sola a "Durante el día"?
   function lactAutoHoy(task) {
     if (!task || !task._lact || task._lact.node !== "tareas-mama") return false;
-    if (!task.auto) return false;
+    if (task.hoyFlag) return true; // vía 1: el flag viene en la tarea
+    if (!task.auto) return false; // vía 2: solo las copias de la plantilla
     return !!lactPlantillaHoyTextos()[(task.text || "").trim()];
   }
 
@@ -3757,8 +3765,10 @@
 
     li.append(lead, main);
 
+    // En los dos modos se abre el panel al tocar la tarea: en edición son sus
+    // ajustes; en normal, las subtareas y la nota del día.
+    main.addEventListener("click", () => openHoyDetail(item.id));
     if (hoyEditMode) {
-      main.addEventListener("click", () => openHoyDetail(item.id));
       const more = document.createElement("span");
       more.className = "hoy-item-more";
       more.textContent = "›";
@@ -4016,6 +4026,11 @@
   const hoyDetailCat = document.getElementById("hoy-detail-cat");
   const hoyDetailLastDone = document.getElementById("hoy-detail-lastdone");
   const hoyDetailDelete = document.getElementById("hoy-detail-delete");
+  const hoyDetailConfig = document.getElementById("hoy-detail-config");
+  const hoyDetailSubtasks = document.getElementById("hoy-detail-subtasks");
+  const hoySubtaskForm = document.getElementById("hoy-subtask-form");
+  const hoySubtaskInput = document.getElementById("hoy-subtask-input");
+  const hoyDetailNote = document.getElementById("hoy-detail-note");
   let hoyDetailId = null; // tarea abierta en el panel lateral
 
   // Opciones del selector de categoría (fijas)
@@ -4045,6 +4060,84 @@
     renderHoyView();
   }
 
+  /* Subtareas y nota de una tarea de Hoy. Son del DÍA, no de la tarea: se
+     vacían en `resetHoyIfNewDay`, así que la lista amanece limpia. Van aparte
+     de las de una tarea normal (`renderSubtasks`) porque el dato vive en otro
+     array y se guarda con `saveHoy`. */
+  function renderHoySubtasks(item) {
+    hoyDetailSubtasks.innerHTML = "";
+    (item.subtasks || []).forEach((sub) => {
+      const li = document.createElement("li");
+      li.className = "subtask-item" + (sub.done ? " is-done" : "");
+
+      const check = document.createElement("input");
+      check.type = "checkbox";
+      check.className = "subtask-check task-check";
+      check.checked = !!sub.done;
+      check.setAttribute("aria-label", "Completar subtarea");
+      check.addEventListener("change", () => toggleHoySubtask(sub.id));
+
+      const span = document.createElement("span");
+      span.className = "subtask-text";
+      span.textContent = sub.text;
+
+      const del = document.createElement("button");
+      del.type = "button";
+      del.className = "subtask-del";
+      del.textContent = "×";
+      del.setAttribute("aria-label", "Eliminar subtarea");
+      del.addEventListener("click", () => deleteHoySubtask(sub.id));
+
+      li.append(check, span, del);
+      hoyDetailSubtasks.appendChild(li);
+    });
+  }
+
+  function addHoySubtask(text) {
+    const trimmed = text.trim();
+    const item = getHoyDetailItem();
+    if (!trimmed || !item) return;
+    if (!item.subtasks) item.subtasks = [];
+    item.subtasks.push({ id: newId(), text: trimmed, done: false });
+    saveHoy();
+    renderHoySubtasks(item);
+  }
+
+  function toggleHoySubtask(subId) {
+    const item = getHoyDetailItem();
+    if (!item || !item.subtasks) return;
+    const sub = item.subtasks.find((x) => x.id === subId);
+    if (!sub) return;
+    sub.done = !sub.done;
+    saveHoy();
+    renderHoySubtasks(item);
+  }
+
+  function deleteHoySubtask(subId) {
+    const item = getHoyDetailItem();
+    if (!item || !item.subtasks) return;
+    item.subtasks = item.subtasks.filter((x) => x.id !== subId);
+    if (!item.subtasks.length) delete item.subtasks;
+    saveHoy();
+    renderHoySubtasks(item);
+  }
+
+  hoySubtaskForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    addHoySubtask(hoySubtaskInput.value);
+    hoySubtaskInput.value = "";
+    hoySubtaskInput.focus();
+  });
+
+  hoyDetailNote.addEventListener("input", () => {
+    const item = getHoyDetailItem();
+    if (!item) return;
+    const v = hoyDetailNote.value;
+    if (v.trim()) item.note = v;
+    else delete item.note;
+    saveHoy();
+  });
+
   function openHoyDetail(id) {
     const item = hoy.find((h) => h.id === id);
     if (!item) return;
@@ -4054,6 +4147,13 @@
     hoyDetailCat.value = item.category || "";
     hoyDetailCatWrap.hidden = !item.temporal;
     hoyDetailLastDone.checked = !!item.showLastDone;
+    // Fuera del modo edición el panel es el del día: subtareas y nota, sin los
+    // ajustes de la tarea ni el borrado.
+    hoyDetailConfig.hidden = !hoyEditMode;
+    hoyDetailDelete.hidden = !hoyEditMode;
+    hoyDetailNote.value = item.note || "";
+    hoySubtaskInput.value = "";
+    renderHoySubtasks(item);
     hoyDetailOverlay.hidden = false;
     document.body.classList.add("no-scroll");
     // Con el panel ya visible (si no, scrollHeight es 0)

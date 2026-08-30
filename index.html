@@ -747,22 +747,48 @@
           aria-label="Editar tarea"
         ></textarea>
 
-        <label class="hoy-switch hoy-switch-wide">
-          <span class="hoy-switch-text">Temporal</span>
-          <input type="checkbox" id="hoy-detail-temporal" aria-label="Temporal" />
-          <span class="hoy-switch-slider"></span>
-        </label>
+        <!-- Ajustes de la tarea: solo en modo edición. Fuera de él, el panel
+             es el del día (subtareas y nota), no el de configurarla. -->
+        <div id="hoy-detail-config">
+          <label class="hoy-switch hoy-switch-wide">
+            <span class="hoy-switch-text">Temporal</span>
+            <input type="checkbox" id="hoy-detail-temporal" aria-label="Temporal" />
+            <span class="hoy-switch-slider"></span>
+          </label>
 
-        <div id="hoy-detail-cat-wrap" hidden>
-          <h3 class="detail-section-label">Categoría</h3>
-          <select id="hoy-detail-cat" class="hoy-cat-select" aria-label="Categoría"></select>
+          <div id="hoy-detail-cat-wrap" hidden>
+            <h3 class="detail-section-label">Categoría</h3>
+            <select id="hoy-detail-cat" class="hoy-cat-select" aria-label="Categoría"></select>
+          </div>
+
+          <label class="hoy-switch hoy-switch-wide">
+            <span class="hoy-switch-text">Mostrar última fecha de completado</span>
+            <input type="checkbox" id="hoy-detail-lastdone" aria-label="Mostrar última fecha de completado" />
+            <span class="hoy-switch-slider"></span>
+          </label>
         </div>
 
-        <label class="hoy-switch hoy-switch-wide">
-          <span class="hoy-switch-text">Mostrar última fecha de completado</span>
-          <input type="checkbox" id="hoy-detail-lastdone" aria-label="Mostrar última fecha de completado" />
-          <span class="hoy-switch-slider"></span>
-        </label>
+        <!-- Subtareas y nota del día: se vacían al empezar un día nuevo -->
+        <h3 class="detail-section-label">Subtareas</h3>
+        <ul class="subtask-list" id="hoy-detail-subtasks"></ul>
+        <form class="subtask-add" id="hoy-subtask-form" autocomplete="off">
+          <input
+            type="text"
+            id="hoy-subtask-input"
+            class="subtask-input"
+            placeholder="Añadir subtarea…"
+            aria-label="Nueva subtarea"
+            maxlength="200"
+          />
+          <button type="submit" class="subtask-add-btn" aria-label="Añadir subtarea">+</button>
+        </form>
+
+        <label class="detail-note-label detail-section-label" for="hoy-detail-note">Nota</label>
+        <textarea
+          id="hoy-detail-note"
+          class="detail-note"
+          placeholder="Escribe una nota para hoy…"
+        ></textarea>
 
         <button class="detail-delete" id="hoy-detail-delete" type="button">
           🗑 Eliminar tarea
