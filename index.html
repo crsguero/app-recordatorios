@@ -138,9 +138,6 @@
           <button type="button" class="fab-choice" data-create="pendientes">
             <span class="fab-choice-ico">⏳</span><span>Pendiente</span>
           </button>
-          <button type="button" class="fab-choice" data-create="proyectos">
-            <span class="fab-choice-ico">📁</span><span>Proyecto</span>
-          </button>
         </div>
 
         <!-- Paso 2: datos -->
@@ -155,9 +152,15 @@
           />
 
           <div id="fab-task-fields">
-            <label class="hoy-switch hoy-switch-wide fab-star">
+            <label class="hoy-switch hoy-switch-wide fab-switch">
               <span class="hoy-switch-text">Destacada (cuanto antes)</span>
               <input type="checkbox" id="fab-star" />
+              <span class="hoy-switch-slider"></span>
+            </label>
+
+            <label class="hoy-switch hoy-switch-wide fab-switch">
+              <span class="hoy-switch-text">Añadir a Hoy</span>
+              <input type="checkbox" id="fab-addhoy" />
               <span class="hoy-switch-slider"></span>
             </label>
 

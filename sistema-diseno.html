@@ -480,7 +480,7 @@
       <section class="ds-group" id="categorias">
         <h2>Categorías</h2>
         <p class="ds-group-note">
-          Las seis categorías de <code>HOY_CATEGORIES</code> (<code>app.js</code>).
+          Las siete categorías de <code>HOY_CATEGORIES</code> (<code>app.js</code>).
           Cada una tiene dos tonos del mismo color: <code>-bg</code> es el fondo
           suave que tiñe la tarea entera en Hoy y en Rutinas, y <code>-text</code>
           es la versión oscurecida con la que se pinta el nombre del proyecto en
@@ -490,6 +490,7 @@
 
         <!-- Las dos variables de cada pareja, funcionando juntas -->
         <div class="ds-cat-demos">
+          <span class="ds-cat-demo" style="background: var(--cat-general-bg); color: var(--cat-general-text)">General</span>
           <span class="ds-cat-demo" style="background: var(--cat-hogar-bg); color: var(--cat-hogar-text)">Hogar</span>
           <span class="ds-cat-demo" style="background: var(--cat-personal-bg); color: var(--cat-personal-text)">Personal</span>
           <span class="ds-cat-demo" style="background: var(--cat-salud-bg); color: var(--cat-salud-text)">Salud</span>
@@ -510,6 +511,21 @@
               </tr>
             </thead>
             <tbody>
+              <tr class="ds-pair-top">
+                <td><span class="ds-swatch"><span style="background: var(--cat-general-bg)"></span></span></td>
+                <td class="ds-col-name"><span class="ds-name">--cat-general-bg</span></td>
+                <td class="ds-use">General: fondo de la tarea en Hoy y en Rutinas. Es la categoría neutra; el gris va un punto más oscuro que el fondo de la página (<span class="ds-name">--bg</span>) para que la tarjeta no se pierda contra ella.</td>
+                <td class="ds-val">#e9ebef</td>
+                <td class="ds-same">igual</td>
+              </tr>
+              <tr>
+                <td><span class="ds-swatch"><span style="background: var(--cat-general-text)"></span></span></td>
+                <td class="ds-col-name"><span class="ds-name">--cat-general-text</span></td>
+                <td class="ds-use">General: nombre del proyecto en el byline y en Proyectos.</td>
+                <td class="ds-val">#4b5563</td>
+                <td class="ds-same">igual</td>
+              </tr>
+
               <tr class="ds-pair-top">
                 <td><span class="ds-swatch"><span style="background: var(--cat-hogar-bg)"></span></span></td>
                 <td class="ds-col-name"><span class="ds-name">--cat-hogar-bg</span></td>
@@ -588,8 +604,8 @@
               <tr class="ds-pair-top">
                 <td><span class="ds-swatch"><span style="background: var(--cat-maternidad-bg)"></span></span></td>
                 <td class="ds-col-name"><span class="ds-name">--cat-maternidad-bg</span></td>
-                <td class="ds-use">Maternidad: fondo de la tarea en Hoy y en Rutinas.</td>
-                <td class="ds-val">#fce7f3</td>
+                <td class="ds-use">Maternidad: fondo de la tarea en Hoy y en Rutinas. Lo comparten las tareas que llegan de App lactancia (<code>.task-item.is-lact</code>): mismo asunto, mismo color.</td>
+                <td class="ds-val">#fff1f6</td>
                 <td class="ds-same">igual</td>
               </tr>
               <tr>

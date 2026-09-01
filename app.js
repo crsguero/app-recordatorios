@@ -415,6 +415,7 @@
   let hoySections = hoyDefaultSections();
   // Categorías de las tareas temporales (el color va en el CSS: .cat-<id>)
   const HOY_CATEGORIES = [
+    { id: "general", name: "General" },
     { id: "hogar", name: "Hogar" },
     { id: "personal", name: "Personal" },
     { id: "salud", name: "Salud" },
@@ -939,6 +940,15 @@
   function plannedOf(task) {
     if (!task || !task.sourcePlannedId) return null;
     return planned.find((p) => p.id === task.sourcePlannedId) || null;
+  }
+
+  // Color de fondo de una repetición: el de la categoría de su planificada. Se
+  // consulta en vivo (no se copia en la tarea), así que cambiar la categoría
+  // recolorea también las repeticiones que ya existan. Sin categoría —o si la
+  // planificada ya no está— se queda el lila de las repeticiones.
+  function plannedCatClass(task) {
+    const p = plannedOf(task);
+    return p && p.category ? " cat-" + p.category : "";
   }
 
   function deleteTask(id) {
@@ -2378,6 +2388,7 @@
       // Con procedencia (Cuanto antes): sin color de fondo
       (origin ? " has-origin" : "") +
       (task.sourcePlannedId ? " is-planned" : "") +
+      plannedCatClass(task) +
       (task._lact ? " is-lact" : "") +
       (task._at ? " is-at" : "");
     li.dataset.id = task.id;
@@ -3206,20 +3217,20 @@
   const fabDateEnd = document.getElementById("fab-date-end");
   const fabDateSep = document.getElementById("fab-date-sep");
   const fabStar = document.getElementById("fab-star");
+  const fabAddHoy = document.getElementById("fab-addhoy");
   const fabHint = document.getElementById("fab-hint");
 
+  // Los proyectos no se crean desde aquí: tienen su propio "+" en su pestaña.
   const FAB_TITLES = {
     tareas: "Nueva tarea",
     recados: "Nuevo recado",
     rutinas: "Nueva rutina",
     pendientes: "Nuevo pendiente",
-    proyectos: "Nuevo proyecto",
   };
   // Lo que no es una tarea se crea solo con el nombre; el resto se configura
   // después, al abrirlo.
   const FAB_HINTS = {
     rutinas: "La repetición se configura al abrir la rutina.",
-    proyectos: "El enlace se añade al abrir el proyecto.",
   };
   let fabTypeValue = "tareas"; // elegido en el paso 1
 
@@ -3290,8 +3301,6 @@
         });
         savePlanned();
         renderPlanned();
-      } else if (fabTypeValue === "proyectos") {
-        addProyecto(text);
       } else {
         const task = {
           id: newId(),
@@ -3299,6 +3308,9 @@
           done: false,
           starred: fabStar.checked,
         };
+        // "Añadir a Hoy": la fija en "Durante el día" hasta completarla, igual
+        // que el interruptor del panel lateral.
+        if (fabAddHoy.checked) task.hoyDia = true;
         const mode = fabDateMode.value;
         if (mode !== "none" && fabDateStart.value) {
           task.dateMode = mode;
@@ -5024,14 +5036,40 @@
     "descartada",
   ];
 
+  // Columnas plegadas de un proyecto (se guardan con él, así que se respetan
+  // entre sesiones y dispositivos)
+  function columnasColapsadas(proyecto) {
+    return new Set(
+      proyecto && Array.isArray(proyecto.colapsadas) ? proyecto.colapsadas : []
+    );
+  }
+
+  function toggleColumnaColapsada(proyecto, estadoId) {
+    const set = columnasColapsadas(proyecto);
+    if (set.has(estadoId)) set.delete(estadoId);
+    else set.add(estadoId);
+    if (set.size) proyecto.colapsadas = [...set];
+    else delete proyecto.colapsadas;
+    saveProyectos();
+    renderProyectoTasks();
+  }
+
   function renderProyectoLista(proyecto, entries) {
     proyectoTasksList.innerHTML = "";
     // Sin diagrama no hay flechas: la columna "Bloqueadas" sobra
     const estados = proyectoConDiagrama(proyecto)
       ? LISTA_ESTADOS
       : LISTA_ESTADOS.filter((id) => id !== "bloqueada");
-    // En escritorio, el board reparte una columna por estado
+    const colapsadas = columnasColapsadas(proyecto);
+    // En escritorio, el board reparte una columna por estado: las desplegadas
+    // se reparten el ancho a partes iguales y las plegadas ocupan lo justo.
     proyectoTasksList.style.setProperty("--board-cols", estados.length);
+    proyectoTasksList.style.setProperty(
+      "--board-template",
+      estados
+        .map((id) => (colapsadas.has(id) ? "auto" : "minmax(0, 1fr)"))
+        .join(" ")
+    );
     const bloqueadas = proyectoBlockedIds(proyecto);
     const grupos = estados.map((id) => {
       const estado = TASK_STATES.find((s) => s.id === id);
@@ -5045,22 +5083,29 @@
       // Los grupos vacíos se pintan igual, marcados: en móvil el CSS los
       // esconde y en escritorio se quedan como columna vacía, para que las
       // demás no cambien de sitio.
+      const plegada = colapsadas.has(grupo.id);
       const wrap = document.createElement("section");
       wrap.className =
         "proyecto-group estado-" +
         grupo.id +
-        (grupo.items.length ? "" : " is-empty");
+        (grupo.items.length ? "" : " is-empty") +
+        (plegada ? " is-collapsed" : "");
       wrap.dataset.state = grupo.id; // lo lee el arrastre entre columnas
+      // El título pliega y despliega su columna
       const titulo = document.createElement("h2");
       titulo.className = "proyecto-group-title estado-" + grupo.id;
       titulo.textContent = grupo.nombre;
+      titulo.title = plegada ? "Desplegar columna" : "Plegar columna";
+      titulo.addEventListener("click", () =>
+        toggleColumnaColapsada(proyecto, grupo.id)
+      );
       const count = document.createElement("span");
       count.className = "proyecto-group-count";
       count.textContent = grupo.items.length;
       titulo.appendChild(count);
       // Crear una tarea que nazca ya en este estado. "Bloqueada" no se elige a
       // mano: ese lo decide el diagrama.
-      if (grupo.id !== "bloqueada") {
+      if (grupo.id !== "bloqueada" && !plegada) {
         const add = document.createElement("button");
         add.type = "button";
         add.className = "proyecto-group-add";
@@ -5068,7 +5113,10 @@
         const etiqueta = "Nueva tarea en " + taskStateName(grupo.id);
         add.title = etiqueta;
         add.setAttribute("aria-label", etiqueta);
-        add.addEventListener("click", () => openProyectoTaskNew(grupo.id));
+        add.addEventListener("click", (ev) => {
+          ev.stopPropagation(); // el "+" no pliega la columna
+          openProyectoTaskNew(grupo.id);
+        });
         titulo.appendChild(add);
       }
       const ul = document.createElement("ul");
@@ -5139,6 +5187,8 @@
       let bestDist = Infinity;
       container.querySelectorAll(".proyecto-group").forEach((col) => {
         if (col.dataset.state === "bloqueada") return;
+        // En una columna plegada no se ve dónde cae: primero se despliega
+        if (col.classList.contains("is-collapsed")) return;
         const r = col.getBoundingClientRect();
         if (!r.width || x < r.left || x > r.right) return;
         const dy = y < r.top ? r.top - y : y > r.bottom ? y - r.bottom : 0;

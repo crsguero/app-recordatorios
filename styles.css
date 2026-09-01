@@ -22,6 +22,10 @@
      del mismo color: `-bg` tiñe la tarjeta entera en Hoy y en Rutinas, y
      `-text` (más oscuro, para que contraste sobre fondo claro) pinta el nombre
      del proyecto en el byline y en la pestaña Proyectos. */
+  /* General: la categoría neutra, en gris. Su fondo es algo más oscuro que el
+     de la página (--bg) para que la tarjeta no se confunda con ella. */
+  --cat-general-bg: #e9ebef;
+  --cat-general-text: #4b5563;
   --cat-hogar-bg: #fff8e1;
   --cat-hogar-text: #a16207;
   --cat-personal-bg: #f3e8ff;
@@ -32,7 +36,9 @@
   --cat-profesional-text: #1d4ed8;
   --cat-relaciones-bg: #fff0e0;
   --cat-relaciones-text: #c2410c;
-  --cat-maternidad-bg: #fce7f3;
+  /* Maternidad comparte tono con las tareas de App lactancia: mismo asunto,
+     mismo color (lo usan las dos, `.task-item.is-lact` incluido). */
+  --cat-maternidad-bg: #fff1f6;
   --cat-maternidad-text: #be185d;
 }
 
@@ -433,12 +439,13 @@ body {
   width: 100%;
 }
 
-.fab-star {
+/* Interruptores del modal de creación (destacada, añadir a Hoy) */
+.fab-switch {
   width: 100%;
   padding: 2px 0 16px;
 }
 
-.fab-star .hoy-switch-text {
+.fab-switch .hoy-switch-text {
   font-size: 0.95rem;
   color: var(--text);
 }
@@ -1067,6 +1074,10 @@ body {
 /* Categoría del proyecto: los mismos colores que en Hoy, pero oscurecidos,
    porque aquí tiñen texto en vez de servir de fondo. Solo en el byline de sus
    tareas; en la pestaña Proyectos el título va en el color normal. */
+.task-project.cat-general,
+.proyecto-cat.cat-general {
+  color: var(--cat-general-text);
+}
 .task-project.cat-hogar,
 .proyecto-cat.cat-hogar {
   color: var(--cat-hogar-text);
@@ -1121,9 +1132,9 @@ body {
   background: #fff;
 }
 
-/* Tareas de App lactancia: fondo rosa sutil, agrupadas al principio */
+/* Tareas de App lactancia: el rosa de Maternidad, su misma categoría */
 .task-item.is-lact {
-  background: #fff1f6;
+  background: var(--cat-maternidad-bg);
 }
 
 /* El círculo (sin marcar) en blanco, para que no se confunda con el fondo */
@@ -1536,34 +1547,70 @@ body {
   display: none;
 }
 
-/* Colores sutiles por categoría: en Hoy (solo tareas temporales) y en las
-   rutinas, que usan las mismas categorías con los mismos colores */
+/* Colores sutiles por categoría: en Hoy (solo tareas temporales), en las
+   planificadas y en las repeticiones que generan (que llevan el color de la
+   categoría de su planificada, no el lila de `is-planned`) */
+.hoy-view-item.cat-general,
+.planned-item.cat-general,
+.task-item.cat-general {
+  background: var(--cat-general-bg);
+}
 .hoy-view-item.cat-hogar,
-.planned-item.cat-hogar {
+.planned-item.cat-hogar,
+.task-item.cat-hogar {
   background: var(--cat-hogar-bg);
 }
 .hoy-view-item.cat-personal,
-.planned-item.cat-personal {
+.planned-item.cat-personal,
+.task-item.cat-personal {
   background: var(--cat-personal-bg);
 }
 .hoy-view-item.cat-salud,
-.planned-item.cat-salud {
+.planned-item.cat-salud,
+.task-item.cat-salud {
   background: var(--cat-salud-bg);
 }
 .hoy-view-item.cat-profesional,
-.planned-item.cat-profesional {
+.planned-item.cat-profesional,
+.task-item.cat-profesional {
   background: var(--cat-profesional-bg);
 }
 .hoy-view-item.cat-relaciones,
-.planned-item.cat-relaciones {
+.planned-item.cat-relaciones,
+.task-item.cat-relaciones {
   background: var(--cat-relaciones-bg);
 }
 .hoy-view-item.cat-maternidad,
-.planned-item.cat-maternidad {
+.planned-item.cat-maternidad,
+.task-item.cat-maternidad {
   background: var(--cat-maternidad-bg);
 }
 
+/* Su 2ª línea (la fecha de la ocurrencia), en el color de la categoría */
+.task-item.cat-general .task-date {
+  color: var(--cat-general-text);
+}
+.task-item.cat-hogar .task-date {
+  color: var(--cat-hogar-text);
+}
+.task-item.cat-personal .task-date {
+  color: var(--cat-personal-text);
+}
+.task-item.cat-salud .task-date {
+  color: var(--cat-salud-text);
+}
+.task-item.cat-profesional .task-date {
+  color: var(--cat-profesional-text);
+}
+.task-item.cat-relaciones .task-date {
+  color: var(--cat-relaciones-text);
+}
+.task-item.cat-maternidad .task-date {
+  color: var(--cat-maternidad-text);
+}
+
 /* En las tareas con color de fondo, el círculo (sin marcar) en blanco */
+.hoy-view-item.cat-general .task-check:not(:checked),
 .hoy-view-item.cat-hogar .task-check:not(:checked),
 .hoy-view-item.cat-personal .task-check:not(:checked),
 .hoy-view-item.cat-salud .task-check:not(:checked),
@@ -1742,6 +1789,13 @@ textarea.proyecto-detail-name {
   display: none;
 }
 
+/* El título pliega y despliega su columna. Plegada, en móvil (grupos apilados)
+   solo se esconde su lista; en escritorio el título se pone en vertical y la
+   columna se encoge (más abajo, en la media query). */
+.proyecto-group.is-collapsed .task-list {
+  display: none;
+}
+
 .proyecto-group-title {
   display: flex;
   align-items: center;
@@ -1752,6 +1806,13 @@ textarea.proyecto-detail-name {
   text-transform: uppercase;
   letter-spacing: 0.03em;
   color: var(--text-soft);
+  cursor: pointer;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.proyecto-group.is-collapsed .proyecto-group-title {
+  margin-bottom: 0;
 }
 
 .proyecto-group-count {
@@ -1853,10 +1914,14 @@ textarea.proyecto-detail-name {
   }
 
   /* Una columna por estado. Son 5, o 4 si el proyecto no usa diagrama (ahí no
-     hay "Bloqueadas"): el número lo pone el render en --board-cols. */
+     hay "Bloqueadas"). El reparto lo escribe el render en --board-template:
+     las desplegadas a partes iguales y las plegadas con el ancho justo. */
   #proyecto-tasks-list:not([hidden]) {
     display: grid;
-    grid-template-columns: repeat(var(--board-cols, 5), minmax(0, 1fr));
+    grid-template-columns: var(
+      --board-template,
+      repeat(var(--board-cols, 5), minmax(0, 1fr))
+    );
     gap: 16px;
     flex: 1;
     min-height: 0;
@@ -1891,6 +1956,24 @@ textarea.proyecto-detail-name {
     min-height: 0;
     overflow-y: auto;
     padding: 2px 2px 4px;
+  }
+
+  /* Columna plegada: se queda con el ancho justo (el grid le da `auto`) y su
+     título se lee en vertical, de arriba abajo. */
+  #proyecto-tasks-list .proyecto-group.is-collapsed {
+    align-items: center;
+    padding: 12px 8px;
+  }
+
+  #proyecto-tasks-list .proyecto-group.is-collapsed .proyecto-group-title {
+    writing-mode: vertical-rl;
+    margin: 2px 0;
+    gap: 10px;
+  }
+
+  /* El número sí se lee en horizontal: girado no se entiende */
+  #proyecto-tasks-list .proyecto-group.is-collapsed .proyecto-group-count {
+    writing-mode: horizontal-tb;
   }
 }
 
