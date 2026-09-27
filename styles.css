@@ -696,6 +696,12 @@ body {
   font-weight: 700;
 }
 
+/* Subpágina de Rutinas (⚙️ → Planificadas): la sección que se trae ya lleva su
+   propia cabecera, así que esta solo sostiene el "‹ Rutinas" y va sin aire. */
+#repeticiones-config > .app-header {
+  padding: 0 0 4px;
+}
+
 .subtitle {
   color: var(--text-soft);
   font-size: 0.9rem;
@@ -1066,9 +1072,17 @@ body {
   white-space: nowrap;
 }
 
-/* Proyecto asignado, también en la 2ª línea */
+/* Proyecto asignado, también en la 2ª línea. Es un enlace al proyecto: sin
+   el azul ni el subrayado del navegador (el color lo pone su categoría). */
 .task-project {
   font-weight: 600;
+  color: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.task-project:hover {
+  text-decoration: underline;
 }
 
 /* Categoría del proyecto: los mismos colores que en Hoy, pero oscurecidos,
@@ -1382,6 +1396,13 @@ body {
 
 .hoy-view-section .task-list {
   gap: 8px;
+}
+
+/* Formulario de "Durante el día": la misma separación respecto a la lista que
+   en Agenda (allí la pone la lista; aquí, el formulario, porque es la única
+   sección de Hoy que lo lleva). */
+.hoy-dia-add-form {
+  margin-top: 10px;
 }
 
 .hoy-view-item {
@@ -1736,6 +1757,13 @@ body {
 .proyecto-detail-switch .hoy-switch-text {
   font-size: 0.85rem;
   color: var(--text);
+}
+
+/* Texto de un comentario del diagrama, en su modal */
+.proyecto-comment-input {
+  width: 100%;
+  resize: vertical;
+  line-height: 1.4;
 }
 
 /* Nombre del proyecto dentro de su modal de ajustes: aquí es un campo más,
@@ -2168,6 +2196,88 @@ textarea.proyecto-detail-name {
   z-index: 5;
 }
 
+/* ---------- Comentarios sueltos del diagrama ----------
+   Se colocan en cualquier punto del lienzo. Plegados son solo el icono; al
+   pulsarlo se abre el globo con el texto. */
+.comentario {
+  position: absolute;
+  z-index: 4; /* por encima de las flechas y de los post-it quietos */
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  max-width: 240px;
+}
+
+.comentario.is-dragging {
+  z-index: 6;
+}
+
+.comentario-chip {
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  font-size: 0.95rem;
+  line-height: 1;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  box-shadow: var(--shadow);
+  cursor: grab;
+  /* El gesto es del comentario: no debe convertirse en scroll de la página */
+  touch-action: none;
+}
+
+.comentario.is-dragging .comentario-chip {
+  cursor: grabbing;
+}
+
+.comentario-chip:hover {
+  border-color: var(--primary);
+}
+
+.comentario-globo {
+  padding: 10px 12px;
+  background: #fffbe8;
+  border: 1px solid #f0e4b8;
+  border-radius: 10px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.comentario-text {
+  font-size: 0.85rem;
+  line-height: 1.4;
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.comentario-acciones {
+  display: flex;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.comentario-accion {
+  padding: 0;
+  font-family: inherit;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--primary);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.comentario-accion.is-danger {
+  color: var(--danger);
+}
+
+.comentario-accion:hover {
+  text-decoration: underline;
+}
+
 /* Completada y En proceso tiñen la tarjeta entera (y llevan icono, no chip) */
 .postit.is-done {
   background: #eaf7ef;
@@ -2275,6 +2385,28 @@ textarea.proyecto-detail-name {
   word-break: break-word;
 }
 
+/* "+" de cada sección: crea un proyecto ya con esa sección puesta */
+.proyecto-sec-add {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  font-family: inherit;
+  font-size: 1rem;
+  font-weight: 400;
+  line-height: 1;
+  color: var(--text-soft);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.proyecto-sec-add:hover {
+  color: var(--primary);
+  border-color: var(--primary);
+}
+
 .proyecto-sec-count {
   flex: 0 0 auto;
   padding: 1px 8px;
@@ -2363,26 +2495,6 @@ textarea.proyecto-detail-name {
   background: var(--star-bg);
   border-radius: 10px;
   white-space: nowrap;
-}
-
-/* Devuelve un proyecto archivado al índice, desde su listado */
-.proyecto-unarchive {
-  flex: 0 0 auto;
-  padding: 6px 10px;
-  font-family: inherit;
-  font-size: 0.78rem;
-  font-weight: 600;
-  color: var(--primary);
-  background: transparent;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.proyecto-unarchive:hover {
-  background: var(--star-bg);
-  border-color: var(--primary);
 }
 
 /* Proyecto terminado: verde sutil, en el mismo sitio que los otros dos avisos.
@@ -2597,6 +2709,36 @@ textarea.proyecto-detail-name {
    de acento. Solo dentro de Planificadas (no afecta a las fechas de Mis tareas). */
 .planned-item .task-date {
   color: var(--primary);
+}
+
+/* --- Planificadas: previsión semanal --- */
+/* Formulario y lista son flex: `hidden` necesita ayuda al cambiar de tab */
+#planned-form[hidden],
+.planned-list[hidden],
+.planned-week[hidden] {
+  display: none;
+}
+
+.planned-week-day {
+  margin-bottom: 14px;
+}
+
+.planned-week-day-title {
+  margin: 0 0 6px 2px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-soft);
+}
+
+/* Tareas de App tareas en la previsión: solo se muestran, no se abren */
+.planned-item.is-external {
+  cursor: default;
+}
+
+.planned-week-none {
+  margin: 0 0 0 2px;
+  font-size: 0.85rem;
+  color: var(--done);
 }
 
 /* --- Estado vacío --- */
@@ -3017,11 +3159,29 @@ select.date-mode {
   height: 22px;
 }
 
+/* Editable en el sitio: aspecto de texto, y de campo solo al enfocarlo
+   (como el título del panel) */
 .subtask-text {
   flex: 1;
   min-width: 0;
   font-size: 0.95rem;
+  font-family: inherit;
+  line-height: 1.4;
+  color: var(--text);
   word-break: break-word;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  padding: 2px 6px;
+  margin: -2px -6px;
+  resize: none;
+  overflow: hidden;
+}
+
+.subtask-text:focus {
+  outline: none;
+  background: var(--card);
+  box-shadow: 0 0 0 2px var(--primary);
 }
 
 .subtask-item.is-done .subtask-text {
@@ -3145,38 +3305,6 @@ select.date-mode {
 #hoy-detail-cat-wrap {
   padding: 16px 0;
   border-bottom: 1px solid var(--border);
-}
-
-/* Ajustes de un proyecto: archivar y eliminar, uno al lado del otro */
-.proyecto-detail-acciones {
-  display: flex;
-  gap: 10px;
-  margin-top: 28px;
-}
-
-.proyecto-detail-acciones .detail-archive,
-.proyecto-detail-acciones .detail-delete {
-  flex: 1;
-  margin-top: 0;
-}
-
-/* Archivar solo lo saca del listado (no borra nada), así que va en neutro: el
-   único botón que debe leerse como peligroso es el de eliminar. */
-.detail-archive {
-  padding: 14px;
-  font-size: 1rem;
-  font-weight: 500;
-  color: var(--text);
-  background: transparent;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  cursor: pointer;
-  transition: background 0.15s ease, border-color 0.15s ease;
-}
-
-.detail-archive:hover {
-  background: var(--star-bg);
-  border-color: var(--primary);
 }
 
 .detail-delete {

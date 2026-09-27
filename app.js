@@ -22,6 +22,17 @@
   const recadosClearDone = document.getElementById("recados-clear-done");
   const recadosSummary = document.getElementById("recados-summary");
 
+  // Vista Compras (cuarta lista, igual que Recados)
+  const comprasForm = document.getElementById("compras-form");
+  const comprasInput = document.getElementById("compras-input");
+  const comprasList = document.getElementById("compras-list");
+  const comprasEmpty = document.getElementById("compras-empty");
+  const comprasDoneSection = document.getElementById("compras-done-section");
+  const comprasDoneList = document.getElementById("compras-done-list");
+  const comprasToggleDone = document.getElementById("compras-toggle-done");
+  const comprasClearDone = document.getElementById("compras-clear-done");
+  const comprasSummary = document.getElementById("compras-summary");
+
   // Vista Pendientes (tercera lista, igual que Recados)
   const pendientesForm = document.getElementById("pendientes-form");
   const pendientesInput = document.getElementById("pendientes-input");
@@ -37,14 +48,8 @@
   const proyectosListEl = document.getElementById("proyectos-list");
   const proyectosEmpty = document.getElementById("proyectos-empty");
   const proyectosAddBtn = document.getElementById("proyectos-add-btn");
-  // Listado de archivados: la tercera página de la pestaña Proyectos
-  const proyectosArchEl = document.getElementById("proyectos-archivados");
-  const proyectosArchList = document.getElementById("proyectos-archivados-list");
-  const proyectosArchEmpty = document.getElementById(
-    "proyectos-archivados-empty"
-  );
-  const proyectosArchBtn = document.getElementById("proyectos-archivados-btn");
-  const proyectosArchBack = document.getElementById("proyectos-archivados-back");
+  // Pestañas del índice: una por estado del proyecto
+  const proyectosTabsEl = document.getElementById("proyectos-tabs");
   // Página de un proyecto (sus tareas), dentro de la misma pestaña
   const proyectosIndexEl = document.getElementById("proyectos-index");
   const proyectosDetailEl = document.getElementById("proyectos-detail");
@@ -65,7 +70,7 @@
   const proyectoTasksCanvas = document.getElementById("proyecto-tasks-canvas");
   let proyectoOpenId = null; // proyecto cuya página de tareas está abierta
   let proyectoTasksTab = "grafo"; // "grafo" | "lista" (no se persiste)
-  let proyectosArchivadosOpen = false; // se está viendo el listado de archivados
+  let proyectosTab = "curso"; // pestaña (estado) que se ve en el índice
 
   // Vista Rutinas: tareas automáticas (planificadas + lactancia)
   const rutinasList = document.getElementById("rutinas-list");
@@ -92,10 +97,21 @@
   );
   const repeticionesSummary = document.getElementById("repeticiones-summary");
 
+  // Vista "En espera": tareas, recados y pendientes con una fecha futura. No
+  // tiene array propio: lee de las tres listas y las junta en una sola.
+  const esperaList = document.getElementById("espera-list");
+  const esperaEmpty = document.getElementById("espera-empty");
+  const esperaDoneSection = document.getElementById("espera-done-section");
+  const esperaDoneList = document.getElementById("espera-done-list");
+  const esperaToggleDone = document.getElementById("espera-toggle-done");
+  const esperaClearDone = document.getElementById("espera-clear-done");
+  const esperaSummary = document.getElementById("espera-summary");
+
   // Etiqueta de procedencia que acompaña a una tarea en su 2ª línea (el
   // byline): va en singular, porque nombra a esa tarea y no a la lista entera.
   const ORIGEN = {
     tareas: "Tarea",
+    compras: "Compra",
     recados: "Recado",
     pendientes: "Pendiente",
     rutinas: "Rutina",
@@ -112,7 +128,7 @@
     items: () => tasks,
     setItems: (v) => (tasks = v),
     save: () => save(),
-    filter: (t) => !t.sourcePlannedId && !isTaskOnHold(t),
+    filter: (t) => !t.sourcePlannedId && !isTaskHidden(t),
     listEl: list,
     doneListEl: doneList,
     emptyEl: emptyState,
@@ -131,8 +147,9 @@
     // Las completadas pierden el destacado, así que salen solas de aquí.
     // "Añadir a Hoy" no las saca: se siguen viendo aquí y además en "Durante
     // el día", igual que una tarea normal fijada sigue en su lista.
-    // Las bloqueadas por otra tarea de su proyecto sí: aún no tocan.
-    filter: (t) => !isTaskOnHold(t) && (!!t.sourcePlannedId || !!t.starred),
+    // Las bloqueadas por otra tarea de su proyecto sí: aún no tocan. Y las que
+    // esperan fecha tampoco, que para eso está "En espera".
+    filter: (t) => !isTaskHidden(t) && (!!t.sourcePlannedId || !!t.starred),
     listEl: rutinasList,
     doneListEl: rutinasDoneList,
     emptyEl: rutinasEmpty,
@@ -182,7 +199,7 @@
     save: () => save(),
     // Igual que en "Mis tareas": "Añadir a Hoy" no saca la repetición de aquí
     // (se ve en las dos partes), y las bloqueadas por su proyecto aún no tocan.
-    filter: (t) => !isTaskOnHold(t) && !!t.sourcePlannedId,
+    filter: (t) => !isTaskHidden(t) && !!t.sourcePlannedId,
     listEl: repeticionesList,
     doneListEl: repeticionesDoneList,
     emptyEl: repeticionesEmpty,
@@ -199,7 +216,7 @@
     items: () => recados,
     setItems: (v) => (recados = v),
     save: () => saveRecados(),
-    filter: (t) => !isTaskOnHold(t),
+    filter: (t) => !isTaskHidden(t),
     listEl: recadosList,
     doneListEl: recadosDoneList,
     emptyEl: recadosEmpty,
@@ -214,13 +231,66 @@
     items: () => pendientes,
     setItems: (v) => (pendientes = v),
     save: () => savePendientes(),
-    filter: (t) => !isTaskOnHold(t),
+    filter: (t) => !isTaskHidden(t),
     listEl: pendientesList,
     doneListEl: pendientesDoneList,
     emptyEl: pendientesEmpty,
     doneSectionEl: pendientesDoneSection,
     toggleBtn: pendientesToggleDone,
     summaryEl: pendientesSummary,
+    doneVisible: false,
+    plannedRank: false,
+  };
+  const ctxCompras = {
+    noun: "compra",
+    items: () => compras,
+    setItems: (v) => (compras = v),
+    save: () => saveCompras(),
+    filter: (t) => !isTaskHidden(t),
+    listEl: comprasList,
+    doneListEl: comprasDoneList,
+    emptyEl: comprasEmpty,
+    doneSectionEl: comprasDoneSection,
+    toggleBtn: comprasToggleDone,
+    summaryEl: comprasSummary,
+    doneVisible: false,
+    plannedRank: false,
+  };
+  // "En espera": lo que espera a que llegue su fecha, venga de donde venga.
+  // Las nativas salen de `tasks` y las otras dos listas entran por
+  // `extraPending`, como los recados destacados en "Mis tareas". Los objetos
+  // son los reales, así que se editan y completan desde aquí igual que en su
+  // lista, y al cumplirse la fecha desaparecen solas de esta vista.
+  const ctxEspera = {
+    noun: "tarea",
+    items: () => tasks,
+    setItems: (v) => (tasks = v),
+    save: () => save(),
+    filter: (t) => isTaskWaiting(t),
+    extraPending: () =>
+      recados
+        .filter(isTaskWaiting)
+        .concat(pendientes.filter(isTaskWaiting), compras.filter(isTaskWaiting)),
+    // Lista mixta: cada una dice de qué lista viene
+    originOf: (t) =>
+      recados.indexOf(t) !== -1
+        ? ORIGEN.recados
+        : compras.indexOf(t) !== -1
+        ? ORIGEN.compras
+        : pendientes.indexOf(t) !== -1
+        ? ORIGEN.pendientes
+        : ORIGEN.tareas,
+    // Por fecha, la más cercana primero: es el orden en que van a volver
+    sortPending: (arr) =>
+      arr
+        .slice()
+        .sort((a, b) => (a.dateStart || "").localeCompare(b.dateStart || "")),
+    listEl: esperaList,
+    doneListEl: esperaDoneList,
+    emptyEl: esperaEmpty,
+    doneSectionEl: esperaDoneSection,
+    toggleBtn: esperaToggleDone,
+    summaryEl: esperaSummary,
     doneVisible: false,
     plannedRank: false,
   };
@@ -245,6 +315,8 @@
     if (item) return { item: item, ctx: ctxRecados };
     item = pendientes.find((t) => t.id === id);
     if (item) return { item: item, ctx: ctxPendientes };
+    item = compras.find((t) => t.id === id);
+    if (item) return { item: item, ctx: ctxCompras };
     item = sinTipo.find((t) => t.id === id);
     if (item) return { item: item, ctx: ctxSinTipo };
     return null;
@@ -272,6 +344,7 @@
   const FB_KEY_PLANNED = "planned"; // recordatorios/planned = tareas planificadas
   const FB_KEY_RECADOS = "recados"; // recordatorios/recados = segunda lista
   const FB_KEY_PENDIENTES = "pendientes"; // recordatorios/pendientes = tercera lista
+  const FB_KEY_COMPRAS = "compras"; // recordatorios/compras = cuarta lista
   // recordatorios/sinTipo = tareas sin tipo (solo dentro de su proyecto)
   const FB_KEY_SIN_TIPO = "sinTipo";
   const FB_KEY_PROYECTOS = "proyectos"; // recordatorios/proyectos = proyectos (título + enlace)
@@ -292,8 +365,9 @@
   /* ---------- Integración con App lactancia (misma base de datos) ----------
      Mostramos en la lista "Tareas" las tareas de App lactancia (Mamá › Tareas),
      que viven en la raíz "lactancia". No son nuestras: solo las leemos y, al
-     completar/borrar, reescribimos su nodo. lactancia ya escucha esos nodos y
-     refleja el cambio solo. Esquema de cada tarea allí:
+     completar/borrar, escribimos la tarea concreta que cambia (nunca el nodo
+     entero: eso deshacía cambios recientes de la propia App lactancia).
+     lactancia ya escucha esos nodos y refleja el cambio solo. Esquema allí:
      { id, texto, hecha, creada, completada?, auto?, fecha?, desde?, banoFecha?, extra? } */
   const LACT_ROOT = "lactancia";
   // La plantilla de "Durante el día" de lactancia se lee (no se escribe) por su
@@ -304,6 +378,16 @@
     "tareas-extraccion",
   ];
   let lactRaw = { "tareas-mama": [], "tareas-antes-extraccion": [] }; // copias vivas de la nube
+  const lactRemoto = {};   // último snapshot de cada nodo, tal cual llegó
+  const lactSynced = {};   // nodo -> true cuando ya ha llegado su primer snapshot
+  let lactOutbox = [];     // cambios hechos sin conexión, pendientes de subir
+  const IDB_KEY_LACT_OUTBOX = "lactOutbox";
+  /* ¿Podemos escribir en un nodo de lactancia fiándonos de lo que tenemos en
+     memoria? Solo con el websocket vivo (fbOnline) y el nodo ya recibido. Sin
+     eso, el cambio va a `lactOutbox` y se aplica al reconectar sobre datos
+     frescos: escribir el array entero desde una copia vieja deshacía lo que
+     acabara de hacer la propia App lactancia. */
+  function lactFiable(node) { return fbReady && fbOnline && !!lactSynced[node]; }
 
   /* ---------- Integración con App tareas (misma base de datos) ----------
      App tareas (titulada "Rutinas") es dueña de la raíz: sus tareas están en el
@@ -313,6 +397,11 @@
      tienen id estable: se identifican por su índice en el array vivo `atRaw`. */
   const AT_ROOT = "tasks";
   let atRaw = []; // copia viva del array raíz (ambos owners: cristina y fernando)
+  // Plantillas de App tareas (raíz `detail-tasks`: {title, repeat, weekday
+  // '0'=Dom…'6'=Sáb, owner, enabled}). Solo lectura: las semanales de Cristina
+  // se muestran en la previsión semanal de Planificadas.
+  const AT_DETAIL_ROOT = "detail-tasks";
+  let atDetailRaw = [];
 
   /* ---------- Respaldo local (IndexedDB) ----------
      Usamos IndexedDB en lugar de localStorage porque los archivos abiertos
@@ -326,6 +415,7 @@
   const IDB_KEY_PLANNED = "planned";
   const IDB_KEY_RECADOS = "recados";
   const IDB_KEY_PENDIENTES = "pendientes";
+  const IDB_KEY_COMPRAS = "compras";
   const IDB_KEY_SIN_TIPO = "sinTipo";
   const IDB_KEY_PROYECTOS = "proyectos";
   const IDB_KEY_PRO_SECCIONES = "proyectoSecciones";
@@ -337,11 +427,13 @@
   const IDB_KEY_DELETED = "deletedIds";
   let db = null;
   let fbReady = false; // true cuando Firebase está autenticado y escuchando
+  let fbOnline = false; // true mientras el websocket con la nube está vivo
   let appStarted = false; // evita arrancar la app dos veces
 
   let tasks = [];
   let recados = []; // segunda lista (misma funcionalidad, sin planificadas auto)
   let pendientes = []; // tercera lista (igual que recados)
+  let compras = []; // cuarta lista (igual que recados)
   // Tareas sin tipo: solo viven en su proyecto, fuera de las listas de tareas
   let sinTipo = [];
   // Proyectos: {id, text, url, category, sectionId}. No se completan. El orden
@@ -493,6 +585,18 @@
       fdb
         .ref(FB_ROOT + "/" + FB_KEY_RECADOS)
         .set(recados && recados.length ? recados : null)
+        .catch((e) =>
+          showError("Al sincronizar: " + (e && e.message ? e.message : e))
+        );
+    }
+  }
+
+  function saveCompras() {
+    if (db) idbSet(IDB_KEY_COMPRAS, compras).catch(() => {});
+    if (fbReady) {
+      fdb
+        .ref(FB_ROOT + "/" + FB_KEY_COMPRAS)
+        .set(compras && compras.length ? compras : null)
         .catch((e) =>
           showError("Al sincronizar: " + (e && e.message ? e.message : e))
         );
@@ -1105,30 +1209,101 @@
       .filter((x) => x.hecha)
       .map((x) => lactToItem(x, "tareas-mama"));
   }
-  // Escribe de vuelta el array completo de un nodo de lactancia (optimista + nube).
+  // Refresca la copia en memoria y repinta (parte optimista, sin tocar la nube).
   function writeLact(node, arr) {
     lactRaw[node] = arr;
-    if (fbReady) {
-      fdb
-        .ref(LACT_ROOT + "/" + node)
-        .set(arr && arr.length ? arr : null)
-        .catch((e) =>
-          showError("Al sincronizar lactancia: " + (e && e.message ? e.message : e))
-        );
-    }
     renderRutinas();
     renderHoyView(); // la sección de la extracción también las muestra
   }
+  function saveLactOutbox() {
+    if (db) idbSet(IDB_KEY_LACT_OUTBOX, lactOutbox).catch(() => {});
+  }
+  // Resuelve una operación contra el último snapshot recibido y la escribe.
+  // Solo se llama con lactFiable(node), así que índices y nube van a la par.
+  function aplicarOpLact(o) {
+    const base = lactRemoto[o.node] || [];
+    if (o.op === "patch") {
+      const i = base.findIndex((x) => x && x.id === o.id);
+      if (i === -1) return;
+      // update() con un campo a null lo borra: así se limpia `completada`.
+      fdb
+        .ref(LACT_ROOT + "/" + o.node + "/" + i)
+        .update(o.patch)
+        .catch((e) =>
+          showError("Al sincronizar lactancia: " + (e && e.message ? e.message : e))
+        );
+      lactRemoto[o.node] = base.map((x, j) =>
+        j === i ? Object.assign({}, x, o.patch) : x
+      );
+    } else if (o.op === "remove") {
+      if (!base.some((x) => x && x.id === o.id)) return;
+      // Borrar desplaza índices, así que aquí sí hay que reescribir el nodo.
+      const arr = base.filter((x) => !(x && x.id === o.id));
+      fdb
+        .ref(LACT_ROOT + "/" + o.node)
+        .set(arr.length ? arr : null)
+        .catch((e) =>
+          showError("Al sincronizar lactancia: " + (e && e.message ? e.message : e))
+        );
+      lactRemoto[o.node] = arr;
+    }
+  }
+  function enviarLact(o) {
+    if (!fbReady) return;
+    if (!lactFiable(o.node)) {
+      lactOutbox.push(o);
+      saveLactOutbox();
+      return;
+    }
+    aplicarOpLact(o);
+  }
+  // Al reconectar: sube los cambios pendientes uno a uno sobre datos frescos.
+  function flushLactOutbox() {
+    if (!lactOutbox.length) return;
+    const quedan = [];
+    lactOutbox.forEach((o) => {
+      if (!lactFiable(o.node)) {
+        quedan.push(o);
+        return;
+      }
+      aplicarOpLact(o); // si la tarea ya no existe, se descarta
+    });
+    lactOutbox = quedan;
+    saveLactOutbox();
+  }
+  // Superpone al snapshot recién llegado los cambios locales aún sin confirmar.
+  function aplicarLactOutbox(node, arr) {
+    let out = arr;
+    lactOutbox.forEach((o) => {
+      if (o.node !== node) return;
+      if (o.op === "patch") {
+        out = out.map((x) =>
+          x && x.id === o.id ? Object.assign({}, x, o.patch) : x
+        );
+      } else if (o.op === "remove") {
+        out = out.filter((x) => !(x && x.id === o.id));
+      }
+    });
+    return out;
+  }
   function toggleLactDone(ref) {
-    const arr = (lactRaw[ref.node] || []).map((x) => x); // copia superficial del array
-    const it = arr.find((x) => x.id === ref.id);
+    const arr = lactRaw[ref.node] || [];
+    const it = arr.find((x) => x && x.id === ref.id);
     if (!it) return;
-    it.hecha = !it.hecha;
-    it.completada = it.hecha ? Date.now() : null; // esquema de lactancia (ms)
-    writeLact(ref.node, arr);
+    const hecha = !it.hecha;
+    const patch = { hecha: hecha, completada: hecha ? Date.now() : null }; // esquema de lactancia (ms)
+    writeLact(
+      ref.node,
+      arr.map((x) => (x && x.id === ref.id ? Object.assign({}, x, patch) : x))
+    );
+    enviarLact({ op: "patch", node: ref.node, id: ref.id, patch: patch });
   }
   function deleteLact(ref) {
-    writeLact(ref.node, (lactRaw[ref.node] || []).filter((x) => x.id !== ref.id));
+    writeLact(
+      ref.node,
+      (lactRaw[ref.node] || []).filter((x) => !(x && x.id === ref.id))
+    );
+    enviarLact({ op: "remove", node: ref.node, id: ref.id });
   }
 
   /* ---------- Tareas de App tareas › Cristina (en Rutinas) ---------- */
@@ -1268,6 +1443,8 @@
   function renderOpenTask() {
     const e = findTaskEntry(openTaskId);
     if (e) renderList(e.ctx);
+    // Cambiar la fecha mete la tarea en "En espera" o la saca de ahí
+    renderList(ctxEspera);
     // La fecha "En fecha" coloca la tarea en un día de la Agenda y, si es hoy,
     // en la sección "Durante el día" de Hoy.
     renderAgenda();
@@ -1476,6 +1653,41 @@
   }
 
   /* ---------- Subtareas ---------- */
+
+  // Texto editable de una subtarea: se lee como texto y se edita en el sitio,
+  // igual que el título del panel. Guarda al escribir (nunca vacío), Enter
+  // termina y, si se deja vacío, al salir recupera el texto guardado. Lo
+  // comparten el panel de tareas y el de Hoy; `onSave` guarda en cada uno.
+  function subtaskTextEl(sub, onSave) {
+    const el = document.createElement("textarea");
+    el.className = "subtask-text";
+    el.rows = 1;
+    el.maxLength = 200;
+    el.value = sub.text;
+    el.setAttribute("aria-label", "Editar subtarea");
+    el.addEventListener("input", () => {
+      autoGrow(el);
+      const value = el.value.trim();
+      if (!value) return; // no guardar vacío
+      sub.text = value;
+      onSave();
+    });
+    el.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        el.blur();
+      }
+    });
+    el.addEventListener("blur", () => {
+      if (el.value.trim()) return;
+      el.value = sub.text;
+      autoGrow(el);
+    });
+    // La altura, ya en el DOM y con el panel visible (si no, scrollHeight es 0)
+    requestAnimationFrame(() => autoGrow(el));
+    return el;
+  }
+
   function renderSubtasks(task) {
     detailSubtasks.innerHTML = "";
     const subs = task.subtasks || [];
@@ -1490,9 +1702,7 @@
       check.setAttribute("aria-label", "Completar subtarea");
       check.addEventListener("change", () => toggleSubtask(sub.id));
 
-      const span = document.createElement("span");
-      span.className = "subtask-text";
-      span.textContent = sub.text;
+      const span = subtaskTextEl(sub, saveOpenTask);
 
       const del = document.createElement("button");
       del.type = "button";
@@ -1865,6 +2075,7 @@
     tareas: () => ctxTareas,
     recados: () => ctxRecados,
     pendientes: () => ctxPendientes,
+    compras: () => ctxCompras,
     sinTipo: () => ctxSinTipo,
   };
 
@@ -1876,6 +2087,7 @@
     if (!e || e.item.sourcePlannedId) return null; // copia de una rutina
     if (e.ctx === ctxRecados) return "recados";
     if (e.ctx === ctxPendientes) return "pendientes";
+    if (e.ctx === ctxCompras) return "compras";
     if (e.ctx === ctxTareas) return "tareas";
     if (e.ctx === ctxSinTipo) return "sinTipo";
     return null;
@@ -1991,13 +2203,17 @@
     none.value = "";
     none.textContent = "Sin proyecto";
     detailProject.appendChild(none);
-    // Los archivados no se ofrecen, salvo que sea el de esta misma tarea (si
-    // no, el selector saldría en blanco y perdería el proyecto al tocarlo)
+    // Los cerrados (completados o abandonados) no se ofrecen, salvo que sea el
+    // de esta misma tarea (si no, el selector saldría en blanco y perdería el
+    // proyecto al tocarlo)
     proyectos.forEach((p) => {
-      if (p.archived && p.id !== task.projectId) return;
+      const cerrado = proyectoCerrado(p);
+      if (cerrado && p.id !== task.projectId) return;
       const opt = document.createElement("option");
       opt.value = p.id;
-      opt.textContent = p.text + (p.archived ? " (archivado)" : "");
+      opt.textContent =
+        p.text +
+        (cerrado ? " (" + proyectoEstadoNombre(proyectoEstado(p)) + ")" : "");
       detailProject.appendChild(opt);
     });
     detailProject.value = taskProjectName(task) ? task.projectId : "";
@@ -2025,6 +2241,61 @@
   const PROJECT_STATES_MANUAL = ["proceso", "espera", "descartada"];
   function esEstadoManual(v) {
     return PROJECT_STATES_MANUAL.indexOf(v) !== -1;
+  }
+
+  /* ---------- Estado de un proyecto ----------
+     Cada proyecto está en uno de estos estados, y el índice los reparte en una
+     pestaña por estado. Se guarda en `status`; sin él (lo normal, y todos los
+     proyectos de antes) cuenta como "En curso". */
+  const PROYECTO_ESTADOS = [
+    {
+      id: "curso",
+      name: "En curso",
+      vacio: "No hay proyectos en curso. ¡Añade uno con el botón + ! 🎉",
+    },
+    { id: "espera", name: "En espera", vacio: "No hay proyectos en espera." },
+    { id: "aparcado", name: "Aparcado", vacio: "No hay proyectos aparcados." },
+    {
+      id: "abandonado",
+      name: "Abandonado",
+      vacio: "No hay proyectos abandonados.",
+    },
+    {
+      id: "completado",
+      name: "Completado",
+      vacio: "No hay proyectos completados.",
+    },
+  ];
+
+  function proyectoEstado(p) {
+    const s = p && p.status;
+    return PROYECTO_ESTADOS.some((e) => e.id === s) ? s : "curso";
+  }
+
+  function proyectoEstadoNombre(id) {
+    const e = PROYECTO_ESTADOS.find((x) => x.id === id);
+    return e ? e.name : "";
+  }
+
+  // Proyectos cerrados: ya no se les asignan tareas nuevas
+  function proyectoCerrado(p) {
+    const s = proyectoEstado(p);
+    return s === "completado" || s === "abandonado";
+  }
+
+  // Migración: el archivo de proyectos desapareció al llegar los estados, y lo
+  // que estaba archivado pasa a "Completado". Devuelve true si ha cambiado
+  // algo, para que quien la llame lo guarde.
+  function migrarArchivados(lista) {
+    let cambiado = false;
+    (lista || []).forEach((p) => {
+      if (p && p.archived) {
+        if (!p.status) p.status = "completado";
+        delete p.archived;
+        cambiado = true;
+      }
+    });
+    return cambiado;
   }
 
   // ¿El proyecto usa la vista de diagrama? Es lo normal: solo está apagada si
@@ -2073,6 +2344,24 @@
   // descartadas. Es el filtro que usan todas las listas de tareas.
   function isTaskOnHold(task) {
     return isTaskParked(task) || isTaskBlocked(task);
+  }
+
+  // ¿Espera a que llegue una fecha? Es lo que reúne la pestaña "En espera":
+  //  - "En fecha"    → hasta ese día
+  //  - "A partir de" → hasta ese día
+  //  - "Entre"       → hasta la fecha de inicio (la de fin solo es el límite)
+  // "Antes de" no espera nada: es un plazo, se puede hacer ya.
+  function isTaskWaiting(task) {
+    if (!task || task.done || task._lact || task._at) return false;
+    const mode = task.dateMode;
+    if (mode !== "on" && mode !== "from" && mode !== "between") return false;
+    return !!task.dateStart && !isReached(task.dateStart);
+  }
+
+  // Lo que no sale de las listas normales: en espera de fecha, o retenido por
+  // su proyecto (bloqueado, en espera o descartado).
+  function isTaskHidden(task) {
+    return isTaskWaiting(task) || isTaskOnHold(task);
   }
 
   function taskStateOf(task, bloqueadas) {
@@ -2514,11 +2803,21 @@
         dateLine.appendChild(originEl);
       }
       if (project) {
-        // Va en el color de su categoría (o en el color suave, si no tiene)
+        // Va en el color de su categoría (o en el color suave, si no tiene).
+        // Es un enlace al proyecto: el href deja abrirlo en otra pestaña, pero
+        // el clic normal va por goToProyecto, que además elige diagrama o lista.
         addSep();
-        const projectEl = document.createElement("span");
+        const projectEl = document.createElement("a");
         projectEl.className = "task-project" + proyectoCatClass(project);
         projectEl.textContent = project.text;
+        projectEl.href = "#proyectos/" + project.id;
+        projectEl.draggable = false; // que no se arrastre el enlace en vez de la tarea
+        projectEl.addEventListener("click", (e) => {
+          if (e.metaKey || e.ctrlKey || e.shiftKey) return; // otra pestaña/ventana
+          e.preventDefault();
+          e.stopPropagation(); // si no, abriría también el panel de la tarea
+          goToProyecto(project.id);
+        });
         dateLine.appendChild(projectEl);
       }
       if (dateText) {
@@ -2591,22 +2890,7 @@
       main.appendChild(text);
 
       // Segunda línea con la repetición
-      let repeatLine = "";
-      if (item.repeat === "weekly" && item.repeatDay) {
-        repeatLine = repeatPhrase(item.repeatDay);
-      } else if (item.repeat === "monthly" && item.repeatDom) {
-        repeatLine = "Todos los " + item.repeatDom + " de cada mes";
-      } else if (item.repeat === "yearly" && item.repeatMonth && item.repeatDom) {
-        repeatLine =
-          "Todos los " +
-          item.repeatDom +
-          " de " +
-          MONTH_NAMES[Number(item.repeatMonth) - 1];
-      } else if (item.repeat === "biennial" && item.repeatStart) {
-        repeatLine = "Cada dos años desde el " + formatDate(item.repeatStart);
-      } else if (item.repeat === "quarterly" && item.repeatStart) {
-        repeatLine = "Cada tres meses desde el " + formatDate(item.repeatStart);
-      }
+      const repeatLine = plannedRepeatLine(item);
       if (repeatLine) {
         const line = document.createElement("span");
         line.className = "task-date";
@@ -2618,7 +2902,129 @@
       container.appendChild(li);
     });
     if (empty) empty.hidden = planned.length !== 0;
+    applyPlannedTab();
     updateNavCounts();
+  }
+
+  // Texto de la repetición ("Todos los lunes", "Todos los 3 de marzo", …)
+  function plannedRepeatLine(item) {
+    if (item.repeat === "weekly" && item.repeatDay) {
+      return repeatPhrase(item.repeatDay);
+    } else if (item.repeat === "monthly" && item.repeatDom) {
+      return "Todos los " + item.repeatDom + " de cada mes";
+    } else if (item.repeat === "yearly" && item.repeatMonth && item.repeatDom) {
+      return (
+        "Todos los " +
+        item.repeatDom +
+        " de " +
+        MONTH_NAMES[Number(item.repeatMonth) - 1]
+      );
+    } else if (item.repeat === "biennial" && item.repeatStart) {
+      return "Cada dos años desde el " + formatDate(item.repeatStart);
+    } else if (item.repeat === "quarterly" && item.repeatStart) {
+      return "Cada tres meses desde el " + formatDate(item.repeatStart);
+    }
+    return "";
+  }
+
+  /* ---------- Previsión semanal de Planificadas ----------
+     Tab "Previsión semanal": de lunes a domingo, las planificadas
+     "Semanalmente" agrupadas por su día (`repeatDay`). Sin fechas: es una
+     semana tipo. Solo lectura. */
+  let plannedTab = "lista";
+  const WEEKDAY_NAMES = [
+    "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo",
+  ];
+
+  function applyPlannedTab() {
+    const isWeek = plannedTab === "semana";
+    const tabs = document.getElementById("planned-tabs");
+    if (tabs) {
+      tabs.querySelectorAll(".task-tab").forEach((b) => {
+        const active = b.dataset.tab === plannedTab;
+        b.classList.toggle("is-active", active);
+        b.setAttribute("aria-selected", active ? "true" : "false");
+      });
+    }
+    const form = document.getElementById("planned-form");
+    const list = document.getElementById("planned-list");
+    const empty = document.getElementById("planned-empty");
+    const week = document.getElementById("planned-week");
+    if (form) form.hidden = isWeek;
+    if (list) list.hidden = isWeek;
+    if (empty && isWeek) empty.hidden = true;
+    else if (empty) empty.hidden = planned.length !== 0;
+    if (week) week.hidden = !isWeek;
+    if (isWeek) renderPlannedWeek();
+  }
+
+  function renderPlannedWeek() {
+    const daysEl = document.getElementById("planned-week");
+    if (!daysEl) return;
+
+    daysEl.innerHTML = "";
+    for (let i = 0; i < 7; i++) {
+      const day = document.createElement("section");
+      day.className = "planned-week-day";
+
+      const h = document.createElement("h3");
+      h.className = "planned-week-day-title";
+      h.textContent = WEEKDAY_NAMES[i];
+      day.appendChild(h);
+
+      // Nuestras (repeatDay 1=Lun…7=Dom) y luego las de App tareas
+      // (weekday '0'=Dom…'6'=Sáb; solo Cristina y activadas).
+      const own = planned.filter(
+        (p) => p.repeat === "weekly" && Number(p.repeatDay) === i + 1
+      );
+      const ext = atDetailRaw.filter(
+        (t) =>
+          atIsCristina(t) &&
+          t.enabled !== false &&
+          t.repeat === "weekly" &&
+          t.weekday !== "" &&
+          t.weekday != null &&
+          (Number(t.weekday) === 0 ? 7 : Number(t.weekday)) === i + 1
+      );
+      if (!own.length && !ext.length) {
+        const none = document.createElement("p");
+        none.className = "planned-week-none";
+        none.textContent = "Sin tareas";
+        day.appendChild(none);
+      } else {
+        const ul = document.createElement("ul");
+        ul.className = "planned-list";
+        const addRow = (label, category, byline, onClick) => {
+          const li = document.createElement("li");
+          li.className =
+            "planned-item" +
+            (category ? " cat-" + category : "") +
+            (onClick ? "" : " is-external");
+          if (onClick) li.addEventListener("click", onClick);
+          const main = document.createElement("div");
+          main.className = "planned-main";
+          const text = document.createElement("span");
+          text.className = "planned-text";
+          text.textContent = label;
+          main.appendChild(text);
+          if (byline) {
+            const line = document.createElement("span");
+            line.className = "task-date";
+            line.textContent = byline;
+            main.appendChild(line);
+          }
+          li.appendChild(main);
+          ul.appendChild(li);
+        };
+        own.forEach((item) =>
+          addRow(item.text, item.category, "", () => openPlannedNote(item.id))
+        );
+        // Las de App tareas no se editan aquí: sin click
+        ext.forEach((t) => addRow(t.title || "", t.category, "App tareas", null));
+        day.appendChild(ul);
+      }
+      daysEl.appendChild(day);
+    }
   }
 
   function renderList(ctx) {
@@ -2643,7 +3049,12 @@
     const extDone = ctx.externalDone ? ctx.externalDone() : [];
     // Items de otra lista que se muestran aquí (recados destacados), al final.
     const extraPending = ctx.extraPending ? ctx.extraPending() : [];
-    const pendingAll = extPending.concat(pendingNativas, extraPending);
+    // Orden propio de la lista, si lo tiene (En espera: por fecha). Si no, el
+    // de siempre: externas, nativas y al final las prestadas de otra lista.
+    const pendingJuntas = extPending.concat(pendingNativas, extraPending);
+    const pendingAll = ctx.sortPending
+      ? ctx.sortPending(pendingJuntas)
+      : pendingJuntas;
     // Tabs: filtran la lista de pendientes. El resumen y las completadas
     // siguen contando la lista entera.
     const tabValue = ctx.tabFilter || "all";
@@ -2726,21 +3137,27 @@
      lateral en escritorio y menú "Más" en móvil). */
   function navCounts() {
     const pend = (arr) =>
-      arr.filter((t) => !t.done && !isTaskOnHold(t)).length;
+      arr.filter((t) => !t.done && !isTaskHidden(t)).length;
+    const esperando = (arr) => arr.filter(isTaskWaiting).length;
     return {
       tareas: tasks.filter(
-        (t) => !t.sourcePlannedId && !t.done && !isTaskOnHold(t)
+        (t) => !t.sourcePlannedId && !t.done && !isTaskHidden(t)
       ).length,
+      compras: pend(compras),
       recados: pend(recados),
+      espera:
+        esperando(tasks) +
+        esperando(recados) +
+        esperando(pendientes) +
+        esperando(compras),
       // Rutinas: las mismas pendientes que pinta su lista (repeticiones
       // propias + tareas automáticas de otras apps), por eso reusa su contexto.
       repeticiones:
         tasks.filter((t) => !t.done && ctxRepeticiones.filter(t)).length +
         ctxRepeticiones.externalPending().length,
       pendientes: pend(pendientes),
-      // Los proyectos no se completan; los archivados no cuentan
-      proyectos: proyectos.filter((p) => !p.archived).length,
-      planificadas: planned.length, // las rutinas no se completan
+      // Solo los que están en curso: el resto no es trabajo abierto
+      proyectos: proyectos.filter((p) => proyectoEstado(p) === "curso").length,
     };
   }
 
@@ -2764,6 +3181,7 @@
 
   function render() {
     renderList(ctxTareas);
+    renderList(ctxEspera);
   }
   // Una misma tarea puede verse en dos vistas (una destacada sale en Tareas o
   // Recados y también en Cuanto antes), así que las acciones repintan todas.
@@ -2773,6 +3191,8 @@
     renderList(ctxRepeticiones);
     renderList(ctxRecados);
     renderList(ctxPendientes);
+    renderList(ctxCompras);
+    renderList(ctxEspera);
     // Ambas muestran tareas/recados con fecha: la Agenda los de la semana y
     // Hoy los del día.
     renderAgenda();
@@ -2789,16 +3209,27 @@
     renderList(ctxRepeticiones);
   }
   // `tasks` alimenta a Tareas, "Mis tareas" y Rutinas: repinta las tres.
+  // Y "En espera", que se nutre de las tres listas de tareas.
   function renderTasksViews() {
     renderList(ctxTareas);
     renderList(ctxRutinas);
     renderList(ctxRepeticiones);
+    renderList(ctxEspera);
   }
   function renderRecados() {
     renderList(ctxRecados);
+    renderList(ctxEspera);
   }
   function renderPendientes() {
     renderList(ctxPendientes);
+    renderList(ctxEspera);
+  }
+  function renderCompras() {
+    renderList(ctxCompras);
+    renderList(ctxEspera);
+  }
+  function renderEspera() {
+    renderList(ctxEspera);
   }
 
   /* ---------- Eventos ---------- */
@@ -2827,6 +3258,13 @@
     recadosInput.focus();
   });
 
+  comprasForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    addTaskTo(ctxCompras, comprasInput.value);
+    comprasInput.value = "";
+    comprasInput.focus();
+  });
+
   pendientesForm.addEventListener("submit", (e) => {
     e.preventDefault();
     addTaskTo(ctxPendientes, pendientesInput.value);
@@ -2842,6 +3280,10 @@
     ctxRecados.doneVisible = !ctxRecados.doneVisible;
     renderList(ctxRecados);
   });
+  comprasToggleDone.addEventListener("click", () => {
+    ctxCompras.doneVisible = !ctxCompras.doneVisible;
+    renderList(ctxCompras);
+  });
   pendientesToggleDone.addEventListener("click", () => {
     ctxPendientes.doneVisible = !ctxPendientes.doneVisible;
     renderList(ctxPendientes);
@@ -2854,14 +3296,69 @@
     ctxRepeticiones.doneVisible = !ctxRepeticiones.doneVisible;
     renderList(ctxRepeticiones);
   });
+  // "En espera" nunca tiene completadas (al completarse dejan de esperar), pero
+  // el bloque existe y se comporta como el de las demás listas.
+  esperaToggleDone.addEventListener("click", () => {
+    ctxEspera.doneVisible = !ctxEspera.doneVisible;
+    renderList(ctxEspera);
+  });
+  esperaClearDone.addEventListener("click", () => clearDoneIn(ctxEspera));
 
   clearDoneBtn.addEventListener("click", () => clearDoneIn(ctxTareas));
   recadosClearDone.addEventListener("click", () => clearDoneIn(ctxRecados));
   pendientesClearDone.addEventListener("click", () => clearDoneIn(ctxPendientes));
+  comprasClearDone.addEventListener("click", () => clearDoneIn(ctxCompras));
   rutinasClearDone.addEventListener("click", () => clearDoneIn(ctxRutinas));
   repeticionesClearDone.addEventListener("click", () =>
     clearDoneIn(ctxRepeticiones)
   );
+
+  /* ---------- Planificadas como subpágina de Rutinas (⚙️) ----------
+     Ocupa el área entera de la pestaña, como la página de un proyecto dentro de
+     Proyectos. Sin duplicar la vista: se mueve la sección `view-planificadas` a
+     la subpágina y, al volver, regresa exactamente a donde estaba. Así conserva
+     sus listeners, sus pestañas y el arrastre, y no puede desincronizarse. */
+  const repeticionesConfigBtn = document.getElementById(
+    "repeticiones-config-btn"
+  );
+  const repeticionesIndex = document.getElementById("repeticiones-index");
+  const repeticionesConfig = document.getElementById("repeticiones-config");
+  const repeticionesConfigBody = document.getElementById(
+    "repeticiones-config-body"
+  );
+  const repeticionesConfigBack = document.getElementById(
+    "repeticiones-config-back"
+  );
+  let planificadasHome = null; // { parent, next }: su sitio en la app
+
+  function openRepeticionesConfig() {
+    const sec = document.getElementById("view-planificadas");
+    if (!sec || !repeticionesConfig || !repeticionesConfigBody) return;
+    // La primera vez se apunta de dónde sale, para devolverla al mismo hueco
+    if (!planificadasHome)
+      planificadasHome = { parent: sec.parentNode, next: sec.nextSibling };
+    repeticionesConfigBody.appendChild(sec);
+    sec.hidden = false;
+    repeticionesIndex.hidden = true;
+    repeticionesConfig.hidden = false;
+    renderPlanned(); // igual que al entrar en la pestaña
+  }
+
+  function closeRepeticionesConfig() {
+    if (!repeticionesConfig || repeticionesConfig.hidden) return;
+    repeticionesConfig.hidden = true;
+    repeticionesIndex.hidden = false;
+    const sec = document.getElementById("view-planificadas");
+    if (sec && planificadasHome) {
+      sec.hidden = true; // fuera de la subpágina manda `activateView`
+      planificadasHome.parent.insertBefore(sec, planificadasHome.next);
+    }
+  }
+
+  if (repeticionesConfigBtn)
+    repeticionesConfigBtn.addEventListener("click", openRepeticionesConfig);
+  if (repeticionesConfigBack)
+    repeticionesConfigBack.addEventListener("click", closeRepeticionesConfig);
 
   /* ---------- Reordenar con drag & drop (ratón y táctil) ---------- */
   const LONG_PRESS_MS = 300; // mantener pulsado para empezar a arrastrar
@@ -3040,6 +3537,7 @@
   enableReorder(repeticionesList, "task-item", () => tasks, save);
   enableReorder(recadosList, "task-item", () => recados, saveRecados);
   enableReorder(pendientesList, "task-item", () => pendientes, savePendientes);
+  enableReorder(comprasList, "task-item", () => compras, saveCompras);
   enableReorder(
     document.getElementById("planned-list"),
     "planned-item",
@@ -3062,12 +3560,13 @@
   const VIEWS = [
     "hoy",
     "rutinas",
+    "espera",
     "agenda",
     "tareas",
+    "compras",
     "recados",
     "repeticiones",
     "pendientes",
-    "planificadas",
     "proyectos",
   ];
 
@@ -3076,7 +3575,13 @@
   // `proyectoId` (opcional) solo cuenta en la vista Proyectos: entra directa a
   // ese proyecto, que es como se vuelve al mismo sitio al recargar la página.
   function activateView(view, proyectoId) {
+    // Planificadas ya no es una pestaña: vive dentro de Rutinas (⚙️). Los
+    // enlaces viejos (`#planificadas`) llevan allí en vez de al comodín.
+    if (view === "planificadas") view = "repeticiones";
     if (VIEWS.indexOf(view) === -1) view = "tareas"; // por defecto
+    // Cambiar de vista cierra la subpágina de Planificadas: su sección tiene
+    // que estar de vuelta en su sitio antes de repartir el `hidden` de abajo.
+    closeRepeticionesConfig();
     currentView = view;
     document
       .querySelectorAll(".app-nav-item")
@@ -3093,17 +3598,17 @@
     else if (view === "agenda") renderAgenda();
     else if (view === "tareas") render();
     else if (view === "rutinas") renderRutinas();
+    else if (view === "espera") renderEspera();
     else if (view === "repeticiones") renderRepeticiones();
     else if (view === "recados") renderRecados();
     else if (view === "pendientes") renderPendientes();
+    else if (view === "compras") renderCompras();
     else if (view === "proyectos") {
       // Sin id en el hash se entra por el índice; con él, al proyecto
       proyectoOpenId = proyectoId || null;
-      proyectosArchivadosOpen = false;
       clearProyectoSel();
       renderProyectos();
     }
-    else if (view === "planificadas") renderPlanned();
   }
 
   // El hash es "#vista" o, dentro de un proyecto, "#proyectos/<id>"
@@ -3223,6 +3728,7 @@
   // Los proyectos no se crean desde aquí: tienen su propio "+" en su pestaña.
   const FAB_TITLES = {
     tareas: "Nueva tarea",
+    compras: "Nueva compra",
     recados: "Nuevo recado",
     rutinas: "Nueva rutina",
     pendientes: "Nuevo pendiente",
@@ -3355,6 +3861,14 @@
     document.body.classList.remove("no-scroll");
   }
 
+  // Planificadas: tabs Lista / Previsión semanal y navegación de semanas
+  document.getElementById("planned-tabs").addEventListener("click", (e) => {
+    const btn = e.target.closest(".task-tab");
+    if (!btn || btn.dataset.tab === plannedTab) return;
+    plannedTab = btn.dataset.tab;
+    applyPlannedTab();
+  });
+
   plannedForm.addEventListener("submit", (e) => {
     e.preventDefault();
     addPlanned(plannedInput.value);
@@ -3396,6 +3910,7 @@
       tasks,
       recados,
       pendientes,
+      compras,
       sinTipo,
       proyectos,
       proyectoSecciones,
@@ -3428,6 +3943,7 @@
         let inTasks = null;
         let inRecados = null;
         let inPendientes = null;
+        let inCompras = null;
         let inSinTipo = null;
         let inProyectos = null;
         let inProSecciones = null;
@@ -3440,6 +3956,7 @@
           inPendientes = Array.isArray(parsed.pendientes)
             ? parsed.pendientes
             : null;
+          inCompras = Array.isArray(parsed.compras) ? parsed.compras : null;
           inSinTipo = Array.isArray(parsed.sinTipo) ? parsed.sinTipo : null;
           inProyectos = Array.isArray(parsed.proyectos)
             ? parsed.proyectos
@@ -3453,7 +3970,7 @@
         }
         if (
           !confirm(
-            "Esto reemplazará las listas incluidas en el archivo (tareas, recados, pendientes y rutinas). ¿Continuar?"
+            "Esto reemplazará las listas incluidas en el archivo (tareas, compras, recados, pendientes y rutinas). ¿Continuar?"
           )
         ) {
           importFile.value = "";
@@ -3474,6 +3991,11 @@
           savePendientes();
           renderPendientes();
         }
+        if (inCompras) {
+          compras = inCompras.map(ensureId);
+          saveCompras();
+          renderCompras();
+        }
         if (inSinTipo) {
           sinTipo = inSinTipo.map(ensureId);
           saveSinTipo();
@@ -3485,6 +4007,7 @@
         }
         if (inProyectos) {
           proyectos = inProyectos.map(ensureId);
+          migrarArchivados(proyectos); // copias de antes de los estados
           saveProyectos();
           renderProyectos();
         }
@@ -3793,6 +4316,45 @@
   // Vista "Hoy": una sección por cada `hoySections`. Las completadas NO se
   // ocultan. En modo edición aparecen las cabeceras de sección editables y el
   // formulario de creación.
+  // Formulario en línea de "Durante el día", igual que el de cada día de Agenda.
+  // Crea una tarea normal de Tareas con "Añadir a Hoy" ya puesto (`hoyDia`), así
+  // que aparece aquí y en su lista, y se configura después desde su panel.
+  function hoyDiaAddForm() {
+    const form = document.createElement("form");
+    form.className = "new-task agenda-add-form hoy-dia-add-form";
+    form.autocomplete = "off";
+    const input = document.createElement("input");
+    input.type = "text";
+    input.className = "task-input hoy-dia-add-input";
+    input.maxLength = 200;
+    input.placeholder = "Añadir tarea…";
+    input.setAttribute("aria-label", "Nueva tarea para hoy");
+    const btn = document.createElement("button");
+    btn.type = "submit";
+    btn.className = "add-btn";
+    btn.textContent = "+";
+    btn.setAttribute("aria-label", "Añadir");
+    form.append(input, btn);
+    form.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const text = input.value.trim();
+      if (!text) return;
+      tasks.unshift({
+        id: newId(),
+        text: text,
+        done: false,
+        starred: false,
+        hoyDia: true,
+      });
+      save();
+      renderAllLists();
+      // El repintado recrea el DOM: se devuelve el foco para seguir añadiendo.
+      const fresh = hoyViewSectionsEl.querySelector(".hoy-dia-add-input");
+      if (fresh) fresh.focus();
+    });
+    return form;
+  }
+
   // ¿Sección terminada? Una vacía no cuenta: no hay nada que celebrar. Lo usan
   // el contador y la cabecera, para que la marca sea la misma en los dos.
   function hoySectionComplete(done, total) {
@@ -3842,7 +4404,9 @@
           ? dayEntries(dow, todayISO(), hoyPinnedEntries())
           : lactAntesExtraccion();
         const total = entries.length;
-        if (!hoyEditMode && total === 0) return; // vacía: no se muestra
+        // Vacía no se muestra, salvo "Durante el día": lleva el formulario para
+        // añadir, que tiene que seguir a mano aunque aún no haya nada.
+        if (!hoyEditMode && total === 0 && !isDia) return;
 
         if (hoyEditMode) {
           wrap.appendChild(hoyAutoHead(sec));
@@ -3877,6 +4441,7 @@
             if (isDia) {
               // Reordenar desde el asa; el orden se comparte con Agenda
               renderDayList(ul, dow, entries, "hoy");
+              wrap.appendChild(hoyDiaAddForm());
             } else {
               // Las de lactancia mantienen el orden que les da su app
               entries.forEach((t) =>
@@ -4039,6 +4604,10 @@
   const hoyDetailLastDone = document.getElementById("hoy-detail-lastdone");
   const hoyDetailDelete = document.getElementById("hoy-detail-delete");
   const hoyDetailConfig = document.getElementById("hoy-detail-config");
+  const hoyDetailPostponeWrap = document.getElementById(
+    "hoy-detail-postpone-wrap"
+  );
+  const hoyDetailPostpone = document.getElementById("hoy-detail-postpone");
   const hoyDetailSubtasks = document.getElementById("hoy-detail-subtasks");
   const hoySubtaskForm = document.getElementById("hoy-subtask-form");
   const hoySubtaskInput = document.getElementById("hoy-subtask-input");
@@ -4089,9 +4658,7 @@
       check.setAttribute("aria-label", "Completar subtarea");
       check.addEventListener("change", () => toggleHoySubtask(sub.id));
 
-      const span = document.createElement("span");
-      span.className = "subtask-text";
-      span.textContent = sub.text;
+      const span = subtaskTextEl(sub, saveHoy);
 
       const del = document.createElement("button");
       del.type = "button";
@@ -4163,6 +4730,10 @@
     // ajustes de la tarea ni el borrado.
     hoyDetailConfig.hidden = !hoyEditMode;
     hoyDetailDelete.hidden = !hoyEditMode;
+    // "Posponer a mañana" es del día, como las subtareas y la nota: solo tiene
+    // sentido en el panel normal, no entre los ajustes de la tarea.
+    hoyDetailPostponeWrap.hidden = hoyEditMode;
+    hoyDetailPostpone.checked = !!item.postponed;
     hoyDetailNote.value = item.note || "";
     hoySubtaskInput.value = "";
     renderHoySubtasks(item);
@@ -4331,6 +4902,10 @@
       if (t.dateMode === "on" && t.dateStart === iso)
         out.push({ task: t, origin: ORIGEN.recados });
     });
+    compras.forEach((t) => {
+      if (t.dateMode === "on" && t.dateStart === iso)
+        out.push({ task: t, origin: ORIGEN.compras });
+    });
     return out;
   }
 
@@ -4380,7 +4955,7 @@
   // amanezca limpia.
   function hoyPinnedTasks() {
     const out = [];
-    [tasks, recados, pendientes].forEach((lista) => {
+    [tasks, recados, pendientes, compras].forEach((lista) => {
       lista.forEach((t) => {
         if (t.hoyDia && (!t.done || t.completedAt === todayISO())) out.push(t);
       });
@@ -4411,6 +4986,7 @@
     if (t.sourcePlannedId) return ORIGEN.rutinas;
     if (recados.indexOf(t) !== -1) return ORIGEN.recados;
     if (pendientes.indexOf(t) !== -1) return ORIGEN.pendientes;
+    if (compras.indexOf(t) !== -1) return ORIGEN.compras;
     return ORIGEN.tareas;
   }
 
@@ -4865,7 +5441,7 @@
     let ready = 0;
     let waiting = 0;
     const bloqueadas = proyectoBlockedIds(proyectos.find((p) => p.id === id));
-    [tasks, recados, pendientes, sinTipo].forEach((arr) =>
+    [tasks, recados, pendientes, compras, sinTipo].forEach((arr) =>
       arr.forEach((t) => {
         if (t.projectId !== id) return;
         if (!t.done && t.projectState === "descartada") return;
@@ -4879,15 +5455,18 @@
     return { done: done, total: total, ready: ready, waiting: waiting };
   }
 
-  function addProyecto(text, url, category) {
+  function addProyecto(text, url, category, sectionId) {
     const trimmed = text.trim();
     if (!trimmed) return;
-    proyectos.push({
+    const nuevo = {
       id: newId(),
       text: trimmed,
       url: (url || "").trim(),
       category: category || "",
-    });
+    };
+    // Sin sección no se guarda el campo (es lo normal)
+    if (sectionId) nuevo.sectionId = sectionId;
+    proyectos.push(nuevo);
     saveProyectos();
     renderProyectos();
   }
@@ -4919,6 +5498,7 @@
       { list: tasks, save: save },
       { list: recados, save: saveRecados },
       { list: pendientes, save: savePendientes },
+      { list: compras, save: saveCompras },
     ].forEach((l) => {
       let changed = false;
       l.list.forEach((t) => {
@@ -4936,16 +5516,13 @@
   // Pinta lo que toque: el índice y, si hay un proyecto abierto, su página.
   // Todas las llamadas existentes siguen valiendo (se repinta lo visible).
   function renderProyectos() {
-    // Primero se decide cuál de las tres páginas se ve: el lienzo del grafo
-    // necesita estar visible para poder medir su ancho y repartir los post-it.
-    const archivados = proyectosArchivadosOpen;
-    const open = !archivados && !!getProyectoOpen();
-    if (proyectosIndexEl) proyectosIndexEl.hidden = open || archivados;
+    // Primero se decide qué página se ve: el lienzo del grafo necesita estar
+    // visible para poder medir su ancho y repartir los post-it.
+    const open = !!getProyectoOpen();
+    if (proyectosIndexEl) proyectosIndexEl.hidden = open;
     if (proyectosDetailEl) proyectosDetailEl.hidden = !open;
-    if (proyectosArchEl) proyectosArchEl.hidden = !archivados;
     renderProyectosIndex();
     renderProyectoTasks();
-    renderProyectosArchivados();
     updateNavCounts();
   }
 
@@ -4962,7 +5539,7 @@
 
   function openProyectoTasks(id) {
     proyectoOpenId = id;
-    proyectosArchivadosOpen = false;
+    comentariosAbiertos.clear(); // los comentarios empiezan plegados
     // Cada proyecto se abre por su diagrama; si lo tiene apagado, por su lista
     const item = proyectos.find((p) => p.id === id);
     proyectoTasksTab = proyectoConDiagrama(item) ? "grafo" : "lista";
@@ -4974,9 +5551,17 @@
     window.scrollTo(0, 0);
   }
 
+  // Desde cualquier vista (p. ej. el proyecto en el byline de una tarea): pasa
+  // a Proyectos y entra en ese proyecto, por su diagrama o su lista.
+  function goToProyecto(id) {
+    activateView("proyectos", id);
+    openProyectoTasks(id);
+  }
+
   function closeProyectoTasks() {
     proyectoOpenId = null;
     clearProyectoSel();
+    comentariosAbiertos.clear();
     if (location.hash.indexOf("#proyectos/") === 0) location.hash = "#proyectos";
     renderProyectos();
   }
@@ -4993,6 +5578,7 @@
     add(tasks, ORIGEN.tareas);
     add(recados, ORIGEN.recados);
     add(pendientes, ORIGEN.pendientes);
+    add(compras, ORIGEN.compras);
     return out
       .filter((e) => !e.task.done)
       .concat(out.filter((e) => e.task.done));
@@ -5017,6 +5603,10 @@
 
     proyectoTasksList.hidden = esGrafo;
     proyectoTasksCanvas.hidden = !esGrafo;
+    // Los comentarios son del lienzo: su botón solo está en esa vista, y en
+    // móvil tampoco (allí el diagrama es de solo lectura).
+    if (proyectoCommentAddBtn)
+      proyectoCommentAddBtn.hidden = !esGrafo || grafoSoloLectura();
     if (esGrafo) renderProyectoGrafo(item, entries);
     else renderProyectoLista(item, entries);
   }
@@ -5471,6 +6061,13 @@
       maxY = Math.max(maxY, pos.y + POSTIT_SIZE);
     });
 
+    // Comentarios sueltos del lienzo, por encima de los post-it
+    proyectoComentarios(proyecto).forEach((c) => {
+      const el = comentarioEl(proyecto, c);
+      proyectoTasksCanvas.appendChild(el);
+      maxY = Math.max(maxY, (c.y || 0) + COMENTARIO_ALTO);
+    });
+
     // La selección sobrevive al repintado, menos lo que ya no existe
     const vivos = new Set(entries.map((en) => en.task.id));
     proyectoSel.forEach((id) => {
@@ -5480,6 +6077,178 @@
     updateLinkMode();
     drawProyectoLinks(proyecto);
     fitProyectoCanvas(maxY);
+  }
+
+  /* ---------- Comentarios del diagrama ----------
+     Notas sueltas que se colocan en cualquier punto del lienzo. Viven en el
+     propio proyecto (`comentarios`), como las flechas y las posiciones de los
+     post-it. Nacen plegados: se ve el icono y, al pulsarlo, el texto. */
+  const COMENTARIO_ALTO = 34; // lo que ocupa plegado, para estirar el lienzo
+  // Qué comentarios están desplegados ahora mismo. No se guarda: por defecto
+  // todos empiezan plegados.
+  let comentariosAbiertos = new Set();
+
+  function proyectoComentarios(proyecto) {
+    const raw = proyecto && proyecto.comentarios;
+    const arr = Array.isArray(raw)
+      ? raw
+      : raw && typeof raw === "object"
+      ? Object.values(raw)
+      : [];
+    return arr.filter((c) => c && c.id);
+  }
+
+  function saveComentarios(proyecto, lista) {
+    if (lista.length) proyecto.comentarios = lista;
+    else delete proyecto.comentarios;
+    saveProyectos();
+  }
+
+  function addComentario(proyecto, text, x, y) {
+    const trimmed = (text || "").trim();
+    if (!trimmed) return null;
+    const c = {
+      id: newId(),
+      text: trimmed,
+      x: Math.max(0, Math.round(x)),
+      y: Math.max(0, Math.round(y)),
+    };
+    saveComentarios(proyecto, proyectoComentarios(proyecto).concat([c]));
+    return c;
+  }
+
+  function deleteComentario(proyecto, id) {
+    comentariosAbiertos.delete(id);
+    saveComentarios(
+      proyecto,
+      proyectoComentarios(proyecto).filter((c) => c.id !== id)
+    );
+    renderProyectoTasks();
+  }
+
+  function comentarioEl(proyecto, c) {
+    const abierto = comentariosAbiertos.has(c.id);
+    const wrap = document.createElement("div");
+    wrap.className = "comentario" + (abierto ? " is-open" : "");
+    wrap.dataset.id = c.id;
+    wrap.style.left = (c.x || 0) + "px";
+    wrap.style.top = (c.y || 0) + "px";
+
+    // Plegado: solo el icono. Es también el asa para moverlo y el interruptor.
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "comentario-chip";
+    chip.textContent = "💬";
+    chip.title = abierto ? "Plegar comentario" : c.text;
+    chip.setAttribute(
+      "aria-label",
+      (abierto ? "Plegar" : "Ver") + " comentario: " + c.text
+    );
+    wrap.appendChild(chip);
+
+    if (abierto) {
+      const globo = document.createElement("div");
+      globo.className = "comentario-globo";
+      const texto = document.createElement("p");
+      texto.className = "comentario-text";
+      texto.textContent = c.text;
+      globo.appendChild(texto);
+      // En móvil el diagrama es de solo lectura: se lee, no se toca
+      if (!grafoSoloLectura()) {
+        const acciones = document.createElement("div");
+        acciones.className = "comentario-acciones";
+        const editar = document.createElement("button");
+        editar.type = "button";
+        editar.className = "comentario-accion";
+        editar.textContent = "Editar";
+        editar.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          openComentarioEdit(c.id);
+        });
+        const borrar = document.createElement("button");
+        borrar.type = "button";
+        borrar.className = "comentario-accion is-danger";
+        borrar.textContent = "Eliminar";
+        borrar.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          if (confirm("¿Eliminar este comentario?"))
+            deleteComentario(proyecto, c.id);
+        });
+        acciones.append(editar, borrar);
+        globo.appendChild(acciones);
+      }
+      wrap.appendChild(globo);
+    }
+
+    enableComentarioDrag(wrap, chip, proyecto, c);
+    return wrap;
+  }
+
+  // Mismo gesto que un post-it: se arrastra por el lienzo y, si no se ha
+  // movido, el toque pliega o despliega el globo.
+  function enableComentarioDrag(wrap, chip, proyecto, c) {
+    if (grafoSoloLectura()) {
+      chip.addEventListener("click", () => toggleComentario(c.id));
+      return;
+    }
+    let dragging = false;
+    let moved = false;
+    let offX = 0;
+    let offY = 0;
+
+    chip.addEventListener("pointerdown", (e) => {
+      if (e.button && e.button !== 0) return;
+      dragging = true;
+      moved = false;
+      const caja = wrap.getBoundingClientRect();
+      offX = e.clientX - caja.left;
+      offY = e.clientY - caja.top;
+      wrap.classList.add("is-dragging");
+      try {
+        chip.setPointerCapture(e.pointerId);
+      } catch (err) {
+        /* algunos navegadores no lo permiten; no es crítico */
+      }
+      e.preventDefault();
+      e.stopPropagation();
+    });
+
+    chip.addEventListener("pointermove", (e) => {
+      if (!dragging) return;
+      moved = true;
+      const caja = proyectoTasksCanvas.getBoundingClientRect();
+      wrap.style.left = Math.max(0, e.clientX - caja.left - offX) + "px";
+      wrap.style.top = Math.max(0, e.clientY - caja.top - offY) + "px";
+    });
+
+    function soltar() {
+      if (!dragging) return;
+      dragging = false;
+      wrap.classList.remove("is-dragging");
+      if (!moved) {
+        toggleComentario(c.id);
+        return;
+      }
+      const x = parseFloat(wrap.style.left);
+      const y = parseFloat(wrap.style.top);
+      const lista = proyectoComentarios(proyecto);
+      const actual = lista.find((n) => n.id === c.id);
+      if (actual) {
+        actual.x = Math.round(x);
+        actual.y = Math.round(y);
+        saveComentarios(proyecto, lista);
+      }
+      fitProyectoCanvas(y + COMENTARIO_ALTO);
+    }
+
+    chip.addEventListener("pointerup", soltar);
+    chip.addEventListener("pointercancel", soltar);
+  }
+
+  function toggleComentario(id) {
+    if (comentariosAbiertos.has(id)) comentariosAbiertos.delete(id);
+    else comentariosAbiertos.add(id);
+    renderProyectoTasks();
   }
 
   /* ---------- Flechas entre post-it ---------- */
@@ -6086,6 +6855,99 @@
 
   enableProyectoMarquee(proyectoTasksCanvas);
 
+  /* ---------- Modal del comentario (crear y editar) ---------- */
+  const proyectoCommentAddBtn = document.getElementById(
+    "proyecto-comment-add-btn"
+  );
+  const proyectoCommentOverlay = document.getElementById(
+    "proyecto-comment-overlay"
+  );
+  const proyectoCommentForm = document.getElementById("proyecto-comment-form");
+  const proyectoCommentText = document.getElementById("proyecto-comment-text");
+  const proyectoCommentCancel = document.getElementById(
+    "proyecto-comment-cancel"
+  );
+  const proyectoCommentTitle = document.getElementById(
+    "proyecto-comment-title"
+  );
+  let comentarioEditId = null; // null = se está creando uno nuevo
+  let comentarioNuevoPos = { x: 0, y: 0 };
+
+  function openComentarioNew(x, y) {
+    if (!getProyectoOpen() || grafoSoloLectura()) return;
+    comentarioEditId = null;
+    comentarioNuevoPos = { x: x, y: y };
+    proyectoCommentTitle.textContent = "Nuevo comentario";
+    proyectoCommentText.value = "";
+    proyectoCommentOverlay.hidden = false;
+    proyectoCommentText.focus();
+  }
+
+  function openComentarioEdit(id) {
+    const proyecto = getProyectoOpen();
+    if (!proyecto) return;
+    const c = proyectoComentarios(proyecto).find((n) => n.id === id);
+    if (!c) return;
+    comentarioEditId = id;
+    proyectoCommentTitle.textContent = "Comentario";
+    proyectoCommentText.value = c.text;
+    proyectoCommentOverlay.hidden = false;
+    proyectoCommentText.focus();
+  }
+
+  function closeComentarioModal() {
+    if (proyectoCommentOverlay.hidden) return;
+    proyectoCommentOverlay.hidden = true;
+    comentarioEditId = null;
+  }
+
+  proyectoCommentCancel.addEventListener("click", closeComentarioModal);
+  proyectoCommentOverlay.addEventListener("click", (e) => {
+    if (e.target === proyectoCommentOverlay) closeComentarioModal();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !proyectoCommentOverlay.hidden)
+      closeComentarioModal();
+  });
+
+  proyectoCommentForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const proyecto = getProyectoOpen();
+    const texto = proyectoCommentText.value.trim();
+    if (!proyecto || !texto) return;
+    if (comentarioEditId) {
+      const lista = proyectoComentarios(proyecto);
+      const c = lista.find((n) => n.id === comentarioEditId);
+      if (c) {
+        c.text = texto;
+        saveComentarios(proyecto, lista);
+      }
+    } else {
+      // Nace desplegado: se acaba de escribir, tiene sentido verlo
+      const c = addComentario(
+        proyecto,
+        texto,
+        comentarioNuevoPos.x,
+        comentarioNuevoPos.y
+      );
+      if (c) comentariosAbiertos.add(c.id);
+    }
+    closeComentarioModal();
+    renderProyectoTasks();
+  });
+
+  // Desde la cabecera: cae arriba a la izquierda del lienzo, y ya se arrastra
+  proyectoCommentAddBtn.addEventListener("click", () =>
+    openComentarioNew(16, 16)
+  );
+
+  // Doble clic en un hueco del lienzo: el comentario nace justo ahí
+  proyectoTasksCanvas.addEventListener("dblclick", (e) => {
+    if (e.target !== proyectoTasksCanvas) return;
+    const r = proyectoTasksCanvas.getBoundingClientRect();
+    openComentarioNew(e.clientX - r.left, e.clientY - r.top);
+  });
+
   /* ---------- Nueva tarea dentro de un proyecto ----------
      Desde la cabecera nace "Sin empezar"; desde el "+" de una columna de la
      vista Listas, ya en el estado de esa columna. */
@@ -6276,13 +7138,53 @@
     return li;
   }
 
-  // Índice de proyectos. Sin secciones creadas es una sola lista, como siempre.
-  // Con secciones, un bloque por sección y, al final, "Sin sección" (que se
-  // mantiene aunque esté vacío: es donde se sueltan los que salen de una).
+  // Pestañas del índice: una por estado, con cuántos proyectos tiene cada una
+  function renderProyectosTabs() {
+    if (!proyectosTabsEl) return;
+    proyectosTabsEl.innerHTML = "";
+    PROYECTO_ESTADOS.forEach((estado) => {
+      const n = proyectos.filter((p) => proyectoEstado(p) === estado.id).length;
+      const activa = estado.id === proyectosTab;
+      const tab = document.createElement("button");
+      tab.type = "button";
+      tab.className = "task-tab" + (activa ? " is-active" : "");
+      tab.dataset.tab = estado.id;
+      tab.setAttribute("role", "tab");
+      tab.setAttribute("aria-selected", activa ? "true" : "false");
+      tab.textContent = estado.name + (n ? " (" + n + ")" : "");
+      proyectosTabsEl.appendChild(tab);
+    });
+  }
+
+  if (proyectosTabsEl) {
+    proyectosTabsEl.addEventListener("click", (e) => {
+      const tab = e.target.closest(".task-tab");
+      if (!tab || tab.dataset.tab === proyectosTab) return;
+      proyectosTab = tab.dataset.tab;
+      renderProyectosIndex();
+    });
+  }
+
+  // Índice de proyectos: solo los del estado de la pestaña activa. Sin
+  // secciones creadas es una sola lista, como siempre. Con secciones, un
+  // bloque por sección y, al final, "Sin sección" (que se mantiene aunque esté
+  // vacío: es donde se sueltan los que salen de una).
   function renderProyectosIndex() {
     if (!proyectosListEl) return;
     proyectosListEl.innerHTML = "";
+    renderProyectosTabs();
     const conSecciones = proyectoSecciones.length > 0;
+    const delEstado = proyectos.filter(
+      (p) => proyectoEstado(p) === proyectosTab
+    );
+
+    // Pestaña vacía: solo su aviso, sin cabeceras de sección vacías
+    if (proyectosEmpty) {
+      proyectosEmpty.hidden = delEstado.length !== 0;
+      const estado = PROYECTO_ESTADOS.find((e) => e.id === proyectosTab);
+      proyectosEmpty.textContent = estado ? estado.vacio : "";
+    }
+    if (!delEstado.length) return;
 
     // Bloques a pintar: las secciones en orden y, al final, "Sin sección"
     const bloques = proyectoSecciones
@@ -6290,10 +7192,7 @@
       .concat([{ id: "", name: "Sin sección" }]);
 
     bloques.forEach((bloque) => {
-      // Los archivados tienen su propio listado: aquí no salen
-      const items = proyectos.filter(
-        (p) => !p.archived && proyectoSeccionOf(p) === bloque.id
-      );
+      const items = delEstado.filter((p) => proyectoSeccionOf(p) === bloque.id);
       // Sin secciones no hay cabeceras ni bloques vacíos que enseñar
       if (!conSecciones && !items.length) return;
 
@@ -6314,7 +7213,19 @@
         const n = document.createElement("span");
         n.className = "proyecto-sec-count";
         n.textContent = items.length;
-        head.append(title, n);
+        // Crea un proyecto ya con esta sección puesta
+        const add = document.createElement("button");
+        add.type = "button";
+        add.className = "proyecto-sec-add";
+        add.textContent = "+";
+        const etiqueta =
+          bloque.id === ""
+            ? "Nuevo proyecto sin sección"
+            : "Nuevo proyecto en " + bloque.name;
+        add.title = etiqueta;
+        add.setAttribute("aria-label", etiqueta);
+        add.addEventListener("click", () => openProyectoNew(bloque.id));
+        head.append(title, n, add);
         wrap.appendChild(head);
       }
 
@@ -6338,112 +7249,7 @@
       proyectosListEl.appendChild(wrap);
     });
 
-    if (proyectosEmpty)
-      proyectosEmpty.hidden = proyectos.some((p) => !p.archived);
   }
-
-  /* ---------- Proyectos archivados ----------
-     Archivar saca el proyecto del índice sin tocar nada más: sus tareas siguen
-     donde están y funcionando igual. Desde este listado se devuelve al índice. */
-  function archiveProyecto(id) {
-    const item = proyectos.find((p) => p.id === id);
-    if (!item) return;
-    item.archived = true;
-    saveProyectos();
-    // Si era el que estaba abierto, se sale de su página
-    if (proyectoOpenId === id) closeProyectoTasks();
-    else renderProyectos();
-  }
-
-  function unarchiveProyecto(id) {
-    const item = proyectos.find((p) => p.id === id);
-    if (!item) return;
-    delete item.archived;
-    saveProyectos();
-    renderProyectos();
-  }
-
-  // Fila del listado de archivados: como la del índice pero sin abrir nada, y
-  // con el botón de devolverlo al índice.
-  function proyectoArchivadoEl(item) {
-    const li = document.createElement("li");
-    li.className = "proyecto-item";
-    li.dataset.id = item.id;
-
-    const url = proyectoUrl(item);
-    if (url) {
-      const link = document.createElement("a");
-      link.className = "proyecto-link";
-      link.href = url;
-      link.target = "_blank";
-      link.rel = "noopener noreferrer";
-      link.title = "Abrir en Notion";
-      link.setAttribute("aria-label", "Abrir " + item.text + " en Notion");
-      link.innerHTML = NOTION_ICON;
-      li.appendChild(link);
-    }
-
-    const main = document.createElement("div");
-    main.className = "proyecto-main";
-    const text = document.createElement("span");
-    text.className = "proyecto-text";
-    text.textContent = item.text;
-    main.appendChild(text);
-    const cat = HOY_CATEGORIES.find((c) => c.id === item.category);
-    if (cat) {
-      const catEl = document.createElement("span");
-      catEl.className = "proyecto-cat cat-" + cat.id;
-      catEl.textContent = cat.name;
-      main.appendChild(catEl);
-    }
-    li.appendChild(main);
-
-    const prog = proyectoProgreso(item.id);
-    const slot = document.createElement("span");
-    slot.className = "proyecto-count-slot";
-    const count = document.createElement("span");
-    count.className = "proyecto-count";
-    count.textContent = prog.done + "/" + prog.total;
-    count.title = "Tareas completadas del total";
-    slot.appendChild(count);
-    li.appendChild(slot);
-
-    const volver = document.createElement("button");
-    volver.type = "button";
-    volver.className = "proyecto-unarchive";
-    volver.textContent = "Desarchivar";
-    volver.setAttribute("aria-label", "Desarchivar " + item.text);
-    volver.addEventListener("click", () => unarchiveProyecto(item.id));
-    li.appendChild(volver);
-
-    return li;
-  }
-
-  function renderProyectosArchivados() {
-    if (!proyectosArchList) return;
-    proyectosArchList.innerHTML = "";
-    const items = proyectos.filter((p) => p.archived);
-    items.forEach((item) =>
-      proyectosArchList.appendChild(proyectoArchivadoEl(item))
-    );
-    if (proyectosArchEmpty) proyectosArchEmpty.hidden = items.length !== 0;
-  }
-
-  function openProyectosArchivados() {
-    proyectosArchivadosOpen = true;
-    proyectoOpenId = null;
-    clearProyectoSel();
-    renderProyectos();
-    window.scrollTo(0, 0);
-  }
-
-  function closeProyectosArchivados() {
-    proyectosArchivadosOpen = false;
-    renderProyectos();
-  }
-
-  proyectosArchBtn.addEventListener("click", openProyectosArchivados);
-  proyectosArchBack.addEventListener("click", closeProyectosArchivados);
 
   proyectoTasksBack.addEventListener("click", closeProyectoTasks);
   proyectoSettingsBtn.addEventListener("click", () => {
@@ -6750,17 +7556,37 @@
     proSeccionName.focus();
   });
 
-  /* ---------- Nuevo proyecto (botón + de la cabecera) ---------- */
+  /* ---------- Nuevo proyecto (botón + de la cabecera o de una sección) ---- */
   const proyectoNewOverlay = document.getElementById("proyecto-new-overlay");
   const proyectoNewForm = document.getElementById("proyecto-new-form");
   const proyectoNewName = document.getElementById("proyecto-new-name");
   const proyectoNewUrl = document.getElementById("proyecto-new-url");
   const proyectoNewCancel = document.getElementById("proyecto-new-cancel");
   const proyectoNewCat = document.getElementById("proyecto-new-cat");
+  const proyectoNewSec = document.getElementById("proyecto-new-sec");
   fillCategorySelect(proyectoNewCat);
 
-  function openProyectoNew() {
+  // Las secciones se crean y se borran sobre la marcha: el selector se rellena
+  // al abrir el modal, no una vez al arrancar.
+  function fillSeccionSelect(sel) {
+    sel.innerHTML = "";
+    const ninguna = document.createElement("option");
+    ninguna.value = "";
+    ninguna.textContent = "Sin sección";
+    sel.appendChild(ninguna);
+    proyectoSecciones.forEach((s) => {
+      const opt = document.createElement("option");
+      opt.value = s.id;
+      opt.textContent = s.name;
+      sel.appendChild(opt);
+    });
+  }
+
+  // `seccionId` (opcional): con qué sección viene prerrellenado el formulario
+  function openProyectoNew(seccionId) {
     proyectoNewForm.reset();
+    fillSeccionSelect(proyectoNewSec);
+    proyectoNewSec.value = seccionId || "";
     proyectoNewOverlay.hidden = false;
     proyectoNewName.focus();
   }
@@ -6770,7 +7596,7 @@
     proyectoNewOverlay.hidden = true;
   }
 
-  proyectosAddBtn.addEventListener("click", openProyectoNew);
+  proyectosAddBtn.addEventListener("click", () => openProyectoNew());
   proyectoNewCancel.addEventListener("click", closeProyectoNew);
   proyectoNewOverlay.addEventListener("click", (e) => {
     if (e.target === proyectoNewOverlay) closeProyectoNew();
@@ -6786,7 +7612,14 @@
       proyectoNewName.focus();
       return;
     }
-    addProyecto(name, proyectoNewUrl.value, proyectoNewCat.value);
+    // Nace "En curso": se lleva el índice a esa pestaña para que se vea
+    proyectosTab = "curso";
+    addProyecto(
+      name,
+      proyectoNewUrl.value,
+      proyectoNewCat.value,
+      proyectoNewSec.value
+    );
     closeProyectoNew();
   });
 
@@ -6804,10 +7637,16 @@
   const proyectoDetailDiagram = document.getElementById(
     "proyecto-detail-diagram"
   );
-  const proyectoDetailArchive = document.getElementById(
-    "proyecto-detail-archive"
+  const proyectoDetailStatus = document.getElementById(
+    "proyecto-detail-status"
   );
   fillCategorySelect(proyectoDetailCat);
+  PROYECTO_ESTADOS.forEach((estado) => {
+    const opt = document.createElement("option");
+    opt.value = estado.id;
+    opt.textContent = estado.name;
+    proyectoDetailStatus.appendChild(opt);
+  });
   let proyectoDetailId = null;
 
   function getProyectoDetailItem() {
@@ -6823,6 +7662,7 @@
     proyectoDetailTitle.value = item.text;
     proyectoDetailUrl.value = item.url || "";
     proyectoDetailCat.value = item.category || "";
+    proyectoDetailStatus.value = proyectoEstado(item);
     proyectoDetailDiagram.checked = proyectoConDiagrama(item);
     proyectoDetailOverlay.hidden = false;
     document.body.classList.add("no-scroll");
@@ -6923,12 +7763,19 @@
     renderAllLists(); // las que estaban bloqueadas vuelven a sus listas
   });
 
-  proyectoDetailArchive.addEventListener("click", () => {
+  // Estado: mueve el proyecto a otra pestaña del índice. "En curso" es lo
+  // normal y no se guarda. Al volver al índice se ve la pestaña de su estado
+  // nuevo, para no perderle la pista.
+  proyectoDetailStatus.addEventListener("change", () => {
     const item = getProyectoDetailItem();
     if (!item) return;
-    const id = item.id;
-    closeProyectoDetail();
-    archiveProyecto(id);
+    const valor = proyectoDetailStatus.value;
+    if (valor === "curso") delete item.status;
+    else item.status = valor;
+    proyectosTab = proyectoEstado(item);
+    saveProyectos();
+    renderProyectos();
+    renderAllLists(); // el selector de proyecto de las tareas cambia
   });
 
   proyectoDetailDelete.addEventListener("click", () => {
@@ -6976,6 +7823,10 @@
     if (db) localPendientes = await idbGet(IDB_KEY_PENDIENTES);
     pendientes = Array.isArray(localPendientes) ? localPendientes : [];
 
+    let localCompras = [];
+    if (db) localCompras = await idbGet(IDB_KEY_COMPRAS);
+    compras = Array.isArray(localCompras) ? localCompras : [];
+
     let localSinTipo = [];
     if (db) localSinTipo = await idbGet(IDB_KEY_SIN_TIPO);
     sinTipo = Array.isArray(localSinTipo) ? localSinTipo : [];
@@ -6983,6 +7834,8 @@
     let localProyectos = [];
     if (db) localProyectos = await idbGet(IDB_KEY_PROYECTOS);
     proyectos = Array.isArray(localProyectos) ? localProyectos : [];
+    if (migrarArchivados(proyectos) && db)
+      idbSet(IDB_KEY_PROYECTOS, proyectos).catch(() => {});
 
     let localProSecciones = [];
     if (db) localProSecciones = await idbGet(IDB_KEY_PRO_SECCIONES);
@@ -7014,6 +7867,11 @@
     deletedIds = Array.isArray(localDeleted) ? localDeleted : [];
     if (pruneDeleted()) saveDeleted();
 
+    // Cambios en tareas de lactancia que quedaron sin subir (sin conexión)
+    let localLactOutbox = [];
+    if (db) localLactOutbox = await idbGet(IDB_KEY_LACT_OUTBOX);
+    lactOutbox = Array.isArray(localLactOutbox) ? localLactOutbox : [];
+
     let localPlanned = [];
     if (db) localPlanned = await idbGet(IDB_KEY_PLANNED);
     planned = Array.isArray(localPlanned) ? localPlanned : [];
@@ -7023,6 +7881,7 @@
     renderTasksViews(); // pinta Tareas + Rutinas con el respaldo local
     renderRecados();
     renderPendientes();
+    renderCompras();
     renderProyectos();
     renderHoy();
     renderAgenda();
@@ -7031,6 +7890,13 @@
 
   function startFirebaseSync() {
     fbReady = true;
+
+    // Estado real de la conexión: `fbReady` seguía a true con el websocket
+    // caído, y entonces se escribía en lactancia a partir de datos viejos.
+    fdb.ref(".info/connected").on("value", (snap) => {
+      fbOnline = !!snap.val();
+      if (fbOnline) flushLactOutbox();
+    });
 
     // La materialización de planificadas corre una sola vez, cuando ya han
     // llegado los primeros datos de la nube de tasks Y planned.
@@ -7168,6 +8034,32 @@
         showError("Al leer la nube: " + (err && err.message ? err.message : err))
     );
 
+    // Listener: compras (cuarta lista)
+    let firstCom = true;
+    const refCom = fdb.ref(FB_ROOT + "/" + FB_KEY_COMPRAS);
+    refCom.on(
+      "value",
+      (snap) => {
+        const raw = snap.val();
+        const llegan = Array.isArray(raw) ? raw : raw ? Object.values(raw) : [];
+        const remote = applyDeleted(llegan); // ver "Borrados definitivos"
+        if (firstCom && remote.length === 0 && compras.length > 0) {
+          firstCom = false;
+          refCom.set(compras).catch(() => {});
+          return;
+        }
+        firstCom = false;
+        compras = remote;
+        if (db) idbSet(IDB_KEY_COMPRAS, compras).catch(() => {});
+        if (remote !== llegan) saveCompras(); // ya sin lo borrado
+        clearError();
+        renderCompras();
+        renderProyectos(); // cambia el número de tareas por proyecto
+      },
+      (err) =>
+        showError("Al leer la nube: " + (err && err.message ? err.message : err))
+    );
+
     // Listener: tareas sin tipo (solo se ven dentro de su proyecto)
     let firstSt = true;
     const refSt = fdb.ref(FB_ROOT + "/" + FB_KEY_SIN_TIPO);
@@ -7209,8 +8101,10 @@
         }
         firstPro = false;
         proyectos = remote;
+        // Lo archivado de antes pasa a "Completado", y se sube ya migrado
+        const migrados = migrarArchivados(proyectos);
         if (db) idbSet(IDB_KEY_PROYECTOS, proyectos).catch(() => {});
-        if (remote !== llegan) saveProyectos(); // ya sin lo borrado
+        if (remote !== llegan || migrados) saveProyectos(); // ya limpio
         clearError();
         renderProyectos();
         renderAllLists(); // sus nombres salen en el byline de las tareas
@@ -7364,11 +8258,17 @@
         "value",
         (snap) => {
           const raw = snap.val();
-          lactRaw[node] = Array.isArray(raw)
+          const remote = Array.isArray(raw)
             ? raw
             : raw
             ? Object.values(raw)
             : [];
+          lactRemoto[node] = remote; // lo que hay en la nube, tal cual
+          lactSynced[node] = true;
+          // Encima, los cambios locales que aún no han podido subir, para que
+          // no parpadeen mientras esperan a la reconexión.
+          lactRaw[node] = aplicarLactOutbox(node, remote);
+          flushLactOutbox();
           clearError();
           renderRutinas(); // "durante el día" de lactancia vive en Cuanto antes
           renderHoyView(); // las de la extracción, en su sección de Hoy
@@ -7392,6 +8292,20 @@
         // También Hoy: sus tareas fijadas se pintan en "Durante el día", y
         // hasta que llega este snapshot `atareasPending()` está vacío.
         renderHoyView();
+      },
+      (err) =>
+        showError(
+          "Al leer App tareas: " + (err && err.message ? err.message : err)
+        )
+    );
+
+    // Plantillas de App tareas: solo para la previsión semanal de Planificadas
+    fdb.ref(AT_DETAIL_ROOT).on(
+      "value",
+      (snap) => {
+        const raw = snap.val();
+        atDetailRaw = Array.isArray(raw) ? raw : raw ? Object.values(raw) : [];
+        if (plannedTab === "semana") renderPlannedWeek();
       },
       (err) =>
         showError(

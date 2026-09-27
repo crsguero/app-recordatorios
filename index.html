@@ -47,13 +47,14 @@
       <button type="button" class="app-nav-item" data-view="hoy">Hoy</button>
       <button type="button" class="app-nav-item" data-view="agenda">Agenda</button>
       <button type="button" class="app-nav-item" data-view="rutinas">Mis tareas</button>
+      <button type="button" class="app-nav-item" data-view="espera">En espera</button>
       <hr class="app-nav-sep" />
       <button type="button" class="app-nav-item is-active" data-view="tareas">Tareas</button>
+      <button type="button" class="app-nav-item" data-view="compras">Compras</button>
       <button type="button" class="app-nav-item" data-view="recados">Recados</button>
       <button type="button" class="app-nav-item" data-view="repeticiones">Rutinas</button>
       <button type="button" class="app-nav-item" data-view="pendientes">Pendientes</button>
       <hr class="app-nav-sep" />
-      <button type="button" class="app-nav-item" data-view="planificadas">Planificadas</button>
       <button type="button" class="app-nav-item" data-view="proyectos">Proyectos</button>
       <div class="app-nav-foot">
         <button type="button" class="app-nav-item app-nav-settings" id="settings-btn">⚙️ Ajustes</button>
@@ -95,8 +96,14 @@
         <button type="button" class="more-menu-close" id="more-close" aria-label="Cerrar">✕</button>
       </div>
       <div class="more-menu-list">
+        <button type="button" class="menu-item" data-view="espera">
+          <span class="menu-item-ico">⏸️</span> En espera
+        </button>
         <button type="button" class="menu-item" data-view="tareas">
           <span class="menu-item-ico">✅</span> Tareas
+        </button>
+        <button type="button" class="menu-item" data-view="compras">
+          <span class="menu-item-ico">🛍️</span> Compras
         </button>
         <button type="button" class="menu-item" data-view="recados">
           <span class="menu-item-ico">🛒</span> Recados
@@ -106,9 +113,6 @@
         </button>
         <button type="button" class="menu-item" data-view="pendientes">
           <span class="menu-item-ico">⏳</span> Pendientes
-        </button>
-        <button type="button" class="menu-item" data-view="planificadas">
-          <span class="menu-item-ico">🔁</span> Planificadas
         </button>
         <button type="button" class="menu-item" data-view="proyectos">
           <span class="menu-item-ico">📁</span> Proyectos
@@ -128,6 +132,9 @@
         <div class="fab-choices" id="fab-step-type">
           <button type="button" class="fab-choice" data-create="tareas">
             <span class="fab-choice-ico">✅</span><span>Tarea</span>
+          </button>
+          <button type="button" class="fab-choice" data-create="compras">
+            <span class="fab-choice-ico">🛍️</span><span>Compra</span>
           </button>
           <button type="button" class="fab-choice" data-create="recados">
             <span class="fab-choice-ico">🛒</span><span>Recado</span>
@@ -251,29 +258,80 @@
         </div>
       </section>
 
+      <!-- Vista: "En espera". Tareas, recados y pendientes con una fecha que
+           todavía no ha llegado ("En fecha", "A partir de" o "Entre"): mientras
+           esperan no salen de su lista, y vuelven a ella al cumplirse la fecha.
+           No tiene formulario: aquí no se crea nada, solo se espera. -->
+      <section class="view" id="view-espera" hidden>
+        <header class="app-header">
+          <div class="header-top">
+            <h1>En espera</h1>
+          </div>
+          <p class="subtitle" id="espera-summary">Sin tareas todavía</p>
+        </header>
+
+        <ul class="task-list" id="espera-list"></ul>
+
+        <p class="empty-state" id="espera-empty" hidden>
+          No hay nada esperando fecha.
+        </p>
+
+        <div class="done-section" id="espera-done-section" hidden>
+          <div class="done-header">
+            <button type="button" class="toggle-done-btn" id="espera-toggle-done"></button>
+            <button type="button" class="clear-btn" id="espera-clear-done">Borrar completadas</button>
+          </div>
+          <ul class="task-list done-list" id="espera-done-list" hidden></ul>
+        </div>
+      </section>
+
       <!-- Vista: "Rutinas" (interna: repeticiones). Las repeticiones que
            generan las Planificadas (más las tareas automáticas de otras apps).
            Son las mismas que salen en "Mis tareas" con el filtro Rutinas. -->
       <section class="view" id="view-repeticiones" hidden>
-        <header class="app-header">
-          <div class="header-top">
-            <h1>Rutinas</h1>
+        <!-- Índice: la lista de repeticiones -->
+        <div id="repeticiones-index">
+          <header class="app-header">
+            <div class="header-top">
+              <h1>Rutinas</h1>
+              <div class="header-actions">
+                <!-- Abre Planificadas como subpágina: allí se configura lo que
+                     genera estas repeticiones (texto, categoría y repetición) -->
+                <button
+                  type="button"
+                  class="header-icon-btn"
+                  id="repeticiones-config-btn"
+                  aria-label="Configurar las rutinas en Planificadas"
+                  title="Configurar rutinas"
+                >⚙️</button>
+              </div>
+            </div>
+            <p class="subtitle" id="repeticiones-summary">Sin tareas todavía</p>
+          </header>
+
+          <ul class="task-list" id="repeticiones-list"></ul>
+
+          <p class="empty-state" id="repeticiones-empty" hidden>
+            No hay rutinas ahora mismo.
+          </p>
+
+          <div class="done-section" id="repeticiones-done-section" hidden>
+            <div class="done-header">
+              <button type="button" class="toggle-done-btn" id="repeticiones-toggle-done"></button>
+              <button type="button" class="clear-btn" id="repeticiones-clear-done">Borrar completadas</button>
+            </div>
+            <ul class="task-list done-list" id="repeticiones-done-list" hidden></ul>
           </div>
-          <p class="subtitle" id="repeticiones-summary">Sin tareas todavía</p>
-        </header>
+        </div>
 
-        <ul class="task-list" id="repeticiones-list"></ul>
-
-        <p class="empty-state" id="repeticiones-empty" hidden>
-          No hay rutinas ahora mismo.
-        </p>
-
-        <div class="done-section" id="repeticiones-done-section" hidden>
-          <div class="done-header">
-            <button type="button" class="toggle-done-btn" id="repeticiones-toggle-done"></button>
-            <button type="button" class="clear-btn" id="repeticiones-clear-done">Borrar completadas</button>
-          </div>
-          <ul class="task-list done-list" id="repeticiones-done-list" hidden></ul>
+        <!-- Subpágina: Planificadas dentro de Rutinas (se abre con el ⚙️). No
+             duplica la vista: aquí se mete la sección `view-planificadas` de
+             verdad, y al volver regresa a su sitio. -->
+        <div id="repeticiones-config" hidden>
+          <header class="app-header">
+            <button class="detail-close" id="repeticiones-config-back" type="button">‹ Rutinas</button>
+          </header>
+          <div id="repeticiones-config-body"></div>
         </div>
       </section>
 
@@ -310,6 +368,42 @@
             <button type="button" class="clear-btn" id="clear-done">Borrar completadas</button>
           </div>
           <ul class="task-list done-list" id="done-list" hidden></ul>
+        </div>
+      </section>
+
+      <!-- Vista: Compras (igual que Recados) -->
+      <section class="view" id="view-compras" hidden>
+        <header class="app-header">
+          <div class="header-top">
+            <h1>Compras</h1>
+          </div>
+          <p class="subtitle" id="compras-summary">Sin compras todavía</p>
+        </header>
+
+        <form class="new-task" id="compras-form" autocomplete="off">
+          <input
+            type="text"
+            id="compras-input"
+            class="task-input"
+            placeholder="Añadir una compra…"
+            aria-label="Nueva compra"
+            maxlength="200"
+          />
+          <button type="submit" class="add-btn" aria-label="Añadir compra">+</button>
+        </form>
+
+        <ul class="task-list" id="compras-list"></ul>
+
+        <p class="empty-state" id="compras-empty" hidden>
+          No hay compras aquí. ¡Añade una arriba! 🎉
+        </p>
+
+        <div class="done-section" id="compras-done-section" hidden>
+          <div class="done-header">
+            <button type="button" class="toggle-done-btn" id="compras-toggle-done"></button>
+            <button type="button" class="clear-btn" id="compras-clear-done">Borrar completadas</button>
+          </div>
+          <ul class="task-list done-list" id="compras-done-list" hidden></ul>
         </div>
       </section>
 
@@ -397,13 +491,6 @@
                 <button
                   type="button"
                   class="header-icon-btn"
-                  id="proyectos-archivados-btn"
-                  aria-label="Proyectos archivados"
-                  title="Archivados"
-                >📦</button>
-                <button
-                  type="button"
-                  class="header-icon-btn"
                   id="proyectos-secciones-btn"
                   aria-label="Secciones de proyectos"
                   title="Secciones"
@@ -419,29 +506,15 @@
             </div>
           </header>
 
+          <!-- Una pestaña por estado del proyecto. Los botones los pinta el JS
+               (con su contador), a partir de PROYECTO_ESTADOS. -->
+          <div class="task-tabs" id="proyectos-tabs" role="tablist" aria-label="Estado de los proyectos"></div>
+
           <!-- Un bloque por sección (más "Sin sección"), cada uno con su lista.
                Los proyectos se arrastran entre bloques y dentro de cada uno. -->
           <div class="proyecto-sections" id="proyectos-list"></div>
 
-          <p class="empty-state" id="proyectos-empty" hidden>
-            No hay proyectos. ¡Añade uno con el botón + ! 🎉
-          </p>
-        </div>
-
-        <!-- Listado de los proyectos archivados (se abre desde el 📦) -->
-        <div id="proyectos-archivados" hidden>
-          <header class="app-header">
-            <button class="detail-close" id="proyectos-archivados-back" type="button">‹ Proyectos</button>
-            <div class="header-top">
-              <h1>Archivados</h1>
-            </div>
-          </header>
-
-          <ul class="proyecto-list" id="proyectos-archivados-list"></ul>
-
-          <p class="empty-state" id="proyectos-archivados-empty" hidden>
-            No hay proyectos archivados.
-          </p>
+          <p class="empty-state" id="proyectos-empty" hidden></p>
         </div>
 
         <!-- Página de un proyecto: sus tareas (se abre desde "X tareas") -->
@@ -454,6 +527,15 @@
                 <button type="button" class="header-new-btn" id="proyecto-task-add-btn">
                   + Nueva tarea
                 </button>
+                <!-- Solo en la vista Diagrama: pone un comentario en el lienzo -->
+                <button
+                  type="button"
+                  class="header-icon-btn"
+                  id="proyecto-comment-add-btn"
+                  aria-label="Nuevo comentario"
+                  title="Nuevo comentario"
+                  hidden
+                >💬</button>
                 <button
                   type="button"
                   class="header-icon-btn"
@@ -477,8 +559,9 @@
         </div>
       </section>
 
-      <!-- Vista: "Planificadas" (interna: planificadas). El id/hash sigue
-           siendo `planificadas`. -->
+      <!-- "Planificadas": ya no es una pestaña. Vive aquí, escondida, y el ⚙️
+           de Rutinas se la lleva prestada a su subpágina (y la devuelve al
+           volver). No borrar esta sección: es la única que hay. -->
       <section class="view" id="view-planificadas" hidden>
         <header class="app-header">
           <div class="header-top">
@@ -486,6 +569,11 @@
           </div>
           <p class="subtitle">Tareas anotadas. Se quedan aquí (no se completan).</p>
         </header>
+
+        <div class="task-tabs" id="planned-tabs" role="tablist" aria-label="Vista">
+          <button type="button" class="task-tab is-active" data-tab="lista" role="tab" aria-selected="true">Todas</button>
+          <button type="button" class="task-tab" data-tab="semana" role="tab" aria-selected="false">Semanalmente</button>
+        </div>
 
         <form class="new-task" id="planned-form" autocomplete="off">
           <input
@@ -504,6 +592,9 @@
         <p class="planned-empty" id="planned-empty" hidden>
           No hay rutinas.
         </p>
+
+        <!-- Previsión semanal: las planificadas semanales, agrupadas por día -->
+        <div class="planned-week" id="planned-week" hidden></div>
       </section>
     </div>
   </div>
@@ -532,6 +623,7 @@
           <h3 class="detail-section-label">Tipo</h3>
           <select id="detail-type" class="date-mode" aria-label="Tipo">
             <option value="tareas">Tareas</option>
+            <option value="compras">Compras</option>
             <option value="recados">Recados</option>
             <option value="rutinas">Rutinas</option>
             <option value="pendientes">Pendientes</option>
@@ -717,7 +809,7 @@
 
         <section class="settings-section" id="tab-datos">
           <p class="settings-desc">
-            Guarda una copia de todas tus listas (tareas, recados, pendientes,
+            Guarda una copia de todas tus listas (tareas, compras, recados, pendientes,
             proyectos y planificadas) en un archivo, o restáuralas desde uno.
           </p>
           <button type="button" class="settings-action" id="export-btn">⬇️ Exportar datos</button>
@@ -771,6 +863,14 @@
           </label>
         </div>
 
+        <!-- Descartar la tarea solo por hoy: no cuenta en el progreso de su
+             sección y vuelve sola mañana, sin tocar su última compleción. -->
+        <label class="hoy-switch hoy-switch-wide" id="hoy-detail-postpone-wrap">
+          <span class="hoy-switch-text">Posponer a mañana</span>
+          <input type="checkbox" id="hoy-detail-postpone" aria-label="Posponer a mañana" />
+          <span class="hoy-switch-slider"></span>
+        </label>
+
         <!-- Subtareas y nota del día: se vacían al empezar un día nuevo -->
         <h3 class="detail-section-label">Subtareas</h3>
         <ul class="subtask-list" id="hoy-detail-subtasks"></ul>
@@ -820,6 +920,7 @@
           <!-- Por defecto: la tarea se queda solo en el proyecto -->
           <option value="sinTipo">Sin tipo (solo en el proyecto)</option>
           <option value="tareas">Tareas</option>
+          <option value="compras">Compras</option>
           <option value="recados">Recados</option>
           <option value="pendientes">Pendientes</option>
         </select>
@@ -858,9 +959,37 @@
         <label class="fab-label" for="proyecto-new-cat">Categoría</label>
         <select id="proyecto-new-cat" class="date-mode"></select>
 
+        <!-- Sección del índice. Las opciones las rellena el JS al abrir el
+             modal, y vienen prerrellenas si se entra por el "+" de una. -->
+        <label class="fab-label" for="proyecto-new-sec">Sección</label>
+        <select id="proyecto-new-sec" class="date-mode"></select>
+
         <div class="fab-actions">
           <button type="button" class="fab-cancel" id="proyecto-new-cancel">Cancelar</button>
           <button type="submit" class="fab-submit">Crear</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Comentario del diagrama: crear y editar su texto -->
+  <div class="fab-overlay" id="proyecto-comment-overlay" hidden>
+    <div class="fab-box" role="dialog" aria-modal="true" aria-labelledby="proyecto-comment-title">
+      <h2 class="fab-title" id="proyecto-comment-title">Comentario</h2>
+
+      <form id="proyecto-comment-form" autocomplete="off">
+        <label class="fab-label" for="proyecto-comment-text">Texto</label>
+        <textarea
+          id="proyecto-comment-text"
+          class="task-input proyecto-comment-input"
+          rows="4"
+          maxlength="500"
+          placeholder="Lo que quieras anotar aquí…"
+        ></textarea>
+
+        <div class="fab-actions">
+          <button type="button" class="fab-cancel" id="proyecto-comment-cancel">Cancelar</button>
+          <button type="submit" class="fab-submit">Guardar</button>
         </div>
       </form>
     </div>
@@ -921,6 +1050,11 @@
       <label class="fab-label" for="proyecto-detail-cat">Categoría</label>
       <select id="proyecto-detail-cat" class="date-mode"></select>
 
+      <!-- Estado: decide en qué pestaña del índice sale el proyecto. Las
+           opciones las rellena el JS a partir de PROYECTO_ESTADOS. -->
+      <label class="fab-label" for="proyecto-detail-status">Estado</label>
+      <select id="proyecto-detail-status" class="date-mode"></select>
+
       <!-- Vista de diagrama: al apagarla se pierden las flechas del proyecto -->
       <label class="hoy-switch hoy-switch-wide proyecto-detail-switch">
         <span class="hoy-switch-text">Vista de diagrama</span>
@@ -928,15 +1062,9 @@
         <span class="hoy-switch-slider"></span>
       </label>
 
-      <!-- Archivar lo saca del listado sin borrar nada; eliminar sí borra -->
-      <div class="proyecto-detail-acciones">
-        <button class="detail-archive" id="proyecto-detail-archive" type="button">
-          📦 Archivar
-        </button>
-        <button class="detail-delete" id="proyecto-detail-delete" type="button">
-          🗑 Eliminar
-        </button>
-      </div>
+      <button class="detail-delete" id="proyecto-detail-delete" type="button">
+        🗑 Eliminar proyecto
+      </button>
 
       <div class="fab-actions">
         <button type="button" class="fab-submit" id="proyecto-detail-close">Cerrar</button>

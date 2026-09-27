@@ -4,6 +4,33 @@
 No usar herramientas de preview (screenshot, snapshot, eval, DOM inspection) para verificar cambios.
 La usuaria hace el QA manualmente. Tras implementar, informar de los cambios y esperar.
 
+## Pestaña "Compras"
+
+Cuarta lista de tareas, igual que Recados/Pendientes (`compras`, `ctxCompras`,
+`saveCompras`, `renderCompras`). Nube: `recordatorios/compras`; IndexedDB:
+`compras`. Va debajo de Tareas en la navegación. Sus tareas "En fecha" salen en
+Agenda/Hoy y las que esperan, en "En espera". Las destacadas **no** van a Mis
+tareas (como Pendientes).
+
+## Pestaña "En espera"
+
+Reúne lo que espera a que llegue una fecha. Mientras espera, la tarea **no
+aparece** en Tareas / Compras / Recados / Pendientes / Mis tareas / Rutinas, y vuelve sola
+a su lista el día que la fecha se cumple.
+
+- Esperan: `dateMode` `"on"` ("En fecha"), `"from"` ("A partir de") y
+  `"between"` ("Entre", por su `dateStart`; la de fin es solo el límite).
+- **No** espera `"before"` ("Antes de"): es un plazo, se puede hacer ya.
+- Vista de solo lectura en cuanto a creación: no tiene formulario. Los ítems son
+  los objetos reales de sus listas, así que se editan y completan desde aquí.
+- Orden: por `dateStart` ascendente (la que antes vuelve, primero). Cada ítem
+  lleva su procedencia en el byline (Tarea / Compra / Recado / Pendiente).
+- Agenda y Hoy no cambian: una tarea "En fecha" sigue colocada en su día.
+
+Código (`app.js`): `isTaskWaiting()` (el predicado), `isTaskHidden()` =
+`isTaskWaiting || isTaskOnHold` (el filtro que usan todas las listas),
+`ctxEspera` y el hook `sortPending` de `renderList`.
+
 ## Planificadas recurrentes → tareas en "Mis tareas"
 
 Las tareas de la pestaña **Planificadas** con "Repetir" distinto de "Nunca" se
@@ -74,6 +101,16 @@ cálculo de la "siguiente ocurrencia").
   enganche: la fecha la aporta `completedAt` y la recoge la comprobación.
 - Migración: las planificadas semanales sin `createdAt` reciben la fecha de hoy
   en la primera comprobación (empiezan a generar desde su próxima ocurrencia).
+
+### Previsión semanal
+Tab "Previsión semanal" en Planificadas (junto a "Lista"): una semana tipo, de
+lunes a domingo, sin fechas. Solo muestra las planificadas "Semanalmente",
+agrupadas por su `repeatDay`, más las plantillas de **App tareas** con
+Repetición "Semanalmente" (raíz Firebase `detail-tasks`, `repeat: "weekly"`,
+`weekday` '0'=Dom…'6'=Sáb; solo owner Cristina y `enabled !== false`). Las de
+App tareas llevan el byline "App tareas" y no se abren. Solo lectura. Código:
+`applyPlannedTab`, `renderPlannedWeek`, listener de `AT_DETAIL_ROOT` en
+`startFirebaseSync` (`atDetailRaw`).
 
 ### Almacenamiento
 - Tareas: ruta Firebase `recordatorios/tasks` + IndexedDB (`tasks`).
