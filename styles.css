@@ -70,6 +70,72 @@ body {
   max-width: none;
 }
 
+/* --- Rail: navegación de primer nivel (Tareas / Proyectos) ---
+   Móvil: barra horizontal arriba. Escritorio: columna estrecha a la izquierda
+   de la barra lateral (ver la media query del final del bloque). */
+.app-rail {
+  position: sticky;
+  top: 0;
+  z-index: 70; /* por debajo del menú "Más" (80) y de la barra inferior (90) */
+  display: flex;
+  gap: 4px;
+  padding: 8px 12px;
+  background: var(--card);
+  border-bottom: 1px solid var(--border);
+}
+
+/* Solo icono: un cuadrado por sección */
+.rail-item {
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.2rem;
+  line-height: 1;
+  color: var(--text-soft);
+  background: transparent;
+  border: none;
+  border-radius: 12px;
+  cursor: pointer;
+}
+
+.rail-item.is-active {
+  background: var(--star-bg);
+}
+
+/* Grupo del final del rail (sistema de diseño + Ajustes): el primero de los dos
+   se lleva el hueco libre, así los dos quedan juntos al final. */
+.rail-blank {
+  margin-left: auto;
+  color: var(--text-soft);
+  text-decoration: none;
+}
+
+.rail-item:hover {
+  color: var(--primary);
+}
+
+/* Fuera de la sección "Tareas", su navegación de móvil (barra inferior y botón
+   ＋) no pinta nada. */
+.app.is-otra-seccion .mobile-tabbar,
+.app.is-otra-seccion .fab {
+  display: none !important;
+}
+
+/* Cada sección tiene su propia barra lateral: solo se ve la de la activa */
+.app.is-otra-seccion #app-nav,
+.app:not(.is-otra-seccion) #proyectos-nav {
+  display: none !important;
+}
+
+#proyectos-nav-items {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
 /* --- Navegación principal --- */
 .view[hidden] {
   display: none;
@@ -125,38 +191,6 @@ body {
   border-top: 1px solid var(--border);
 }
 
-/* Pie de la barra de navegación: Ajustes + botón de pestaña en blanco */
-.app-nav-foot {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  margin-top: auto;
-}
-
-.app-nav-settings {
-  flex: 1;
-  min-width: 0;
-}
-
-/* Esquina inferior derecha: abre una pestaña nueva en blanco */
-.app-nav-blank {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 34px;
-  height: 34px;
-  color: var(--text-soft);
-  border-radius: 10px;
-  cursor: pointer;
-  text-decoration: none;
-}
-
-.app-nav-blank:hover {
-  color: var(--primary);
-  background: var(--star-bg);
-}
-
 .app-nav-head {
   display: flex;
   align-items: center;
@@ -169,6 +203,28 @@ body {
   font-weight: 700;
   font-size: 22px;
   color: var(--text);
+}
+
+/* Botón de icono en la cabecera de una barra lateral (las secciones de
+   Proyectos), arriba a la derecha y alineado con el título */
+.app-nav-icon-btn {
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  font-family: inherit;
+  font-size: 1rem;
+  line-height: 1;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.app-nav-icon-btn:hover {
+  background: var(--star-bg);
+  border-color: var(--border);
 }
 
 /* Móvil (por defecto): la barra lateral no se usa; manda la barra inferior */
@@ -504,6 +560,31 @@ body {
     height: 100vh;
     box-sizing: border-box;
     border-right: 1px solid var(--border);
+  }
+
+  /* El rail pasa a columna, a la izquierda de la barra lateral */
+  .app-rail {
+    flex: 0 0 60px;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    height: 100vh;
+    box-sizing: border-box;
+    padding: 12px 8px;
+    border-bottom: none;
+    border-right: 1px solid var(--border);
+  }
+
+  .rail-blank {
+    margin-left: 0;
+    margin-top: auto;
+  }
+
+  /* Los estados de los proyectos viven en su barra lateral, y con ellos el
+     botón de sus secciones (el de la cabecera de la vista es solo para móvil) */
+  #proyectos-tabs,
+  #proyectos-secciones-btn {
+    display: none;
   }
 
   .only-mobile {
@@ -1421,6 +1502,8 @@ body {
   min-width: 0;
   display: flex;
   flex-direction: column;
+  /* Abre el panel de la tarea, igual que en "Durante el día" (.task-main) */
+  cursor: pointer;
 }
 
 .hoy-view-text {
@@ -1453,6 +1536,12 @@ body {
 .hoy-view-item.is-done .hoy-view-text {
   color: var(--done);
   text-decoration: line-through;
+}
+
+/* Pospuesta a mañana: la tarjeta entera se atenúa. Sin tachar el texto, que es
+   la marca de completada. */
+.hoy-view-item.is-postponed {
+  opacity: 0.4;
 }
 
 .hoy-view-empty {
@@ -2919,6 +3008,7 @@ textarea.proyecto-detail-name {
 #detail-overlay #detail-type-wrap,
 #detail-overlay #detail-cat-wrap,
 #detail-overlay #detail-addhoy-wrap,
+#detail-overlay #detail-espera-wrap,
 #detail-overlay #detail-project-wrap,
 #detail-overlay #detail-state-wrap,
 #detail-overlay #detail-task-fields,
@@ -2965,6 +3055,23 @@ textarea.proyecto-detail-name {
 
 .hoy-stats-row.is-current {
   border-color: var(--primary);
+}
+
+/* Fila de semana: se abre para corregir sus días */
+.hoy-stats-row.is-clickable {
+  cursor: pointer;
+}
+
+.hoy-stats-chevron {
+  flex: 0 0 auto;
+  color: var(--text-soft);
+  font-size: 1.2rem;
+  line-height: 1;
+}
+
+/* Día que no se puede editar (hoy, futuro o anterior al registro) */
+.hoy-stats-row.is-locked {
+  opacity: 0.4;
 }
 
 .hoy-stats-week {
@@ -3295,6 +3402,16 @@ select.date-mode {
 #hoy-detail-overlay .hoy-switch-wide {
   padding: 14px 0;
   border-bottom: 1px solid var(--border);
+}
+
+/* Separación entre los bloques del panel de una tarea de Hoy. Como en el panel
+   de tarea, el hueco lo pone el bloque de arriba: así un bloque oculto (los
+   ajustes, que solo salen en modo edición) no deja hueco doble. */
+#hoy-detail-config,
+#hoy-detail-postpone-wrap,
+#hoy-subtask-form,
+#hoy-detail-note {
+  margin-bottom: 24px;
 }
 
 #hoy-detail-overlay .hoy-switch-text {

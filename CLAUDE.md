@@ -14,22 +14,36 @@ tareas (como Pendientes).
 
 ## Pestaña "En espera"
 
-Reúne lo que espera a que llegue una fecha. Mientras espera, la tarea **no
-aparece** en Tareas / Compras / Recados / Pendientes / Mis tareas / Rutinas, y vuelve sola
-a su lista el día que la fecha se cumple.
+Reúne lo apartado, por dos vías: **por fecha** (espera a que llegue) y **a
+mano** (el interruptor "En espera" del panel de la tarea). Mientras espera, la
+tarea **no aparece** en Tareas / Compras / Recados / Pendientes / Mis tareas /
+Rutinas.
 
-- Esperan: `dateMode` `"on"` ("En fecha"), `"from"` ("A partir de") y
-  `"between"` ("Entre", por su `dateStart`; la de fin es solo el límite).
+- Esperan por fecha: `dateMode` `"on"` ("En fecha"), `"from"` ("A partir de") y
+  `"between"` ("Entre", por su `dateStart`; la de fin es solo el límite). Estas
+  vuelven **solas** a su lista el día que la fecha se cumple.
 - **No** espera `"before"` ("Antes de"): es un plazo, se puede hacer ya.
+- Esperan a mano: las que llevan `enEspera: true`. **No** vuelven solas: se
+  quedan hasta que se desmarque el interruptor. Este se ofrece solo en las
+  cuatro listas propias (Tareas / Compras / Recados / Pendientes): en una copia
+  de rutina no, porque vuelve a nacer sola, ni en una tarea "sin tipo", que ya
+  tiene el estado "En espera" de su proyecto (`projectState`, otra cosa: ese
+  aparta la tarea dentro del proyecto y **no** la trae a esta pestaña).
 - Vista de solo lectura en cuanto a creación: no tiene formulario. Los ítems son
   los objetos reales de sus listas, así que se editan y completan desde aquí.
-- Orden: por `dateStart` ascendente (la que antes vuelve, primero). Cada ítem
+- Orden: primero las de fecha, por `dateStart` ascendente (la que antes vuelve,
+  primero), y al final las apartadas a mano, que no vuelven solas. Cada ítem
   lleva su procedencia en el byline (Tarea / Compra / Recado / Pendiente).
 - Agenda y Hoy no cambian: una tarea "En fecha" sigue colocada en su día.
+- "En espera" manda sobre "Añadir a Hoy": mientras espera, la tarea **no** sale
+  en la sección "Durante el día" de Hoy, aunque tenga el fijado puesto. Vuelve a
+  aparecer ahí sola en cuanto deja de esperar (`hoyPinnedTasks`).
 
-Código (`app.js`): `isTaskWaiting()` (el predicado), `isTaskHidden()` =
-`isTaskWaiting || isTaskOnHold` (el filtro que usan todas las listas),
-`ctxEspera` y el hook `sortPending` de `renderList`.
+Código (`app.js`): `isTaskWaitingByDate()` (solo la fecha), `isTaskWaiting()` =
+`enEspera || isTaskWaitingByDate` (el predicado de la pestaña), `isTaskHidden()`
+= `isTaskWaiting || isTaskOnHold` (el filtro que usan todas las listas),
+`ctxEspera` y el hook `sortPending` de `renderList`. UI: `detail-espera` en
+`index.html`, `renderDetailEspera()` (colgado de `renderDetailType()`).
 
 ## Planificadas recurrentes → tareas en "Mis tareas"
 

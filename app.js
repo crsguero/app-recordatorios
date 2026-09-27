@@ -48,8 +48,9 @@
   const proyectosListEl = document.getElementById("proyectos-list");
   const proyectosEmpty = document.getElementById("proyectos-empty");
   const proyectosAddBtn = document.getElementById("proyectos-add-btn");
-  // Pestañas del índice: una por estado del proyecto
+  // Estados del proyecto: barra lateral (escritorio) y pestañas del índice (móvil)
   const proyectosTabsEl = document.getElementById("proyectos-tabs");
+  const proyectosNavItemsEl = document.getElementById("proyectos-nav-items");
   // Página de un proyecto (sus tareas), dentro de la misma pestaña
   const proyectosIndexEl = document.getElementById("proyectos-index");
   const proyectosDetailEl = document.getElementById("proyectos-detail");
@@ -280,11 +281,15 @@
         : pendientes.indexOf(t) !== -1
         ? ORIGEN.pendientes
         : ORIGEN.tareas,
-    // Por fecha, la más cercana primero: es el orden en que van a volver
+    // Por fecha, la más cercana primero: es el orden en que van a volver. Las
+    // apartadas a mano no vuelven solas, así que van al final.
     sortPending: (arr) =>
-      arr
-        .slice()
-        .sort((a, b) => (a.dateStart || "").localeCompare(b.dateStart || "")),
+      arr.slice().sort((a, b) => {
+        const va = isTaskWaitingByDate(a) ? a.dateStart || "" : "";
+        const vb = isTaskWaitingByDate(b) ? b.dateStart || "" : "";
+        if (!va !== !vb) return va ? -1 : 1;
+        return va.localeCompare(vb);
+      }),
     listEl: esperaList,
     doneListEl: esperaDoneList,
     emptyEl: esperaEmpty,
@@ -830,9 +835,10 @@
       // `lastDoneAt` NO se toca: es el histórico de la última compleción.
       delete h.prevDoneAt;
       h.done = false;
-      // Subtareas y nota son del día que termina, no de la tarea: se vacían.
+      // Subtareas, nota y "posponer" son del día que termina, no de la tarea.
       delete h.subtasks;
       delete h.note;
+      delete h.postponed;
     });
     // Día nuevo: todas las secciones vuelven a verse desplegadas
     hoySections.forEach((s) => delete s.collapsed);
@@ -1391,6 +1397,8 @@
   const detailCat = document.getElementById("detail-cat");
   const detailAddHoyWrap = document.getElementById("detail-addhoy-wrap");
   const detailAddHoy = document.getElementById("detail-addhoy");
+  const detailEsperaWrap = document.getElementById("detail-espera-wrap");
+  const detailEspera = document.getElementById("detail-espera");
   // Selector de categoría: el mismo juego en Hoy, en las rutinas y en los
   // proyectos (el color de cada una va en el CSS, por su id)
   function fillCategorySelect(select) {
@@ -1878,6 +1886,18 @@
     else renderAllLists();
   });
 
+  // "En espera": la tarea sale de su lista y pasa a la pestaña "En espera"
+  // (la recogen `isTaskWaiting` y, con él, el filtro `isTaskHidden` de todas
+  // las listas). Al desmarcarlo vuelve a su lista de siempre.
+  detailEspera.addEventListener("change", () => {
+    const task = getOpenTask();
+    if (!task) return;
+    if (detailEspera.checked) task.enEspera = true;
+    else delete task.enEspera;
+    saveOpenTask();
+    renderAllLists();
+  });
+
   repeatMode.addEventListener("change", () => {
     const entity = getOpenEntity();
     if (!entity) return;
@@ -1986,6 +2006,7 @@
     // rutina que lleva el ajuste puesto: ahí se decide en la otra app.
     detailAddHoyWrap.hidden = !hoyExternKey(task) || lactAutoHoy(task);
     detailAddHoy.checked = isHoyFijada(task) || lactAutoHoy(task);
+    detailEsperaWrap.hidden = true; // no es nuestra: no se puede apartar
     detailTypeWrap.hidden = true; // no se puede mover de lista
     detailNote.hidden = true; // sin nota
     if (detailNoteLabel) detailNoteLabel.hidden = true;
@@ -2016,6 +2037,7 @@
     // (las de "antes de la extracción", que ya tienen su sección en Hoy).
     detailAddHoyWrap.hidden = !hoyExternKey(task);
     detailAddHoy.checked = isHoyFijada(task);
+    detailEsperaWrap.hidden = true; // no es nuestra: no se puede apartar
     detailTypeWrap.hidden = true; // no se puede mover de lista
     detailNote.hidden = true; // sin nota
     if (detailNoteLabel) detailNoteLabel.hidden = true;
@@ -2096,6 +2118,11 @@
   // Muestra el selector con el valor actual (o lo oculta si no aplica).
   // "Sin tipo" solo se ofrece con un proyecto asignado: sin él la tarea no se
   // vería en ninguna parte.
+  // "En espera": aparta la tarea a mano, sin depender de ninguna fecha. Solo en
+  // las cuatro listas propias; una copia de rutina vuelve a nacer sola y una
+  // tarea "sin tipo" ya tiene el estado "En espera" de su proyecto.
+  const TIPOS_CON_ESPERA = ["tareas", "compras", "recados", "pendientes"];
+
   function renderDetailType() {
     const type = detailTypeOf();
     detailTypeWrap.hidden = !type;
@@ -2104,6 +2131,12 @@
     if (optSinTipo)
       optSinTipo.hidden = !(task && task.projectId) && type !== "sinTipo";
     if (type) detailType.value = type;
+    renderDetailEspera(type, task);
+  }
+
+  function renderDetailEspera(type, task) {
+    detailEsperaWrap.hidden = TIPOS_CON_ESPERA.indexOf(type) === -1;
+    detailEspera.checked = !!(task && task.enEspera);
   }
 
   function moveTaskToList(target) {
@@ -2247,22 +2280,38 @@
      Cada proyecto está en uno de estos estados, y el índice los reparte en una
      pestaña por estado. Se guarda en `status`; sin él (lo normal, y todos los
      proyectos de antes) cuenta como "En curso". */
+  // `name` es el estado de UN proyecto (selector de sus ajustes, bylines) y
+  // `plural` el de la lista de proyectos que están en él (barra lateral y
+  // pestañas del índice).
   const PROYECTO_ESTADOS = [
     {
       id: "curso",
       name: "En curso",
+      plural: "En curso",
       vacio: "No hay proyectos en curso. ¡Añade uno con el botón + ! 🎉",
     },
-    { id: "espera", name: "En espera", vacio: "No hay proyectos en espera." },
-    { id: "aparcado", name: "Aparcado", vacio: "No hay proyectos aparcados." },
+    {
+      id: "espera",
+      name: "En espera",
+      plural: "En espera",
+      vacio: "No hay proyectos en espera.",
+    },
+    {
+      id: "aparcado",
+      name: "Aparcado",
+      plural: "Aparcados",
+      vacio: "No hay proyectos aparcados.",
+    },
     {
       id: "abandonado",
       name: "Abandonado",
+      plural: "Abandonados",
       vacio: "No hay proyectos abandonados.",
     },
     {
       id: "completado",
       name: "Completado",
+      plural: "Completados",
       vacio: "No hay proyectos completados.",
     },
   ];
@@ -2346,16 +2395,24 @@
     return isTaskParked(task) || isTaskBlocked(task);
   }
 
-  // ¿Espera a que llegue una fecha? Es lo que reúne la pestaña "En espera":
+  // ¿Espera a que llegue una fecha?
   //  - "En fecha"    → hasta ese día
   //  - "A partir de" → hasta ese día
   //  - "Entre"       → hasta la fecha de inicio (la de fin solo es el límite)
   // "Antes de" no espera nada: es un plazo, se puede hacer ya.
-  function isTaskWaiting(task) {
+  function isTaskWaitingByDate(task) {
     if (!task || task.done || task._lact || task._at) return false;
     const mode = task.dateMode;
     if (mode !== "on" && mode !== "from" && mode !== "between") return false;
     return !!task.dateStart && !isReached(task.dateStart);
+  }
+
+  // Lo que reúne la pestaña "En espera": lo que aguarda una fecha y lo que se
+  // ha apartado a mano con el interruptor "En espera" (`enEspera`). Lo manual
+  // no vuelve solo: sigue ahí hasta que se desmarque.
+  function isTaskWaiting(task) {
+    if (!task || task.done || task._lact || task._at) return false;
+    return !!task.enEspera || isTaskWaitingByDate(task);
   }
 
   // Lo que no sale de las listas normales: en espera de fecha, o retenido por
@@ -3570,6 +3627,16 @@
     "proyectos",
   ];
 
+  /* ---------- Secciones (rail, primer nivel) ----------
+     Cada vista pertenece a una sección. La barra lateral, la barra inferior y
+     el botón ＋ son navegación de "Tareas": en otras secciones se ocultan. */
+  const VIEW_SECTION = { proyectos: "proyectos" }; // el resto: tareas
+  const SECTION_HOME = { tareas: "tareas", proyectos: "proyectos" };
+  const sectionOfView = (v) => VIEW_SECTION[v] || "tareas";
+  // Última vista visitada en cada sección, para volver donde se estaba
+  const lastViewBySection = { tareas: "tareas", proyectos: "proyectos" };
+  const appRail = document.getElementById("app-rail");
+
   let currentView = "tareas";
 
   // `proyectoId` (opcional) solo cuenta en la vista Proyectos: entra directa a
@@ -3583,6 +3650,17 @@
     // que estar de vuelta en su sitio antes de repartir el `hidden` de abajo.
     closeRepeticionesConfig();
     currentView = view;
+    // Sección del rail a la que pertenece la vista
+    const section = sectionOfView(view);
+    lastViewBySection[section] = view;
+    const root = document.getElementById("app-root");
+    if (root) root.classList.toggle("is-otra-seccion", section !== "tareas");
+    if (appRail)
+      appRail.querySelectorAll(".rail-item").forEach((b) => {
+        const active = b.dataset.section === section;
+        b.classList.toggle("is-active", active);
+        b.setAttribute("aria-current", active ? "page" : "false");
+      });
     document
       .querySelectorAll(".app-nav-item")
       .forEach((n) => n.classList.toggle("is-active", n.dataset.view === view));
@@ -3639,6 +3717,18 @@
       goToView(view);
     });
   });
+
+  // Rail: cambia de sección y entra por donde se dejó (o por su vista inicial)
+  if (appRail) {
+    appRail.addEventListener("click", (e) => {
+      const btn = e.target.closest(".rail-item");
+      if (!btn) return;
+      const section = btn.dataset.section;
+      if (section === sectionOfView(currentView)) return;
+      closeMoreMenu();
+      goToView(lastViewBySection[section] || SECTION_HOME[section]);
+    });
+  }
 
   window.addEventListener("hashchange", applyHash);
 
@@ -4249,6 +4339,7 @@
       "hoy-view-item" +
       // En edición no se distingue lo completado de lo pendiente
       (item.done && !hoyEditMode ? " is-done" : "") +
+      (item.postponed && !hoyEditMode ? " is-postponed" : "") +
       (hoyEditMode ? " is-editing" : "") +
       hoyCatClass(item);
     li.dataset.id = item.id;
@@ -4457,7 +4548,10 @@
       }
 
       const secItems = hoy.filter((it) => it.section === sec.id);
-      const doneCount = secItems.filter((it) => it.done).length;
+      // Las pospuestas a mañana no entran en el progreso: ni en el total ni en
+      // las hechas. Se siguen viendo en la lista, apagadas.
+      const secCuentan = secItems.filter((it) => !it.postponed);
+      const doneCount = secCuentan.filter((it) => it.done).length;
 
       // En visualización, la sección puede estar colapsada (estado persistente)
       const showBody = hoyEditMode || !sec.collapsed;
@@ -4468,14 +4562,14 @@
         wrap.appendChild(form);
       } else {
         const head = document.createElement("div");
-        head.className = hoyHeadClass(sec, doneCount, secItems.length);
+        head.className = hoyHeadClass(sec, doneCount, secCuentan.length);
         const chevron = document.createElement("span");
         chevron.className = "hoy-view-chevron";
         chevron.textContent = sec.collapsed ? "▸" : "▾";
         const title = document.createElement("h2");
         title.className = "hoy-view-title";
         title.textContent = sec.name;
-        const count = hoyCountEl(doneCount, secItems.length);
+        const count = hoyCountEl(doneCount, secCuentan.length);
         head.append(title, count, chevron);
         head.addEventListener("click", () => toggleSectionCollapse(sec.id));
         wrap.appendChild(head);
@@ -4548,6 +4642,8 @@
     const item = hoy.find((h) => h.id === id);
     if (!item) return;
     item.done = !item.done;
+    // Completarla deja sin sentido el "hoy no toca"
+    if (item.done) delete item.postponed;
     // Última fecha de completado (se guarda siempre, se muestre o no). Al
     // desmarcar se recupera la anterior, para deshacer un check por error.
     if (item.done) {
@@ -4708,6 +4804,28 @@
     hoySubtaskInput.focus();
   });
 
+  // Posponer: la tarea sale del progreso de su sección por hoy y vuelve sola
+  // mañana (`resetHoyIfNewDay` lo borra). No toca `lastDoneAt` ni `doneLog`:
+  // posponer no es completar.
+  hoyDetailPostpone.addEventListener("change", () => {
+    const item = getHoyDetailItem();
+    if (!item) return;
+    if (!hoyDetailPostpone.checked) {
+      delete item.postponed;
+    } else {
+      item.postponed = true;
+      // Si estaba marcada, posponerla la desmarca. `toggleHoy` es quien sabe
+      // deshacer un check (devuelve `lastDoneAt` y quita la fecha del
+      // registro), y ya guarda y repinta.
+      if (item.done) {
+        toggleHoy(item.id);
+        return;
+      }
+    }
+    saveHoy();
+    renderHoy();
+  });
+
   hoyDetailNote.addEventListener("input", () => {
     const item = getHoyDetailItem();
     if (!item) return;
@@ -4824,19 +4942,50 @@
   const hoyStatsTitle = document.getElementById("hoy-stats-title");
   const hoyStatsList = document.getElementById("hoy-stats-list");
   const hoyStatsEmpty = document.getElementById("hoy-stats-empty");
+  const hoyStatsStepList = document.getElementById("hoy-stats-step-list");
+  const hoyStatsStepWeek = document.getElementById("hoy-stats-step-week");
+  const hoyStatsWeekLabel = document.getElementById("hoy-stats-week-label");
+  const hoyStatsDays = document.getElementById("hoy-stats-days");
 
-  function openHoyStats(id) {
-    const item = hoy.find((h) => h.id === id);
-    if (!item) return;
-    hoyStatsTitle.textContent = item.text;
+  let hoyStatsId = null; // tarea abierta en el resumen
+  let hoyStatsMonday = null; // semana abierta en el paso 2 (null = paso 1)
+
+  function hoyStatsItem() {
+    return hoyStatsId ? hoy.find((h) => h.id === hoyStatsId) || null : null;
+  }
+
+  // Corrige el registro: marca o desmarca una compleción en una fecha suelta.
+  function setHoyDoneOn(item, iso, on) {
+    const log = hoyDoneLog(item);
+    const i = log.indexOf(iso);
+    if (on && i === -1) log.push(iso);
+    else if (!on && i !== -1) log.splice(i, 1);
+    else return; // ya estaba como toca
+    log.sort();
+    if (log.length) item.doneLog = log;
+    else delete item.doneLog;
+    // `lastDoneAt` es la última compleción conocida: se recalcula desde el
+    // registro, o el byline "Hace N días" se quedaría descolgado de lo editado.
+    if (log.length) item.lastDoneAt = log[log.length - 1];
+    else delete item.lastDoneAt;
+    saveHoy();
+    renderHoy(); // ese byline se pinta en la lista
+  }
+
+  // Paso 1: las semanas con compleciones, más la actual aunque esté a cero
+  // (si no, no habría forma de corregirla).
+  function renderHoyStatsList(item) {
     hoyStatsList.innerHTML = "";
     const weeks = hoyDoneByWeek(item);
     const thisMonday = addDaysISO(todayISO(), -(dowOf(todayISO()) - 1));
-    hoyStatsEmpty.hidden = weeks.length > 0;
+    if (!weeks.some((w) => w.monday === thisMonday))
+      weeks.unshift({ monday: thisMonday, count: 0 });
+    hoyStatsEmpty.hidden = weeks.some((w) => w.count > 0);
     weeks.forEach((w) => {
       const li = document.createElement("li");
       li.className =
-        "hoy-stats-row" + (w.monday === thisMonday ? " is-current" : "");
+        "hoy-stats-row is-clickable" +
+        (w.monday === thisMonday ? " is-current" : "");
       const label = document.createElement("span");
       label.className = "hoy-stats-week";
       label.textContent = hoyWeekLabel(w.monday);
@@ -4849,9 +4998,82 @@
       const count = document.createElement("span");
       count.className = "hoy-stats-count";
       count.textContent = w.count === 1 ? "1 vez" : w.count + " veces";
-      li.append(label, count);
+      const chevron = document.createElement("span");
+      chevron.className = "hoy-stats-chevron";
+      chevron.textContent = "›";
+      chevron.setAttribute("aria-hidden", "true");
+      li.append(label, count, chevron);
+      li.addEventListener("click", () => showHoyStatsWeek(w.monday));
       hoyStatsList.appendChild(li);
     });
+  }
+
+  // Paso 2: los siete días de esa semana, uno por fila.
+  function renderHoyStatsWeek(item, monday) {
+    hoyStatsWeekLabel.textContent = hoyWeekLabel(monday);
+    hoyStatsDays.innerHTML = "";
+    const log = hoyDoneLog(item);
+    const today = todayISO();
+    AGENDA_DAYS.forEach((d, i) => {
+      const iso = addDaysISO(monday, i);
+      // Solo se edita el pasado: hoy se marca con la casilla de la lista, el
+      // futuro no ha ocurrido y antes del inicio del registro no hay datos.
+      const editable = iso < today && iso >= HOY_STATS_START;
+      const li = document.createElement("li");
+      li.className = "hoy-stats-row" + (editable ? "" : " is-locked");
+      const check = document.createElement("input");
+      check.type = "checkbox";
+      check.className = "task-check";
+      check.checked = log.indexOf(iso) !== -1;
+      check.disabled = !editable;
+      check.setAttribute("aria-label", "Completada el " + iso);
+      check.addEventListener("change", () => {
+        const actual = hoyStatsItem();
+        if (actual) setHoyDoneOn(actual, iso, check.checked);
+      });
+      const label = document.createElement("span");
+      label.className = "hoy-stats-week";
+      label.textContent = d.name + " " + agendaShortDate(iso);
+      if (!editable) {
+        li.title =
+          iso < HOY_STATS_START
+            ? "Anterior al inicio del registro"
+            : iso === today
+            ? "Hoy se marca desde la lista"
+            : "Todavía no ha llegado";
+      }
+      li.append(check, label);
+      hoyStatsDays.appendChild(li);
+    });
+  }
+
+  function showHoyStatsWeek(monday) {
+    const item = hoyStatsItem();
+    if (!item) return;
+    hoyStatsMonday = monday;
+    renderHoyStatsWeek(item, monday);
+    hoyStatsStepList.hidden = true;
+    hoyStatsStepWeek.hidden = false;
+  }
+
+  function showHoyStatsList() {
+    const item = hoyStatsItem();
+    if (!item) {
+      closeHoyStats();
+      return;
+    }
+    hoyStatsMonday = null;
+    renderHoyStatsList(item); // se recalcula: puede venir de editar días
+    hoyStatsStepWeek.hidden = true;
+    hoyStatsStepList.hidden = false;
+  }
+
+  function openHoyStats(id) {
+    const item = hoy.find((h) => h.id === id);
+    if (!item) return;
+    hoyStatsId = id;
+    hoyStatsTitle.textContent = item.text;
+    showHoyStatsList();
     hoyStatsOverlay.hidden = false;
     document.body.classList.add("no-scroll");
   }
@@ -4859,15 +5081,23 @@
   function closeHoyStats() {
     if (hoyStatsOverlay.hidden) return;
     hoyStatsOverlay.hidden = true;
+    hoyStatsId = null;
+    hoyStatsMonday = null;
     document.body.classList.remove("no-scroll");
   }
 
-  hoyStatsClose.addEventListener("click", closeHoyStats);
+  // El botón de la cabecera retrocede un paso: de los días, a las semanas.
+  hoyStatsClose.addEventListener("click", () => {
+    if (hoyStatsMonday) showHoyStatsList();
+    else closeHoyStats();
+  });
   hoyStatsOverlay.addEventListener("click", (e) => {
     if (e.target === hoyStatsOverlay) closeHoyStats();
   });
   document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && !hoyStatsOverlay.hidden) closeHoyStats();
+    if (e.key !== "Escape" || hoyStatsOverlay.hidden) return;
+    if (hoyStatsMonday) showHoyStatsList();
+    else closeHoyStats();
   });
 
   hoyAddSectionBtn.addEventListener("click", addSection);
@@ -4957,24 +5187,29 @@
     const out = [];
     [tasks, recados, pendientes, compras].forEach((lista) => {
       lista.forEach((t) => {
+        // En espera (por fecha o a mano) manda sobre el fijado: la tarea no
+        // asoma por Hoy hasta que salga de "En espera".
+        if (isTaskWaiting(t)) return;
         if (t.hoyDia && (!t.done || t.completedAt === todayISO())) out.push(t);
       });
     });
     // Las de otras apps, con el mismo criterio: pendientes, y las completadas
     // hoy se quedan tachadas hasta que cambie el día. Lactancia trae su propia
     // fecha de completado; la de App tareas la apuntamos nosotros al marcarla.
+    // Van en el orden de su app, SIN separar hechas de pendientes: en dos
+    // grupos, completar una la movería de grupo y saltaría de sitio en la lista.
+    const lactOrden = {};
+    (lactRaw["tareas-mama"] || []).forEach((x, i) => (lactOrden[x.id] = i));
     lactPending()
-      .concat(atareasPending())
-      .forEach((t) => {
-        if (isHoyFijada(t) || lactAutoHoy(t)) out.push(t);
-      });
-    lactDone().forEach((t) => {
-      if (!isHoyFijada(t) && !lactAutoHoy(t)) return;
-      if (t.completedAt === todayISO()) out.push(t);
-    });
-    atareasDone().forEach((t) => {
-      if (isHoyFijada(t) && fijadaDoneOf(t) === todayISO()) out.push(t);
-    });
+      .concat(lactDone().filter((t) => t.completedAt === todayISO()))
+      .filter((t) => isHoyFijada(t) || lactAutoHoy(t))
+      .sort((a, b) => lactOrden[a._lact.id] - lactOrden[b._lact.id])
+      .forEach((t) => out.push(t));
+    atareasPending()
+      .concat(atareasDone().filter((t) => fijadaDoneOf(t) === todayISO()))
+      .filter((t) => isHoyFijada(t))
+      .sort((a, b) => a._at.index - b._at.index)
+      .forEach((t) => out.push(t));
     return out;
   }
 
@@ -7138,30 +7373,75 @@
     return li;
   }
 
-  // Pestañas del índice: una por estado, con cuántos proyectos tiene cada una
+  // Estados, con cuántos proyectos tiene cada uno. Se pintan en dos sitios: la
+  // barra lateral (escritorio) y la fila de pestañas del índice (móvil).
+  // Con un proyecto abierto se resalta el estado al que pertenece.
   function renderProyectosTabs() {
-    if (!proyectosTabsEl) return;
-    proyectosTabsEl.innerHTML = "";
-    PROYECTO_ESTADOS.forEach((estado) => {
-      const n = proyectos.filter((p) => proyectoEstado(p) === estado.id).length;
-      const activa = estado.id === proyectosTab;
-      const tab = document.createElement("button");
-      tab.type = "button";
-      tab.className = "task-tab" + (activa ? " is-active" : "");
-      tab.dataset.tab = estado.id;
-      tab.setAttribute("role", "tab");
-      tab.setAttribute("aria-selected", activa ? "true" : "false");
-      tab.textContent = estado.name + (n ? " (" + n + ")" : "");
-      proyectosTabsEl.appendChild(tab);
-    });
+    const abierto = getProyectoOpen();
+    const activo = abierto ? proyectoEstado(abierto) : proyectosTab;
+    const cuenta = (id) =>
+      proyectos.filter((p) => proyectoEstado(p) === id).length;
+
+    if (proyectosTabsEl) {
+      proyectosTabsEl.innerHTML = "";
+      PROYECTO_ESTADOS.forEach((estado) => {
+        const n = cuenta(estado.id);
+        const activa = estado.id === activo;
+        const tab = document.createElement("button");
+        tab.type = "button";
+        tab.className = "task-tab" + (activa ? " is-active" : "");
+        tab.dataset.tab = estado.id;
+        tab.setAttribute("role", "tab");
+        tab.setAttribute("aria-selected", activa ? "true" : "false");
+        tab.textContent =
+          (estado.plural || estado.name) + (n ? " (" + n + ")" : "");
+        proyectosTabsEl.appendChild(tab);
+      });
+    }
+
+    if (proyectosNavItemsEl) {
+      proyectosNavItemsEl.innerHTML = "";
+      PROYECTO_ESTADOS.forEach((estado) => {
+        const n = cuenta(estado.id);
+        const activa = estado.id === activo;
+        const item = document.createElement("button");
+        item.type = "button";
+        item.className = "app-nav-item" + (activa ? " is-active" : "");
+        item.dataset.estado = estado.id;
+        item.textContent = estado.plural || estado.name;
+        if (n) {
+          const badge = document.createElement("span");
+          badge.className = "nav-count";
+          badge.textContent = String(n);
+          item.appendChild(badge);
+        }
+        proyectosNavItemsEl.appendChild(item);
+      });
+    }
+  }
+
+  // Elegir estado: desde el índice solo cambia de lista; con un proyecto
+  // abierto, vuelve al índice y se planta en ese estado.
+  function setProyectosTab(estado) {
+    if (!estado) return;
+    const abierto = !!getProyectoOpen();
+    if (!abierto && estado === proyectosTab) return;
+    proyectosTab = estado;
+    if (abierto) closeProyectoTasks();
+    else renderProyectosIndex();
   }
 
   if (proyectosTabsEl) {
     proyectosTabsEl.addEventListener("click", (e) => {
       const tab = e.target.closest(".task-tab");
-      if (!tab || tab.dataset.tab === proyectosTab) return;
-      proyectosTab = tab.dataset.tab;
-      renderProyectosIndex();
+      if (tab) setProyectosTab(tab.dataset.tab);
+    });
+  }
+
+  if (proyectosNavItemsEl) {
+    proyectosNavItemsEl.addEventListener("click", (e) => {
+      const item = e.target.closest(".app-nav-item");
+      if (item) setProyectosTab(item.dataset.estado);
     });
   }
 
@@ -7436,9 +7716,12 @@
   enableProyectoDrag(proyectosListEl);
 
   /* ---------- Secciones de Proyectos (modal de ajustes) ---------- */
-  const proyectosSeccionesBtn = document.getElementById(
-    "proyectos-secciones-btn"
-  );
+  // Dos botones para lo mismo: el de la barra lateral (escritorio) y el de la
+  // cabecera de la vista (móvil, donde esa barra no existe)
+  const proyectosSeccionesBtns = [
+    document.getElementById("proyectos-secciones-nav-btn"),
+    document.getElementById("proyectos-secciones-btn"),
+  ].filter(Boolean);
   const proSeccionesOverlay = document.getElementById(
     "proyecto-secciones-overlay"
   );
@@ -7540,7 +7823,9 @@
     proSeccionesOverlay.hidden = true;
   }
 
-  proyectosSeccionesBtn.addEventListener("click", openProyectoSecciones);
+  proyectosSeccionesBtns.forEach((b) =>
+    b.addEventListener("click", openProyectoSecciones)
+  );
   proSeccionesClose.addEventListener("click", closeProyectoSecciones);
   proSeccionesOverlay.addEventListener("click", (e) => {
     if (e.target === proSeccionesOverlay) closeProyectoSecciones();

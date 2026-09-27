@@ -39,6 +39,24 @@
   </div>
 
   <div class="app" id="app-root" hidden>
+    <!-- Navegación de primer nivel: rail con las secciones de la app. En
+         escritorio va en vertical a la izquierda de la barra lateral; en móvil,
+         en horizontal arriba, por encima de la barra inferior. -->
+    <nav class="app-rail" id="app-rail" aria-label="Secciones">
+      <button type="button" class="rail-item is-active" data-section="tareas" aria-label="Tareas" title="Tareas">✅</button>
+      <button type="button" class="rail-item" data-section="proyectos" aria-label="Proyectos" title="Proyectos">📁</button>
+      <!-- Al fondo del rail: disponibles desde cualquier sección -->
+      <!-- Abre en una pestaña nueva la página del sistema de diseño -->
+      <a class="rail-item rail-blank" id="blank-tab-btn" href="sistema-diseno.html" target="_blank" rel="noopener" title="Sistema de diseño" aria-label="Sistema de diseño">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M14 4h6v6" />
+          <path d="M20 4l-8 8" />
+          <path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" />
+        </svg>
+      </a>
+      <button type="button" class="rail-item" id="settings-btn" aria-label="Ajustes" title="Ajustes">⚙️</button>
+    </nav>
+
     <!-- Navegación de escritorio: barra lateral (en móvil manda la barra inferior) -->
     <nav class="app-nav" id="app-nav" aria-label="Navegación principal">
       <div class="app-nav-head">
@@ -54,19 +72,25 @@
       <button type="button" class="app-nav-item" data-view="recados">Recados</button>
       <button type="button" class="app-nav-item" data-view="repeticiones">Rutinas</button>
       <button type="button" class="app-nav-item" data-view="pendientes">Pendientes</button>
-      <hr class="app-nav-sep" />
-      <button type="button" class="app-nav-item" data-view="proyectos">Proyectos</button>
-      <div class="app-nav-foot">
-        <button type="button" class="app-nav-item app-nav-settings" id="settings-btn">⚙️ Ajustes</button>
-        <!-- Abre en una pestaña nueva la página del sistema de diseño (de momento, en blanco) -->
-        <a class="app-nav-blank" id="blank-tab-btn" href="sistema-diseno.html" target="_blank" rel="noopener" title="Sistema de diseño" aria-label="Sistema de diseño">
-          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M14 4h6v6" />
-            <path d="M20 4l-8 8" />
-            <path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" />
-          </svg>
-        </a>
+    </nav>
+
+    <!-- Barra lateral de la sección Proyectos: una entrada por estado (las
+         pinta el JS, con su contador). Solo escritorio, como la de Tareas; en
+         móvil manda la fila de pestañas del índice. -->
+    <nav class="app-nav" id="proyectos-nav" aria-label="Estados de los proyectos">
+      <div class="app-nav-head">
+        <span class="app-nav-brand">Proyectos</span>
+        <!-- Secciones del índice. En móvil, donde esta barra no existe, el
+             mismo botón está en la cabecera de la vista. -->
+        <button
+          type="button"
+          class="app-nav-icon-btn"
+          id="proyectos-secciones-nav-btn"
+          aria-label="Secciones de proyectos"
+          title="Secciones"
+        >⚙️</button>
       </div>
+      <div id="proyectos-nav-items"></div>
     </nav>
 
     <!-- Barra de navegación inferior (solo móvil) -->
@@ -113,9 +137,6 @@
         </button>
         <button type="button" class="menu-item" data-view="pendientes">
           <span class="menu-item-ico">⏳</span> Pendientes
-        </button>
-        <button type="button" class="menu-item" data-view="proyectos">
-          <span class="menu-item-ico">📁</span> Proyectos
         </button>
         <button type="button" class="menu-item" data-action="settings">
           <span class="menu-item-ico">⚙️</span> Ajustes
@@ -479,8 +500,9 @@
         </div>
       </section>
 
-      <!-- Vista: Proyectos. No son tareas: no se completan. Cada uno lleva un
-           título y un enlace (a Notion), que se abre en una pestaña nueva. -->
+      <!-- Vista: Proyectos (sección "Proyectos" del rail). No son tareas: no se
+           completan. Cada uno lleva un título y un enlace (a Notion), que se
+           abre en una pestaña nueva. -->
       <section class="view" id="view-proyectos" hidden>
         <!-- Índice: la lista de proyectos -->
         <div id="proyectos-index">
@@ -488,6 +510,8 @@
             <div class="header-top">
               <h1>Proyectos</h1>
               <div class="header-actions">
+                <!-- Solo móvil: en escritorio este botón vive en la cabecera de
+                     la barra lateral de Proyectos -->
                 <button
                   type="button"
                   class="header-icon-btn"
@@ -643,6 +667,15 @@
         <label class="hoy-switch hoy-switch-wide" id="detail-addhoy-wrap" hidden>
           <span class="hoy-switch-text">Añadir a Hoy</span>
           <input type="checkbox" id="detail-addhoy" aria-label="Añadir a Hoy" />
+          <span class="hoy-switch-slider"></span>
+        </label>
+
+        <!-- Aparta la tarea a mano: sale de su lista y se va a "En espera"
+             hasta que se desmarque. Solo en Tareas / Compras / Recados /
+             Pendientes. -->
+        <label class="hoy-switch hoy-switch-wide" id="detail-espera-wrap" hidden>
+          <span class="hoy-switch-text">En espera</span>
+          <input type="checkbox" id="detail-espera" aria-label="En espera" />
           <span class="hoy-switch-slider"></span>
         </label>
 
@@ -1081,12 +1114,23 @@
 
       <div class="detail-body">
         <h2 class="hoy-stats-title" id="hoy-stats-title"></h2>
-        <h3 class="detail-section-label">Veces completada por semana</h3>
-        <ul class="hoy-stats-list" id="hoy-stats-list"></ul>
-        <p class="hoy-stats-empty" id="hoy-stats-empty" hidden>
-          Todavía no hay compleciones registradas.
-        </p>
-        <p class="hoy-stats-note">El registro empieza el 10 de agosto de 2026.</p>
+
+        <!-- Paso 1: las semanas -->
+        <div id="hoy-stats-step-list">
+          <h3 class="detail-section-label">Veces completada por semana</h3>
+          <ul class="hoy-stats-list" id="hoy-stats-list"></ul>
+          <p class="hoy-stats-empty" id="hoy-stats-empty" hidden>
+            Todavía no hay compleciones registradas.
+          </p>
+          <p class="hoy-stats-note">El registro empieza el 10 de agosto de 2026.</p>
+        </div>
+
+        <!-- Paso 2: los 7 días de una semana, para corregir el registro -->
+        <div id="hoy-stats-step-week" hidden>
+          <h3 class="detail-section-label" id="hoy-stats-week-label"></h3>
+          <ul class="hoy-stats-list" id="hoy-stats-days"></ul>
+          <p class="hoy-stats-note">Solo se pueden editar los días ya pasados.</p>
+        </div>
       </div>
     </div>
   </div>
