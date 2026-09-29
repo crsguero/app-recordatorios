@@ -835,10 +835,22 @@
       // `lastDoneAt` NO se toca: es el histórico de la última compleción.
       delete h.prevDoneAt;
       h.done = false;
-      // Subtareas, nota y "posponer" son del día que termina, no de la tarea.
-      delete h.subtasks;
+      // Las subtareas son de la tarea, no del día: se conservan y amanecen sin
+      // marcar, igual que la propia tarea. (Firebase puede devolver el array
+      // como objeto; `Object.values` da las mismas referencias, así que vale
+      // para los dos formatos.)
+      const subs = Array.isArray(h.subtasks)
+        ? h.subtasks
+        : h.subtasks && typeof h.subtasks === "object"
+        ? Object.values(h.subtasks)
+        : [];
+      subs.forEach((s) => {
+        if (s) s.done = false;
+      });
+      // La nota y el "posponer" sí son del día que termina.
       delete h.note;
-      delete h.postponed;
+      delete h.postponedOn;
+      delete h.postponed; // formato antiguo (booleano)
     });
     // Día nuevo: todas las secciones vuelven a verse desplegadas
     hoySections.forEach((s) => delete s.collapsed);
@@ -4333,13 +4345,23 @@
 
   // <li> de una tarea de Hoy. En modo normal lleva checkbox; en modo edición,
   // el asa de arrastre, y al tocarla se abren sus ajustes en el panel lateral.
+  // "Posponer a mañana" guarda el DÍA en que se pospuso, no un simple sí/no:
+  // así caduca sola al cambiar la fecha y no depende de que el reseteo diario
+  // llegue a borrarla. Ese reseteo lo puede ejecutar cualquier dispositivo, y
+  // si el que lo hace corre una versión de la app que no conoce este campo, lo
+  // dejaría puesto para siempre (deja `hoyDay` en hoy y ya nadie vuelve a
+  // resetear). El booleano antiguo se ignora a propósito: caduca al instante.
+  function isHoyPostponed(item) {
+    return !!item && item.postponedOn === todayISO();
+  }
+
   function hoyViewItem(item) {
     const li = document.createElement("li");
     li.className =
       "hoy-view-item" +
       // En edición no se distingue lo completado de lo pendiente
       (item.done && !hoyEditMode ? " is-done" : "") +
-      (item.postponed && !hoyEditMode ? " is-postponed" : "") +
+      (isHoyPostponed(item) && !hoyEditMode ? " is-postponed" : "") +
       (hoyEditMode ? " is-editing" : "") +
       hoyCatClass(item);
     li.dataset.id = item.id;
@@ -4550,7 +4572,7 @@
       const secItems = hoy.filter((it) => it.section === sec.id);
       // Las pospuestas a mañana no entran en el progreso: ni en el total ni en
       // las hechas. Se siguen viendo en la lista, apagadas.
-      const secCuentan = secItems.filter((it) => !it.postponed);
+      const secCuentan = secItems.filter((it) => !isHoyPostponed(it));
       const doneCount = secCuentan.filter((it) => it.done).length;
 
       // En visualización, la sección puede estar colapsada (estado persistente)
@@ -4643,7 +4665,10 @@
     if (!item) return;
     item.done = !item.done;
     // Completarla deja sin sentido el "hoy no toca"
-    if (item.done) delete item.postponed;
+    if (item.done) {
+      delete item.postponedOn;
+      delete item.postponed; // formato antiguo (booleano)
+    }
     // Última fecha de completado (se guarda siempre, se muestre o no). Al
     // desmarcar se recupera la anterior, para deshacer un check por error.
     if (item.done) {
@@ -4805,15 +4830,16 @@
   });
 
   // Posponer: la tarea sale del progreso de su sección por hoy y vuelve sola
-  // mañana (`resetHoyIfNewDay` lo borra). No toca `lastDoneAt` ni `doneLog`:
-  // posponer no es completar.
+  // mañana. No toca `lastDoneAt` ni `doneLog`: posponer no es completar.
   hoyDetailPostpone.addEventListener("change", () => {
     const item = getHoyDetailItem();
     if (!item) return;
     if (!hoyDetailPostpone.checked) {
-      delete item.postponed;
+      delete item.postponedOn;
+      delete item.postponed; // formato antiguo (booleano)
     } else {
-      item.postponed = true;
+      item.postponedOn = todayISO();
+      delete item.postponed;
       // Si estaba marcada, posponerla la desmarca. `toggleHoy` es quien sabe
       // deshacer un check (devuelve `lastDoneAt` y quita la fecha del
       // registro), y ya guarda y repinta.
@@ -4851,7 +4877,7 @@
     // "Posponer a mañana" es del día, como las subtareas y la nota: solo tiene
     // sentido en el panel normal, no entre los ajustes de la tarea.
     hoyDetailPostponeWrap.hidden = hoyEditMode;
-    hoyDetailPostpone.checked = !!item.postponed;
+    hoyDetailPostpone.checked = isHoyPostponed(item);
     hoyDetailNote.value = item.note || "";
     hoySubtaskInput.value = "";
     renderHoySubtasks(item);
