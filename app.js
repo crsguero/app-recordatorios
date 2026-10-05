@@ -1149,11 +1149,7 @@
   function formatDayMesLact(fecha) {
     if (fecha === todayISO()) return "Hoy";
     if (fecha === addDaysISO(todayISO(), -1)) return "Ayer";
-    const p = fecha.split("-").map(Number);
-    const mes = new Date(p[0], p[1] - 1, p[2]).toLocaleDateString("es-ES", {
-      month: "long",
-    });
-    return p[2] + " " + (mes.charAt(0).toUpperCase() + mes.slice(1));
+    return formatDate(fecha); // "2 oct 2026", como el resto de las tareas
   }
   // Byline como en lactancia: extracción ("Extracción N · hora") y "durante el
   // día" (baño: "Hace N días" pendiente / fecha completada; o fecha simple).
@@ -1345,6 +1341,9 @@
       text: t.text,
       done: !!t.done,
       subtitle: atSubtitle(t), // 2ª línea (byline): su fecha en App tareas
+      // Nacida de una plantilla repetitiva de App tareas, no escrita a mano:
+      // `seriesId` es el id de esa plantilla (ver `agendaAtPreviasFor`).
+      auto: !!(t && t.seriesId),
       // `date` es la fecha sin formatear: `subtitle` la pinta como "Hoy" o
       // "Ayer" y cambia sola de un día para otro, así que no sirve de clave.
       _at: { index: index, date: (t && t.addedDate) || "" },
@@ -2803,16 +2802,43 @@
   });
 
   /* ---------- Render ---------- */
+  /* Los meses se escriben aquí en vez de pedírselos al sistema: cada navegador
+     los abrevia a su manera (septiembre sale "sept" en unos y "sep." en otros),
+     y el formato tiene que ser el mismo en el móvil y en el escritorio. Tres
+     letras y en minúscula: "2 oct 2026". */
+  const MESES_CORTOS = [
+    "ene", "feb", "mar", "abr", "may", "jun",
+    "jul", "ago", "sep", "oct", "nov", "dic",
+  ];
+
+  // Mes de una fecha ISO, en tres letras ("" si la fecha no vale)
+  function mesCorto(iso) {
+    const m = Number((iso || "").split("-")[1]);
+    return MESES_CORTOS[m - 1] || "";
+  }
+
   function formatDate(iso) {
     if (!iso) return "";
     const parts = iso.split("-");
     if (parts.length !== 3) return iso;
-    const d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
-    return d.toLocaleDateString("es-ES", {
-      day: "numeric",
-      month: "short",
-      year: "numeric",
-    });
+    return Number(parts[2]) + " " + mesCorto(iso) + " " + parts[0];
+  }
+
+  // "Completada hoy" / "Completada el 2 oct 2026" ("" si no sabemos cuándo)
+  function labelCompletada(iso) {
+    if (!iso) return "";
+    const rel = formatDateRel(iso);
+    // "Completada hoy/ayer" en lugar de "Completada el hoy/ayer"
+    return rel === "hoy" || rel === "mañana" || rel === "ayer"
+      ? "Completada " + rel
+      : "Completada el " + rel;
+  }
+
+  // Cuándo se completó una tarea de otra app. Lactancia lo trae en su dato; App
+  // tareas no guarda esa fecha, así que solo la tenemos si está fijada en Hoy,
+  // que es cuando la apuntamos nosotros (ver `setFijadaDone`).
+  function completadoDeExterna(task) {
+    return task.completedAt || fijadaDoneOf(task) || "";
   }
 
   // Igual que formatDate pero devuelve "hoy" / "mañana" / "ayer" si aplica.
@@ -2887,16 +2913,12 @@
     if (task._lact || task._at) {
       // Tarea de otra app: su propio byline. Lactancia trae el suyo (p. ej.
       // "Extracción 2 · 12:40") y App tareas, la fecha que tenga asignada allí.
-      dateLabel = task.subtitle || "";
+      // Completada, lo sustituye la fecha de completado, como en el resto.
+      dateLabel = task.done
+        ? labelCompletada(completadoDeExterna(task)) || task.subtitle || ""
+        : task.subtitle || "";
     } else if (task.done) {
-      if (task.completedAt) {
-        const rel = formatDateRel(task.completedAt);
-        // "Completada hoy/ayer" en lugar de "Completada el hoy/ayer"
-        dateLabel =
-          rel === "hoy" || rel === "mañana" || rel === "ayer"
-            ? "Completada " + rel
-            : "Completada el " + rel;
-      }
+      dateLabel = labelCompletada(task.completedAt);
     } else if (task.dateMode === "on" && task.dateStart) {
       // Día concreto: se muestra la fecha tal cual (hoy / mañana / 5 sept 2026)
       const rel = formatDateRel(task.dateStart);
@@ -3003,13 +3025,20 @@
         dateLine.appendChild(hoyEl);
       }
       if (origin) {
-        // La procedencia va en el color de acento
+        // La procedencia va en el color de acento, salvo cuando tiene una
+        // categoría que decida por ella: las de otras apps van en el color que
+        // las identifica (Maternidad en lactancia, Hogar en App tareas), y una
+        // copia de rutina toma el de su categoría. Esta última no la guarda la
+        // copia, así que hay que mirarla en la planificada; sin rutina (o sin
+        // categoría) se queda en el de acento.
         addSep();
         const originEl = document.createElement("span");
-        // Las de lactancia llevan su procedencia en el color de Maternidad, el
-        // mismo de su fondo, en vez de en el de acento.
-        originEl.className =
-          "task-origin" + (task._lact ? " cat-maternidad" : "");
+        const catOrigen = task._lact
+          ? " cat-maternidad"
+          : task._at
+          ? " cat-hogar"
+          : plannedCatClass(task);
+        originEl.className = "task-origin" + catOrigen;
         originEl.textContent = origin;
         dateLine.appendChild(originEl);
       }
@@ -4473,14 +4502,9 @@
     const sunday = addDaysISO(monday, 6);
     const p = monday.split("-").map(Number);
     const q = sunday.split("-").map(Number);
-    const from = new Date(p[0], p[1] - 1, p[2]);
-    const to = new Date(q[0], q[1] - 1, q[2]);
-    const long = { day: "numeric", month: "short" };
-    const start = from.toLocaleDateString(
-      "es-ES",
-      p[1] === q[1] ? { day: "numeric" } : long
-    );
-    const end = to.toLocaleDateString("es-ES", long);
+    // Dentro del mismo mes, el de la izquierda sobra: "4 – 10 ago"
+    const start = p[1] === q[1] ? String(p[2]) : agendaShortDate(monday);
+    const end = agendaShortDate(sunday);
     const year = q[0] !== new Date().getFullYear() ? " " + q[0] : "";
     return start + " – " + end + year;
   }
@@ -5665,7 +5689,8 @@
     // baño) son rutinas suyas, y así se anuncian. Una suelta, escrita a mano
     // allí, no lo es.
     if (t._lact) return t.auto ? ORIGEN.rutinas : null;
-    if (t._at) return null;
+    // Lo mismo en App tareas: las que nacen de una plantilla suya son rutinas.
+    if (t._at) return t.auto ? ORIGEN.rutinas : null;
     if (t.sourcePlannedId) return ORIGEN.rutinas;
     if (recados.indexOf(t) !== -1) return ORIGEN.recados;
     if (pendientes.indexOf(t) !== -1) return ORIGEN.pendientes;
@@ -5916,8 +5941,7 @@
   // "4 ago" para la cabecera de cada día
   function agendaShortDate(iso) {
     const p = iso.split("-").map(Number);
-    const d = new Date(p[0], p[1] - 1, p[2]);
-    return d.toLocaleDateString("es-ES", { day: "numeric", month: "short" });
+    return p[2] + " " + mesCorto(iso); // "4 ago", sin año: ya lo da la semana
   }
 
   function addAgenda(day, text) {

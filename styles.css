@@ -1144,29 +1144,37 @@ body {
 
 /* Categoría del proyecto: los mismos colores que en Hoy, pero oscurecidos,
    porque aquí tiñen texto en vez de servir de fondo. Solo en el byline de sus
-   tareas; en la pestaña Proyectos el título va en el color normal. */
+   tareas; en la pestaña Proyectos el título va en el color normal.
+   `.task-origin` se suma a cada grupo: la procedencia de una copia de rutina va
+   en el color de la categoría de esa rutina. */
 .task-project.cat-general,
-.proyecto-cat.cat-general {
+.proyecto-cat.cat-general,
+.task-origin.cat-general {
   color: var(--cat-general-text);
 }
 .task-project.cat-hogar,
-.proyecto-cat.cat-hogar {
+.proyecto-cat.cat-hogar,
+.task-origin.cat-hogar {
   color: var(--cat-hogar-text);
 }
 .task-project.cat-personal,
-.proyecto-cat.cat-personal {
+.proyecto-cat.cat-personal,
+.task-origin.cat-personal {
   color: var(--cat-personal-text);
 }
 .task-project.cat-salud,
-.proyecto-cat.cat-salud {
+.proyecto-cat.cat-salud,
+.task-origin.cat-salud {
   color: var(--cat-salud-text);
 }
 .task-project.cat-profesional,
-.proyecto-cat.cat-profesional {
+.proyecto-cat.cat-profesional,
+.task-origin.cat-profesional {
   color: var(--cat-profesional-text);
 }
 .task-project.cat-relaciones,
-.proyecto-cat.cat-relaciones {
+.proyecto-cat.cat-relaciones,
+.task-origin.cat-relaciones {
   color: var(--cat-relaciones-text);
 }
 .task-project.cat-maternidad,
@@ -1194,9 +1202,10 @@ body {
   background: #f3e6ff;
 }
 
-/* 2ª línea (fecha de ocurrencia) de esas tareas */
+/* 2ª línea (fecha de ocurrencia) de esas tareas: gris suave, como en el resto.
+   Lo que las identifica es el fondo lila de arriba, no la fecha. */
 .task-item.is-planned .task-date {
-  color: #975ecc;
+  color: var(--text-soft);
 }
 
 /* El círculo (sin marcar) en blanco, para que no se confunda con el fondo */
@@ -1705,28 +1714,9 @@ body {
   background: var(--cat-maternidad-bg);
 }
 
-/* Su 2ª línea (la fecha de la ocurrencia), en el color de la categoría */
-.task-item.cat-general .task-date {
-  color: var(--cat-general-text);
-}
-.task-item.cat-hogar .task-date {
-  color: var(--cat-hogar-text);
-}
-.task-item.cat-personal .task-date {
-  color: var(--cat-personal-text);
-}
-.task-item.cat-salud .task-date {
-  color: var(--cat-salud-text);
-}
-.task-item.cat-profesional .task-date {
-  color: var(--cat-profesional-text);
-}
-.task-item.cat-relaciones .task-date {
-  color: var(--cat-relaciones-text);
-}
-.task-item.cat-maternidad .task-date {
-  color: var(--cat-maternidad-text);
-}
+/* Su 2ª línea va en gris suave, como la de cualquier tarea (.task-date). El
+   color de la categoría se queda para el fondo de la tarjeta y para la etiqueta
+   de procedencia (.task-origin.cat-*), que es lo que la nombra. */
 
 /* En las tareas con color de fondo, el círculo (sin marcar) en blanco */
 .hoy-view-item.cat-general .task-check:not(:checked),
