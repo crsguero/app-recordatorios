@@ -80,15 +80,6 @@
     <nav class="app-nav" id="proyectos-nav" aria-label="Estados de los proyectos">
       <div class="app-nav-head">
         <span class="app-nav-brand">Proyectos</span>
-        <!-- Secciones del índice. En móvil, donde esta barra no existe, el
-             mismo botón está en la cabecera de la vista. -->
-        <button
-          type="button"
-          class="app-nav-icon-btn"
-          id="proyectos-secciones-nav-btn"
-          aria-label="Secciones de proyectos"
-          title="Secciones"
-        >⚙️</button>
       </div>
       <div id="proyectos-nav-items"></div>
     </nav>
@@ -510,15 +501,6 @@
             <div class="header-top">
               <h1>Proyectos</h1>
               <div class="header-actions">
-                <!-- Solo móvil: en escritorio este botón vive en la cabecera de
-                     la barra lateral de Proyectos -->
-                <button
-                  type="button"
-                  class="header-icon-btn"
-                  id="proyectos-secciones-btn"
-                  aria-label="Secciones de proyectos"
-                  title="Secciones"
-                >⚙️</button>
                 <button
                   type="button"
                   class="header-add-btn"
@@ -670,6 +652,14 @@
           <span class="hoy-switch-slider"></span>
         </label>
 
+        <!-- Descarta la tarea en "Durante el día" solo por hoy. Solo se ofrece
+             mientras esté fijada ahí: al quitar "Añadir a Hoy" desaparece. -->
+        <label class="hoy-switch hoy-switch-wide" id="detail-postpone-wrap" hidden>
+          <span class="hoy-switch-text">Posponer a mañana</span>
+          <input type="checkbox" id="detail-postpone" aria-label="Posponer a mañana" />
+          <span class="hoy-switch-slider"></span>
+        </label>
+
         <!-- Aparta la tarea a mano: sale de su lista y se va a "En espera"
              hasta que se desmarque. Solo en Tareas / Compras / Recados /
              Pendientes. -->
@@ -678,6 +668,17 @@
           <input type="checkbox" id="detail-espera" aria-label="En espera" />
           <span class="hoy-switch-slider"></span>
         </label>
+        <!-- Motivo de la espera: solo con el interruptor puesto. Sale en el
+             byline de la tarea en la pestaña "En espera". -->
+        <div id="detail-espera-motivo-wrap" hidden>
+          <input
+            type="text"
+            id="detail-espera-motivo"
+            class="date-input"
+            placeholder="Motivo de la espera…"
+            aria-label="Motivo de la espera"
+          />
+        </div>
 
         <!-- Proyecto al que pertenece (solo Tareas / Recados / Pendientes) -->
         <div id="detail-project-wrap" hidden>
@@ -992,10 +993,10 @@
         <label class="fab-label" for="proyecto-new-cat">Categoría</label>
         <select id="proyecto-new-cat" class="date-mode"></select>
 
-        <!-- Sección del índice. Las opciones las rellena el JS al abrir el
-             modal, y vienen prerrellenas si se entra por el "+" de una. -->
-        <label class="fab-label" for="proyecto-new-sec">Sección</label>
-        <select id="proyecto-new-sec" class="date-mode"></select>
+        <!-- Tipo: agrupa el índice. Las opciones las rellena el JS, y vienen
+             prerrellenas si se entra por el "+" de un grupo. -->
+        <label class="fab-label" for="proyecto-new-tipo">Tipo</label>
+        <select id="proyecto-new-tipo" class="date-mode"></select>
 
         <div class="fab-actions">
           <button type="button" class="fab-cancel" id="proyecto-new-cancel">Cancelar</button>
@@ -1028,36 +1029,6 @@
     </div>
   </div>
 
-  <!-- Secciones de Proyectos: crear, renombrar y eliminar -->
-  <div class="fab-overlay" id="proyecto-secciones-overlay" hidden>
-    <div class="fab-box" role="dialog" aria-modal="true" aria-labelledby="proyecto-secciones-modal-title">
-      <h2 class="fab-title" id="proyecto-secciones-modal-title">Secciones</h2>
-
-      <form id="proyecto-seccion-form" autocomplete="off">
-        <label class="fab-label" for="proyecto-seccion-name">Nueva sección</label>
-        <div class="seccion-new-row">
-          <input
-            type="text"
-            id="proyecto-seccion-name"
-            class="task-input"
-            maxlength="80"
-            placeholder="¿Cómo se llama?"
-          />
-          <button type="submit" class="seccion-add-btn" aria-label="Crear sección" title="Crear sección">+</button>
-        </div>
-      </form>
-
-      <ul class="seccion-list" id="proyecto-seccion-list"></ul>
-      <p class="seccion-empty" id="proyecto-seccion-empty">
-        Aún no hay secciones. Crea una y arrastra los proyectos dentro.
-      </p>
-
-      <div class="fab-actions">
-        <button type="button" class="fab-submit" id="proyecto-secciones-close">Cerrar</button>
-      </div>
-    </div>
-  </div>
-
   <!-- Ajustes de un proyecto: título, enlace, categoría y eliminar -->
   <div class="fab-overlay" id="proyecto-detail-overlay" hidden>
     <div class="fab-box" role="dialog" aria-modal="true" aria-labelledby="proyecto-detail-modal-title">
@@ -1082,6 +1053,10 @@
 
       <label class="fab-label" for="proyecto-detail-cat">Categoría</label>
       <select id="proyecto-detail-cat" class="date-mode"></select>
+
+      <!-- Tipo: las opciones las rellena el JS a partir de PROYECTO_TIPOS -->
+      <label class="fab-label" for="proyecto-detail-tipo">Tipo</label>
+      <select id="proyecto-detail-tipo" class="date-mode"></select>
 
       <!-- Estado: decide en qué pestaña del índice sale el proyecto. Las
            opciones las rellena el JS a partir de PROYECTO_ESTADOS. -->

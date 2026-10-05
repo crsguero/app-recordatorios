@@ -205,28 +205,6 @@ body {
   color: var(--text);
 }
 
-/* Botón de icono en la cabecera de una barra lateral (las secciones de
-   Proyectos), arriba a la derecha y alineado con el título */
-.app-nav-icon-btn {
-  flex: 0 0 auto;
-  width: 34px;
-  height: 34px;
-  padding: 0;
-  font-family: inherit;
-  font-size: 1rem;
-  line-height: 1;
-  color: var(--text);
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: 10px;
-  cursor: pointer;
-}
-
-.app-nav-icon-btn:hover {
-  background: var(--star-bg);
-  border-color: var(--border);
-}
-
 /* Móvil (por defecto): la barra lateral no se usa; manda la barra inferior */
 .app-nav {
   position: fixed;
@@ -580,10 +558,8 @@ body {
     margin-top: auto;
   }
 
-  /* Los estados de los proyectos viven en su barra lateral, y con ellos el
-     botón de sus secciones (el de la cabecera de la vista es solo para móvil) */
-  #proyectos-tabs,
-  #proyectos-secciones-btn {
+  /* Los estados de los proyectos viven en su barra lateral */
+  #proyectos-tabs {
     display: none;
   }
 
@@ -1194,7 +1170,8 @@ body {
   color: var(--cat-relaciones-text);
 }
 .task-project.cat-maternidad,
-.proyecto-cat.cat-maternidad {
+.proyecto-cat.cat-maternidad,
+.task-origin.cat-maternidad {
   color: var(--cat-maternidad-text);
 }
 
@@ -1225,6 +1202,36 @@ body {
 /* El círculo (sin marcar) en blanco, para que no se confunda con el fondo */
 .task-item.is-planned .task-check:not(:checked) {
   background: #fff;
+}
+
+/* Rutinas previstas en la Agenda: las que tocan un día que aún no ha llegado,
+   así que todavía no tienen tarea. Mismo color que sus copias, pero apagadas y
+   con el borde punteado: se ven, pero aún no se pueden completar. */
+.task-item.is-previa {
+  border-style: dashed;
+  box-shadow: none;
+  opacity: 0.75;
+}
+
+/* Las de App tareas previstas solo se muestran: se editan en su propia app */
+.task-item.is-previa.is-external .task-main {
+  cursor: default;
+}
+
+/* Hueco de la casilla: el círculo punteado dice "todavía no existe" */
+.task-check-hueco {
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  border: 2px dashed var(--border);
+  border-radius: 50%;
+}
+
+/* Hueco del asa: solo ocupa sitio, para que la fila quede alineada con las
+   demás del día (que sí se arrastran). */
+.day-handle.is-hueco {
+  visibility: hidden;
+  cursor: default;
 }
 
 /* Tareas de App lactancia: el rosa de Maternidad, su misma categoría */
@@ -1539,8 +1546,10 @@ body {
 }
 
 /* Pospuesta a mañana: la tarjeta entera se atenúa. Sin tachar el texto, que es
-   la marca de completada. */
-.hoy-view-item.is-postponed {
+   la marca de completada. La segunda regla es para las de "Durante el día",
+   que son `.task-item` (solo se atenúan en Hoy, ver `dayEntryEl`). */
+.hoy-view-item.is-postponed,
+.task-item.is-postponed {
   opacity: 0.4;
 }
 
@@ -1892,6 +1901,16 @@ textarea.proyecto-detail-name {
 
 .header-new-btn:active {
   transform: scale(0.96);
+}
+
+/* Separador entre los dos ejes de la fila de pestañas de Proyectos (estados y
+   tipos): la fila es larga y se desplaza, así que conviene verlos aparte. */
+.task-tabs-sep {
+  flex: 0 0 auto;
+  align-self: stretch;
+  width: 1px;
+  margin: 4px 4px;
+  background: var(--border);
 }
 
 /* Grupos de la vista lista de un proyecto (Bloqueadas / Sin empezar /
@@ -2448,8 +2467,8 @@ textarea.proyecto-detail-name {
   transform: scale(0.94);
 }
 
-/* Índice de Proyectos agrupado en secciones. Sin secciones creadas hay un solo
-   bloque sin cabecera, así que se ve igual que una lista suelta. */
+/* Índice de Proyectos, agrupado por el tipo de cada uno (más "Sin tipo" al
+   final, que es también donde se sueltan los que salen de un tipo). */
 .proyecto-sections {
   display: flex;
   flex-direction: column;
@@ -2663,94 +2682,6 @@ textarea.proyecto-detail-name {
   background: var(--star-bg);
   border-color: var(--primary);
   color: var(--primary);
-}
-
-/* ---------- Modal de secciones de Proyectos ---------- */
-.seccion-new-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.seccion-new-row .task-input {
-  flex: 1;
-  min-width: 0;
-}
-
-.seccion-add-btn {
-  flex: 0 0 auto;
-  width: 44px;
-  height: 44px;
-  font-family: inherit;
-  font-size: 1.4rem;
-  line-height: 1;
-  color: #fff;
-  background: var(--primary);
-  border: none;
-  border-radius: 12px;
-  cursor: pointer;
-}
-
-.seccion-add-btn:hover {
-  background: var(--primary-dark);
-}
-
-.seccion-list {
-  list-style: none;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-top: 16px;
-}
-
-.seccion-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.seccion-name {
-  flex: 1;
-  min-width: 0;
-  padding: 11px 12px;
-  font-family: inherit;
-  font-size: 0.95rem;
-  color: var(--text);
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-}
-
-.seccion-name:focus {
-  outline: none;
-  border-color: var(--primary);
-}
-
-.seccion-del {
-  flex: 0 0 auto;
-  width: 40px;
-  height: 40px;
-  font-size: 1rem;
-  line-height: 1;
-  color: var(--danger);
-  background: transparent;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  cursor: pointer;
-}
-
-.seccion-del:hover {
-  border-color: var(--danger);
-}
-
-.seccion-empty {
-  margin-top: 16px;
-  color: var(--text-soft);
-  font-size: 0.9rem;
-}
-
-.seccion-empty[hidden] {
-  display: none;
 }
 
 .planned-empty {
@@ -3009,11 +2940,17 @@ textarea.proyecto-detail-name {
 #detail-overlay #detail-cat-wrap,
 #detail-overlay #detail-addhoy-wrap,
 #detail-overlay #detail-espera-wrap,
+#detail-overlay #detail-espera-motivo-wrap,
 #detail-overlay #detail-project-wrap,
 #detail-overlay #detail-state-wrap,
 #detail-overlay #detail-task-fields,
 #detail-overlay #detail-repeat-section {
   margin-bottom: 24px;
+}
+
+/* El motivo va pegado a su interruptor "En espera", no a 24px */
+#detail-overlay #detail-espera-wrap:has(+ #detail-espera-motivo-wrap:not([hidden])) {
+  margin-bottom: 10px;
 }
 
 /* Dentro del bloque de tarea: hueco entre "Fecha" y "Subtareas" */

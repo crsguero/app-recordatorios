@@ -29,6 +29,13 @@ Rutinas.
   de rutina no, porque vuelve a nacer sola, ni en una tarea "sin tipo", que ya
   tiene el estado "En espera" de su proyecto (`projectState`, otra cosa: ese
   aparta la tarea dentro del proyecto y **no** la trae a esta pestaña).
+- **Motivo**: con el interruptor puesto, debajo aparece un campo de texto
+  (`detail-espera-motivo`) que se guarda en `esperaMotivo`. Sale al final del
+  byline, con el 🕑 delante (como "A partir de …"), de la tarea **solo** en la pestaña "En espera" (`ctxEspera.itemOpts` →
+  `showMotivo` de `createTaskItem`). Al desmarcar el interruptor se borra.
+- En esta pestaña la fecha y el motivo van en una **línea propia, la última**,
+  debajo de la de procedencia y proyecto (`splitDateLine`, también en
+  `ctxEspera.itemOpts`). El resto de listas no cambia.
 - Vista de solo lectura en cuanto a creación: no tiene formulario. Los ítems son
   los objetos reales de sus listas, así que se editan y completan desde aquí.
 - Orden: primero las de fecha, por `dateStart` ascendente (la que antes vuelve,
@@ -108,13 +115,122 @@ cálculo de la "siguiente ocurrencia").
   `repeat-year-wrap` ("Mes") es solo anual.
 - Se ejecuta **una sola vez por carga**, tras la primera sincronización de la
   nube de `tasks` **y** `planned` (flags `tasksSynced`/`plannedSynced` +
-  `materializationDone` en `startFirebaseSync`), para evitar duplicados entre
-  dispositivos y bucles con el `save()` interno.
+  `materializationDone`), para evitar duplicados entre dispositivos y bucles con
+  el `save()` interno. Se repite en cada **cambio de día** con la app abierta
+  (ver "Cambio de día con la app abierta"); es idempotente, así que no duplica.
+- `plannedIsRecurrent(p)` dice si una planificada genera tareas (tiene
+  repetición y los datos que esa repetición necesita). Lo comparten la
+  materialización y la Agenda.
 - `deleteTask` registra el despeje por eliminación (fija `lastClearedAt` y
   limpia `currentInstanceId` de la planificada). La compleción no necesita
   enganche: la fecha la aporta `completedAt` y la recoge la comprobación.
 - Migración: las planificadas semanales sin `createdAt` reciben la fecha de hoy
   en la primera comprobación (empiezan a generar desde su próxima ocurrencia).
+
+### Rutinas en la Agenda (semana del calendario)
+
+Cada día de la pestaña **Agenda** muestra, además de lo suyo, las rutinas que
+tocan **ese día de la semana en curso**, para poder ver la semana entera por
+delante (en Rutinas solo salen la de hoy y las pendientes de días anteriores).
+
+- Si la copia de la rutina **ya existe** (la materialización la crea el día que
+  toca), se pinta la **tarea real**: se completa, se abre y se reordena como
+  cualquier otra entrada del día. Se muestra aunque esté completada: ese día se
+  hizo. Va por `occurrenceDate`, así que una copia pendiente de una semana
+  anterior no aparece en la semana de ahora.
+- Si **aún no existe** (los días que no han llegado), se pinta una
+  **previsualización** (`is-previa`): sin casilla, en borde punteado y apagada,
+  y al tocarla se abre la **rutina**, no una tarea. No entra en `dayOrder` (su
+  id, `rutina:<id>:<iso>`, no es el de ninguna tarea), así que se pinta al final
+  del día y fuera del arrastre.
+- Una ocurrencia ya despejada no deja fantasma: si la copia se **eliminó**,
+  `lastClearedAt` la tapa (`plannedOccurrenceCleared`). Si se **completó**, se
+  ve la copia.
+- Esto es **solo de la Agenda**: "Durante el día" (Hoy) no cambia. Por eso las
+  copias entran por el `extra` de `dayEntries` desde `renderAgenda`, y no dentro
+  de `dayEntries`, que es común a las dos pestañas.
+
+Código: `plannedIsRecurrent`, `plannedOccursOn` (compara con la primera
+ocurrencia en o después de esa fecha), `plannedOccurrenceCleared`,
+`plannedCopyFor`, `agendaRutinasFor`, `agendaRutinaPreviaEl` y la opción
+`onOpen` de `createTaskItem`. `renderPlanned()` repinta la Agenda, porque
+cualquier cambio en las rutinas la afecta.
+
+### Tareas de App lactancia y App tareas en la Agenda
+
+La Agenda también reparte por días las tareas de esas dos apps, con el día que
+cada una lleva encima (`agendaExternasFor`, en el `extra` de `dayEntries` como
+las copias de rutinas):
+
+- **App tareas** (raíz `tasks`, solo Cristina): `addedDate`, la fecha con la que
+  nace la tarea (la pone su propia repetición o el día en que se creó a mano).
+- **App lactancia** (`tareas-mama`): `desde` si la tarea está diferida a un día
+  futuro ("Bañar a Sofía" nace para dos días después de recoger el baño) y, si
+  no lo tiene, `fecha`, que llevan las copias diarias de su plantilla
+  (`lactDiaDe`).
+
+Notas:
+- Lo que no tiene ninguna de esas fechas —una tarea suelta de lactancia— no
+  pertenece a ningún día y no sale en la Agenda: sigue en Cuanto antes/Rutinas.
+- De **App lactancia** no se previsualiza nada: sus tareas no repiten por día de
+  la semana, nacen de lo que se va registrando. De **App tareas** sí, ver abajo.
+- Salen completadas incluidas, como el resto de la Agenda, y llevan su
+  procedencia en el byline (`ORIGEN.lactancia` / `ORIGEN.appTareas`), que en
+  Cuanto antes se omite porque allí basta el color.
+- Su 2ª línea propia se oculta cuando es justo la fecha que las coloca en ese
+  día; se conserva en las del baño ("Hace N días") mediante `keepByline`, que
+  `dayEntryEl` traduce a `hideDate`.
+- `renderRutinas()` repinta la Agenda, porque esos datos la alimentan.
+
+### Previsión de App tareas en la Agenda
+
+Los días de la Agenda **que aún no han llegado** anuncian también lo que App
+tareas creará, a partir de sus plantillas (`detail-tasks`).
+
+`atOccursOn(t, iso)` es una **réplica de las reglas de repetición de App
+tareas**. Vive en la otra app: si allí se tocan, hay que repasarla. Cubre sus
+seis frecuencias (`AT_REPEATS`), y su `date` es la **fecha de inicio**:
+- `daily`: todos los días desde el inicio.
+- `weekly`: por `weekday` ('0'=Domingo … '6'=Sábado).
+- `monthly`: mismo día del mes que el inicio (que es obligatorio; sin él no
+  repite). App tareas **no recorta** el día al máximo del mes, así que una del
+  31 no tiene ocurrencia en los meses de 30, y aquí tampoco.
+- `quarterly`: mismo día del mes y meses desde el inicio múltiplos de 3.
+- `yearly`: mismo día y mes que el inicio.
+- `biannually`: mismo día y mes, y años desde el inicio pares.
+
+Fuera quedan, a propósito:
+- Las que **alternan** (`alternaTareas`): dependen del historial de App tareas
+  (a cuál le tocó la vez anterior), que no tenemos.
+- Su regla de "no acumular" (si queda una pendiente de esa serie, no crea la
+  siguiente): es un guardarraíl del momento de crear, no del calendario, y hoy
+  no dice si mañana estará pendiente.
+
+`agendaAtPreviasFor(iso)` añade encima:
+- **Solo a futuro** (`iso > todayISO()`): hoy y los días pasados enseñan lo que
+  existe de verdad, para que una tarea que se creó y se borró en App tareas no
+  vuelva aquí como si estuviera por venir.
+- **Sin duplicar**: si App tareas ya creó la tarea de ese día, su plantilla no se
+  anuncia. La marca fiable es `seriesId` (el id de la plantilla, que App tareas
+  guarda en la tarea); el texto vale de apoyo para las creadas antes de que lo
+  guardara.
+
+Se pintan con `agendaPreviaEl` (común con las rutinas previstas) más `is-at`
+(su amarillo) e `is-external`: no se abren, se editan en App tareas. El listener
+de `AT_DETAIL_ROOT` repinta la Agenda.
+
+`atWeeklyForDow(dow)` se queda para la **Previsión semanal**, que es una semana
+tipo sin fechas y por eso no puede usar `atOccursOn`. Ahí las que alternan sí
+se siguen viendo: esa vista no ha cambiado.
+
+### Cambio de día con la app abierta
+
+El reloj de `startApp` (cada minuto) ya no solo resetea "Hoy": cuando cambia la
+fecha vuelve a materializar las rutinas (para que las del día nazcan sin
+recargar) y repinta listas, Hoy y Agenda. Así, al cruzar de domingo a lunes, la
+Agenda pasa sola a la semana nueva: se van las ocurrencias de la semana anterior
+y entran las de esta. La materialización solo se repite si ya corrió una vez con
+los datos de la nube delante (`materializationDone`, ahora de ámbito módulo).
 
 ### Previsión semanal
 Tab "Previsión semanal" en Planificadas (junto a "Lista"): una semana tipo, de

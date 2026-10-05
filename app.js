@@ -71,7 +71,10 @@
   const proyectoTasksCanvas = document.getElementById("proyecto-tasks-canvas");
   let proyectoOpenId = null; // proyecto cuya página de tareas está abierta
   let proyectoTasksTab = "grafo"; // "grafo" | "lista" (no se persiste)
-  let proyectosTab = "curso"; // pestaña (estado) que se ve en el índice
+  // Filtro del índice de Proyectos: una sola pestaña, de uno de los dos ejes.
+  // Por estado se ven todos los de ese estado (de cualquier tipo) y por tipo
+  // todos los de ese tipo (en cualquier estado).
+  let proyectosSel = { eje: "estado", id: "curso" };
 
   // Vista Rutinas: tareas automáticas (planificadas + lactancia)
   const rutinasList = document.getElementById("rutinas-list");
@@ -116,6 +119,11 @@
     recados: "Recado",
     pendientes: "Pendiente",
     rutinas: "Rutina",
+    // Las de otras apps nombran la app, no un tipo de tarea nuestro (igual que
+    // el byline de la Previsión semanal). En Cuanto antes no la llevan: allí se
+    // reconocen por el color, pero en la Agenda conviven con todo lo demás.
+    lactancia: "App lactancia",
+    appTareas: "App tareas",
   };
 
   /* ---------- Contextos de lista (Mis tareas / Recados) ----------
@@ -281,6 +289,9 @@
         : pendientes.indexOf(t) !== -1
         ? ORIGEN.pendientes
         : ORIGEN.tareas,
+    // Las apartadas a mano llevan su motivo en el byline
+    // y, como la fecha, en una línea aparte bajo la procedencia y el proyecto
+    itemOpts: { showMotivo: true, splitDateLine: true },
     // Por fecha, la más cercana primero: es el orden en que van a volver. Las
     // apartadas a mano no vuelven solas, así que van al final.
     sortPending: (arr) =>
@@ -353,8 +364,9 @@
   // recordatorios/sinTipo = tareas sin tipo (solo dentro de su proyecto)
   const FB_KEY_SIN_TIPO = "sinTipo";
   const FB_KEY_PROYECTOS = "proyectos"; // recordatorios/proyectos = proyectos (título + enlace)
-  // recordatorios/proyectoSecciones = secciones en las que se agrupa el índice
-  // de Proyectos. El proyecto guarda su sección en `sectionId`.
+  // recordatorios/proyectoSecciones: las secciones del índice de Proyectos, que
+  // sustituyó el tipo del proyecto. Solo se conserva la clave para borrar lo que
+  // quedara guardado de entonces.
   const FB_KEY_PRO_SECCIONES = "proyectoSecciones";
   const FB_KEY_HOY = "hoy"; // recordatorios/hoy = tareas del día (mañana/tarde)
   // recordatorios/hoyFijadas = tareas de otras apps (lactancia / App tareas)
@@ -441,12 +453,11 @@
   let compras = []; // cuarta lista (igual que recados)
   // Tareas sin tipo: solo viven en su proyecto, fuera de las listas de tareas
   let sinTipo = [];
-  // Proyectos: {id, text, url, category, sectionId}. No se completan. El orden
-  // del array es el orden del índice; `sectionId` dice en qué sección van (sin
-  // sección, o si esa sección ya no existe, van al bloque "Sin sección").
+  // Proyectos: {id, text, url, category, tipo, status}. No se completan. El
+  // orden del array es el orden del índice. `tipo` es obligatorio desde que
+  // sustituyó a las secciones: solo están sin él los de antes, que se reparten
+  // a mano desde el bloque "Sin tipo" que sale mientras queden.
   let proyectos = [];
-  // Secciones del índice de Proyectos: {id, name}, en el orden en que se pintan
-  let proyectoSecciones = [];
   // Agenda: tareas fijas por día de la semana {id, text, day: 1-7, done}
   let agenda = [];
   // Orden manual de cada día: { "1": [id, id, …], … 1=Lunes … 7=Domingo }.
@@ -523,6 +534,9 @@
   let hoyDay = null; // día (ISO) al que pertenecen los estados "done" actuales
   let hoyReady = false; // true tras la primera sincronización de hoy
   let doneLogsLimpios = false; // la limpieza de `doneLog` corre una vez por carga
+  // La materialización de rutinas ya ha corrido al menos una vez (con los datos
+  // de la nube delante). Hasta entonces, el cambio de día no la repite.
+  let materializationDone = false;
   let planned = []; // tareas planificadas (solo texto, sin completar)
   let hoyFijadas = []; // claves de tareas externas fijadas a "Durante el día"
 
@@ -638,18 +652,6 @@
       fdb
         .ref(FB_ROOT + "/" + FB_KEY_PROYECTOS)
         .set(proyectos && proyectos.length ? proyectos : null)
-        .catch((e) =>
-          showError("Al sincronizar: " + (e && e.message ? e.message : e))
-        );
-    }
-  }
-
-  function saveProyectoSecciones() {
-    if (db) idbSet(IDB_KEY_PRO_SECCIONES, proyectoSecciones).catch(() => {});
-    if (fbReady) {
-      fdb
-        .ref(FB_ROOT + "/" + FB_KEY_PRO_SECCIONES)
-        .set(proyectoSecciones && proyectoSecciones.length ? proyectoSecciones : null)
         .catch((e) =>
           showError("Al sincronizar: " + (e && e.message ? e.message : e))
         );
@@ -940,19 +942,26 @@
      el día configurado, sin duplicados y con recuperación (catch-up). Ver el
      plan/documentación para las reglas completas. Se ejecuta una vez por carga
      tras sincronizar tasks y planned. */
+  // ¿Esta planificada genera tareas? (tiene repetición y los datos que esa
+  // repetición necesita). Lo comparten la materialización y la Agenda, que
+  // pinta las rutinas de la semana.
+  function plannedIsRecurrent(p) {
+    if (!p) return false;
+    if (p.repeat === "weekly") return !!p.repeatDay;
+    if (p.repeat === "monthly") return !!p.repeatDom;
+    if (p.repeat === "yearly") return !!(p.repeatMonth && p.repeatDom);
+    if (p.repeat === "biennial" || p.repeat === "quarterly")
+      return !!p.repeatStart;
+    return false;
+  }
+
   function runPlannedMaterialization() {
     const today = todayISO();
     let tasksChanged = false;
     let plannedChanged = false;
 
     planned.forEach((p) => {
-      const isWeekly = p.repeat === "weekly" && p.repeatDay;
-      const isMonthly = p.repeat === "monthly" && p.repeatDom;
-      const isYearly = p.repeat === "yearly" && p.repeatMonth && p.repeatDom;
-      const isBiennial = p.repeat === "biennial" && p.repeatStart;
-      const isQuarterly = p.repeat === "quarterly" && p.repeatStart;
-      if (!isWeekly && !isMonthly && !isYearly && !isBiennial && !isQuarterly)
-        return;
+      if (!plannedIsRecurrent(p)) return;
 
       // Migración: planificadas antiguas sin fecha de creación
       if (!p.createdAt) {
@@ -1018,6 +1027,7 @@
       save();
       renderTasksViews(); // las copias creadas viven en Cuanto antes…
       renderHoyView(); // …o en "Durante el día", si la rutina va a Hoy
+      renderAgenda(); // y en su día de la Agenda, ya como tarea de verdad
     }
   }
 
@@ -1157,6 +1167,9 @@
         return x.hecha ? formatDayMesLact(x.banoFecha) : diasDesdeBano(x.banoFecha);
       }
       if (x.fecha) return formatDayMesLact(x.fecha);
+      // Las que crea su app sin fecha encima (p. ej. "Recoger baño") se fechan
+      // por cuándo se generaron, que es la única marca de tiempo que traen.
+      if (x.auto && x.creada) return formatDayMesLact(msToISO(x.creada));
     }
     return "";
   }
@@ -1348,6 +1361,23 @@
   function atIsCristina(t) {
     return t && typeof t === "object" && (t.owner || "cristina") === "cristina";
   }
+  // Plantillas semanales de App tareas (raíz `detail-tasks`) que tocan ese día
+  // de la semana (1=Lunes … 7=Domingo). App tareas las guarda con `weekday`
+  // '0'=Domingo … '6'=Sábado. Solo las de Cristina y las activadas. Es de la
+  // Previsión semanal, que es una semana tipo sin fechas; la Agenda, que sí
+  // las tiene, usa `atOccursOn` (todas las frecuencias, contra un día real).
+  function atWeeklyForDow(dow) {
+    return atDetailRaw.filter(
+      (t) =>
+        atIsCristina(t) &&
+        t.enabled !== false &&
+        t.repeat === "weekly" &&
+        t.weekday !== "" &&
+        t.weekday != null &&
+        (Number(t.weekday) === 0 ? 7 : Number(t.weekday)) === dow
+    );
+  }
+
   function atareasPending() {
     const out = [];
     atRaw.forEach((t, i) => {
@@ -1408,9 +1438,13 @@
   const detailCatWrap = document.getElementById("detail-cat-wrap");
   const detailCat = document.getElementById("detail-cat");
   const detailAddHoyWrap = document.getElementById("detail-addhoy-wrap");
+  const detailPostponeWrap = document.getElementById("detail-postpone-wrap");
+  const detailPostpone = document.getElementById("detail-postpone");
   const detailAddHoy = document.getElementById("detail-addhoy");
   const detailEsperaWrap = document.getElementById("detail-espera-wrap");
   const detailEspera = document.getElementById("detail-espera");
+  const detailEsperaMotivoWrap = document.getElementById("detail-espera-motivo-wrap");
+  const detailEsperaMotivo = document.getElementById("detail-espera-motivo");
   // Selector de categoría: el mismo juego en Hoy, en las rutinas y en los
   // proyectos (el color de cada una va en el CSS, por su id)
   function fillCategorySelect(select) {
@@ -1879,6 +1913,7 @@
     // Tarea de otra app: la marca no cabe en ella, va a nuestro `hoyFijadas`.
     if (openExternTask) {
       setHoyFijada(openExternTask, detailAddHoy.checked);
+      renderDetailPostpone(openExternTask); // deja de estar fijada → sin posponer
       // Sigue en Mis tareas y en Rutinas, pero ahí se le pone (o se le quita)
       // el distintivo de Hoy, así que hay que repintarlas también.
       renderRutinas();
@@ -1891,11 +1926,29 @@
     const campo = esRutina ? "addToHoy" : "hoyDia";
     if (detailAddHoy.checked) entity[campo] = true;
     else delete entity[campo];
+    // Al dejar de estar en "Durante el día" el posponer sobra: se quita, para
+    // que no reaparezca puesto si se vuelve a fijar más adelante.
+    if (!esRutina && !detailAddHoy.checked) delete entity.postponedOn;
+    if (!esRutina) renderDetailPostpone(entity);
     saveOpen();
     // Una tarea fijada sale de "Cuanto antes" y entra en Hoy, así que hay que
     // repintar todas las listas, no solo la suya.
     if (esRutina) renderPlanned();
     else renderAllLists();
+  });
+
+  // "Posponer a mañana" en una tarea de "Durante el día": sale del progreso de
+  // la sección por hoy y vuelve sola mañana (el día guardado caduca por fecha).
+  detailPostpone.addEventListener("change", () => {
+    const task = openExternTask || getOpenTask();
+    if (!task) return;
+    setTaskPostponed(task, detailPostpone.checked);
+    if (openExternTask) {
+      renderHoyView(); // su marca vive en `hoyFijadas`, que ya se ha guardado
+      return;
+    }
+    saveOpenTask();
+    renderAllLists();
   });
 
   // "En espera": la tarea sale de su lista y pasa a la pestaña "En espera"
@@ -1905,9 +1958,26 @@
     const task = getOpenTask();
     if (!task) return;
     if (detailEspera.checked) task.enEspera = true;
-    else delete task.enEspera;
+    else {
+      delete task.enEspera;
+      // El motivo es de esta espera: no debe reaparecer en la siguiente
+      delete task.esperaMotivo;
+    }
     saveOpenTask();
     renderAllLists();
+    renderDetailEspera(detailTypeOf(), task);
+    if (detailEspera.checked) detailEsperaMotivo.focus();
+  });
+
+  // Motivo de la espera: sale en el byline de la tarea en "En espera"
+  detailEsperaMotivo.addEventListener("input", () => {
+    const task = getOpenTask();
+    if (!task) return;
+    const motivo = detailEsperaMotivo.value.trim();
+    if (motivo) task.esperaMotivo = motivo;
+    else delete task.esperaMotivo;
+    saveOpenTask();
+    renderList(ctxEspera);
   });
 
   repeatMode.addEventListener("change", () => {
@@ -1989,6 +2059,7 @@
     detailCat.value = item.category || "";
     detailAddHoyWrap.hidden = false; // "Añadir a Hoy" solo en planificadas
     detailAddHoy.checked = !!item.addToHoy;
+    renderDetailPostpone(null); // una rutina no está en "Durante el día"
     detailNote.value = item.note || "";
     overlay.hidden = false;
     document.body.classList.add("no-scroll");
@@ -2018,6 +2089,7 @@
     // rutina que lleva el ajuste puesto: ahí se decide en la otra app.
     detailAddHoyWrap.hidden = !hoyExternKey(task) || lactAutoHoy(task);
     detailAddHoy.checked = isHoyFijada(task) || lactAutoHoy(task);
+    renderDetailPostpone(task);
     detailEsperaWrap.hidden = true; // no es nuestra: no se puede apartar
     detailTypeWrap.hidden = true; // no se puede mover de lista
     detailNote.hidden = true; // sin nota
@@ -2049,6 +2121,7 @@
     // (las de "antes de la extracción", que ya tienen su sección en Hoy).
     detailAddHoyWrap.hidden = !hoyExternKey(task);
     detailAddHoy.checked = isHoyFijada(task);
+    renderDetailPostpone(task);
     detailEsperaWrap.hidden = true; // no es nuestra: no se puede apartar
     detailTypeWrap.hidden = true; // no se puede mover de lista
     detailNote.hidden = true; // sin nota
@@ -2083,6 +2156,7 @@
     const rutinaDeTask = plannedOf(task);
     detailAddHoyWrap.hidden = !!(rutinaDeTask && rutinaDeTask.addToHoy);
     detailAddHoy.checked = !!task.hoyDia;
+    renderDetailPostpone(task);
     detailDelete.hidden = false;
     openTaskId = id;
     detailTitle.value = task.text;
@@ -2149,6 +2223,20 @@
   function renderDetailEspera(type, task) {
     detailEsperaWrap.hidden = TIPOS_CON_ESPERA.indexOf(type) === -1;
     detailEspera.checked = !!(task && task.enEspera);
+    detailEsperaMotivoWrap.hidden =
+      detailEsperaWrap.hidden || !detailEspera.checked;
+    // Sin pisar lo que se está escribiendo: se guarda recortado, así que un
+    // espacio al final no debe borrarse mientras se teclea
+    const motivo = (task && task.esperaMotivo) || "";
+    if (detailEsperaMotivo.value.trim() !== motivo)
+      detailEsperaMotivo.value = motivo;
+  }
+
+  // "Posponer a mañana": solo mientras la tarea esté fijada en "Durante el
+  // día". Con `null` (una rutina) queda oculto.
+  function renderDetailPostpone(task) {
+    detailPostponeWrap.hidden = !taskEnDuranteElDia(task);
+    detailPostpone.checked = isTaskPostponed(task);
   }
 
   function moveTaskToList(target) {
@@ -2308,23 +2396,29 @@
       plural: "En espera",
       vacio: "No hay proyectos en espera.",
     },
+    // Estos tres no tienen pestaña propia (`tab: false`): el estado se sigue
+    // asignando y agrupando igual, y sus proyectos se ven en las pestañas de
+    // tipo, donde se agrupan por estado.
     {
       id: "aparcado",
       name: "Aparcado",
       plural: "Aparcados",
       vacio: "No hay proyectos aparcados.",
+      tab: false,
     },
     {
       id: "abandonado",
       name: "Abandonado",
       plural: "Abandonados",
       vacio: "No hay proyectos abandonados.",
+      tab: false,
     },
     {
       id: "completado",
       name: "Completado",
       plural: "Completados",
       vacio: "No hay proyectos completados.",
+      tab: false,
     },
   ];
 
@@ -2338,21 +2432,57 @@
     return e ? e.name : "";
   }
 
+  /* ---------- Tipo de un proyecto ----------
+     De qué va el proyecto: algo que quiero, que necesito, que ya tengo (y hay
+     que mantener) u otros. Es obligatorio: solo están sin tipo los proyectos de
+     antes de que lo fuera, que se reparten a mano. Se guarda en `tipo`. */
+  const PROYECTO_TIPOS = [
+    { id: "quiero", name: "Quiero" },
+    { id: "necesito", name: "Necesito" },
+    { id: "tengo", name: "Tengo" },
+    { id: "otros", name: "Otros" },
+  ];
+
+  function proyectoTipo(p) {
+    const t = p && p.tipo;
+    return PROYECTO_TIPOS.some((x) => x.id === t) ? t : "";
+  }
+
+  function proyectoTipoNombre(id) {
+    const t = PROYECTO_TIPOS.find((x) => x.id === id);
+    return t ? t.name : "";
+  }
+
   // Proyectos cerrados: ya no se les asignan tareas nuevas
   function proyectoCerrado(p) {
     const s = proyectoEstado(p);
     return s === "completado" || s === "abandonado";
   }
 
-  // Migración: el archivo de proyectos desapareció al llegar los estados, y lo
-  // que estaba archivado pasa a "Completado". Devuelve true si ha cambiado
-  // algo, para que quien la llame lo guarde.
-  function migrarArchivados(lista) {
+  // Migraciones de los proyectos. Devuelve true si ha cambiado algo, para que
+  // quien la llame lo guarde:
+  //  - el archivo desapareció al llegar los estados: lo archivado pasa a
+  //    "Completado";
+  //  - las secciones las sustituyó el tipo, así que su `sectionId` se suelta
+  //    (sigue corriendo en cada carga: así converge aunque otro dispositivo
+  //    todavía escriba el campo);
+  //  - el tipo "continuidad" se renombró a "otros".
+  function migrarProyectos(lista) {
     let cambiado = false;
     (lista || []).forEach((p) => {
-      if (p && p.archived) {
+      if (!p) return;
+      if (p.archived) {
         if (!p.status) p.status = "completado";
         delete p.archived;
+        cambiado = true;
+      }
+      if (p.sectionId !== undefined) {
+        delete p.sectionId;
+        cambiado = true;
+      }
+      // "Continuidad" se renombró a "Otros"
+      if (p.tipo === "continuidad") {
+        p.tipo = "otros";
         cambiado = true;
       }
     });
@@ -2813,8 +2943,13 @@
 
     const main = document.createElement("div");
     main.className = "task-main";
+    // `onOpen`: qué abrir al tocarla, cuando no es su propio panel (lo usa la
+    // previsualización de una rutina en la Agenda, que abre la rutina porque
+    // la tarea todavía no existe).
     main.addEventListener("click", () =>
-      task._lact
+      o.onOpen
+        ? o.onOpen(task)
+        : task._lact
         ? openLactDetail(task)
         : task._at
         ? openAtDetail(task)
@@ -2845,12 +2980,16 @@
     // Una completada ya no está en Hoy (sale al cambiar el día) y su 2ª línea
     // ya dice "Completada hoy": el distintivo ahí solo confundiría.
     const enHoy = !task.done && !o.hideHoy && isEnHoy(task);
-    if (enHoy || origin || project || dateText) {
+    // Motivo de la espera: solo en la pestaña "En espera" (`showMotivo`)
+    const motivo = o.showMotivo && task.enEspera ? task.esperaMotivo || "" : "";
+    if (enHoy || origin || project || dateText || motivo) {
       const dateLine = document.createElement("span");
       dateLine.className = "task-date";
+      // Línea en curso (puede pasar a una segunda, ver `splitDateLine`)
+      let line = dateLine;
       let first = true;
       const addSep = () => {
-        if (!first) dateLine.appendChild(document.createTextNode(" · "));
+        if (!first) line.appendChild(document.createTextNode(" · "));
         first = false;
       };
       if (enHoy) {
@@ -2867,7 +3006,10 @@
         // La procedencia va en el color de acento
         addSep();
         const originEl = document.createElement("span");
-        originEl.className = "task-origin";
+        // Las de lactancia llevan su procedencia en el color de Maternidad, el
+        // mismo de su fondo, en vez de en el de acento.
+        originEl.className =
+          "task-origin" + (task._lact ? " cat-maternidad" : "");
         originEl.textContent = origin;
         dateLine.appendChild(originEl);
       }
@@ -2889,11 +3031,24 @@
         });
         dateLine.appendChild(projectEl);
       }
+      // `splitDateLine` ("En espera"): la fecha y el motivo van en una línea
+      // propia, la última, en vez de seguir a la procedencia y el proyecto.
+      if (o.splitDateLine && (dateText || motivo) && !first) {
+        main.appendChild(dateLine);
+        line = document.createElement("span");
+        line.className = "task-date";
+        first = true;
+      }
       if (dateText) {
         addSep();
-        dateLine.appendChild(document.createTextNode(dateText));
+        line.appendChild(document.createTextNode(dateText));
       }
-      main.appendChild(dateLine);
+      if (motivo) {
+        addSep();
+        // Con el 🕑, como las que esperan por fecha ("A partir de …")
+        line.appendChild(document.createTextNode("🕑 " + motivo));
+      }
+      main.appendChild(line);
     }
 
     // Las tareas automáticas (copias de rutinas y las que vienen de App
@@ -2938,6 +3093,9 @@
   }
 
   function renderPlanned() {
+    // La Agenda pinta las rutinas de la semana en curso, así que cualquier
+    // cambio en ellas (crear, editar la repetición, borrar) la afecta.
+    renderAgenda();
     const container = document.getElementById("planned-list");
     const empty = document.getElementById("planned-empty");
     if (!container) return;
@@ -3042,19 +3200,10 @@
       day.appendChild(h);
 
       // Nuestras (repeatDay 1=Lun…7=Dom) y luego las de App tareas
-      // (weekday '0'=Dom…'6'=Sáb; solo Cristina y activadas).
       const own = planned.filter(
         (p) => p.repeat === "weekly" && Number(p.repeatDay) === i + 1
       );
-      const ext = atDetailRaw.filter(
-        (t) =>
-          atIsCristina(t) &&
-          t.enabled !== false &&
-          t.repeat === "weekly" &&
-          t.weekday !== "" &&
-          t.weekday != null &&
-          (Number(t.weekday) === 0 ? 7 : Number(t.weekday)) === i + 1
-      );
+      const ext = atWeeklyForDow(i + 1);
       if (!own.length && !ext.length) {
         const none = document.createElement("p");
         none.className = "planned-week-none";
@@ -3147,12 +3296,12 @@
 
     ctx.listEl.innerHTML = "";
     pending.forEach((task) =>
-      ctx.listEl.appendChild(createTaskItem(task, originOf(task)))
+      ctx.listEl.appendChild(createTaskItem(task, originOf(task), ctx.itemOpts))
     );
 
     ctx.doneListEl.innerHTML = "";
     done.forEach((task) =>
-      ctx.doneListEl.appendChild(createTaskItem(task, originOf(task)))
+      ctx.doneListEl.appendChild(createTaskItem(task, originOf(task), ctx.itemOpts))
     );
 
     ctx.emptyEl.hidden = pending.length !== 0;
@@ -3273,6 +3422,9 @@
   function renderRutinas() {
     renderList(ctxRutinas);
     renderList(ctxRepeticiones);
+    // La Agenda también pinta las tareas de App lactancia y App tareas, en el
+    // día que cada una lleva encima: cualquier cambio en ellas la afecta.
+    renderAgenda();
   }
   function renderRepeticiones() {
     renderList(ctxRepeticiones);
@@ -4015,7 +4167,6 @@
       compras,
       sinTipo,
       proyectos,
-      proyectoSecciones,
       planned,
     };
     const data = JSON.stringify(payload, null, 2);
@@ -4048,7 +4199,6 @@
         let inCompras = null;
         let inSinTipo = null;
         let inProyectos = null;
-        let inProSecciones = null;
         let inPlanned = null;
         if (Array.isArray(parsed)) {
           inTasks = parsed;
@@ -4062,9 +4212,6 @@
           inSinTipo = Array.isArray(parsed.sinTipo) ? parsed.sinTipo : null;
           inProyectos = Array.isArray(parsed.proyectos)
             ? parsed.proyectos
-            : null;
-          inProSecciones = Array.isArray(parsed.proyectoSecciones)
-            ? parsed.proyectoSecciones
             : null;
           inPlanned = Array.isArray(parsed.planned) ? parsed.planned : null;
         } else {
@@ -4102,14 +4249,9 @@
           sinTipo = inSinTipo.map(ensureId);
           saveSinTipo();
         }
-        if (inProSecciones) {
-          proyectoSecciones = inProSecciones.map(ensureId);
-          saveProyectoSecciones();
-          renderProyectos();
-        }
         if (inProyectos) {
           proyectos = inProyectos.map(ensureId);
-          migrarArchivados(proyectos); // copias de antes de los estados
+          migrarProyectos(proyectos); // copias de antes de los estados y los tipos
           saveProyectos();
           renderProyectos();
         }
@@ -4355,6 +4497,39 @@
     return !!item && item.postponedOn === todayISO();
   }
 
+  /* ---------- "Posponer a mañana" en "Durante el día" ----------
+     Mismo concepto que en las tareas propias de Hoy, pero sobre las filas
+     fijadas con "Añadir a Hoy". El día se guarda encima de la tarea
+     (`postponedOn`) salvo en las de otras apps, que se reconstruyen en cada
+     render: esas lo llevan en su registro de `hoyFijadas`. En los dos casos
+     caduca solo por fecha, sin depender de ningún reseteo. */
+  function isTaskPostponed(task) {
+    if (!task) return false;
+    if (task._lact || task._at) return fijadaPostponedOf(task) === todayISO();
+    return isHoyPostponed(task);
+  }
+
+  // ¿Está esta tarea en "Durante el día" por tener el fijado puesto? Es la
+  // condición para ofrecer "Posponer a mañana": si se quita "Añadir a Hoy", el
+  // interruptor desaparece. "En espera" también la saca de Hoy.
+  function taskEnDuranteElDia(task) {
+    if (!task) return false;
+    if (task._lact || task._at) return isHoyFijada(task) || lactAutoHoy(task);
+    return !!task.hoyDia && !isTaskWaiting(task);
+  }
+
+  // Guarda el posponer donde corresponda. No persiste: lo hace quien llama,
+  // que es el que sabe de qué lista es la tarea.
+  function setTaskPostponed(task, on) {
+    const iso = on ? todayISO() : null;
+    if (task._lact || task._at) {
+      setFijadaPostponed(task, iso); // este sí guarda: es nuestro nodo
+      return;
+    }
+    if (iso) task.postponedOn = iso;
+    else delete task.postponedOn;
+  }
+
   function hoyViewItem(item) {
     const li = document.createElement("li");
     li.className =
@@ -4516,7 +4691,12 @@
         const entries = isDia
           ? dayEntries(dow, todayISO(), hoyPinnedEntries())
           : lactAntesExtraccion();
-        const total = entries.length;
+        // Las pospuestas a mañana se siguen viendo, atenuadas, pero no entran
+        // en el progreso de la sección (igual que en las secciones propias).
+        const cuentan = entries.filter(
+          (e) => e.agenda || !isTaskPostponed(e.task)
+        );
+        const total = cuentan.length;
         // Vacía no se muestra, salvo "Durante el día": lleva el formulario para
         // añadir, que tiene que seguir a mano aunque aún no haya nada.
         if (!hoyEditMode && total === 0 && !isDia) return;
@@ -4531,7 +4711,7 @@
           wrap.appendChild(hint);
         } else {
           // Cabecera con progreso y colapsable (igual que las manuales)
-          const doneCount = entries.filter((e) =>
+          const doneCount = cuentan.filter((e) =>
             isDia ? dayEntryDone(e) : !!e.done
           ).length;
           const head = document.createElement("div");
@@ -5165,6 +5345,244 @@
     return out;
   }
 
+  /* ---------- Tareas de otras apps en la Agenda ----------
+     Cada app dice a su manera a qué día pertenece una tarea:
+      - App tareas: `addedDate`, la fecha con la que nace la tarea (la pone su
+        propia repetición, o el día en que se creó a mano).
+      - App lactancia: `desde` cuando la tarea está diferida a un día futuro
+        ("Bañar a Sofía" nace para dos días después de recoger el baño) y, si no
+        lo tiene, `fecha`, que es lo que llevan las copias diarias de su
+        plantilla de "durante el día".
+     Lo que no tiene ninguna de las dos —una tarea suelta de lactancia, que
+     simplemente está pendiente— no pertenece a ningún día y no sale aquí:
+     sigue en Cuanto antes y en Rutinas, como hasta ahora. Tampoco se inventan
+     ocurrencias futuras a partir de las plantillas de esas apps: cada una crea
+     sus tareas cuando toca, y la Previsión semanal ya enseña las suyas.
+     Se muestran completadas incluidas, como el resto de la Agenda. */
+
+  // Día al que pertenece una tarea de lactancia ("" si no tiene ninguno)
+  function lactDiaDe(x) {
+    if (x && typeof x.desde === "string" && x.desde) return x.desde;
+    if (x && typeof x.fecha === "string" && x.fecha) return x.fecha;
+    return "";
+  }
+
+  function agendaExternasFor(iso) {
+    const out = [];
+    (lactRaw["tareas-mama"] || []).forEach((x) => {
+      if (!x || lactDiaDe(x) !== iso) return;
+      const item = lactToItem(x, "tareas-mama");
+      out.push({
+        id: item.id,
+        task: item,
+        origin: ORIGEN.lactancia,
+        // Su 2ª línea suele ser la fecha, que ya dice la cabecera del día; la
+        // de las tareas del baño ("Hace N días") sí informa, y se conserva.
+        keepByline: !!x.banoFecha,
+      });
+    });
+    atRaw.forEach((t, i) => {
+      if (!atIsCristina(t) || !t || t.addedDate !== iso) return;
+      const item = atToItem(t, i);
+      out.push({ id: item.id, task: item, origin: ORIGEN.appTareas });
+    });
+    return out;
+  }
+
+  /* ---------- Rutinas de la semana en curso (solo en la Agenda) ----------
+     Cada día de la Agenda muestra también las rutinas (Planificadas con
+     "Repetir") que tocan ESE día de la semana del calendario:
+      - Si la copia ya existe —la materialización la crea el día que toca—, se
+        pinta la tarea real: se completa y se reordena como cualquier otra.
+      - Si aún no existe (los días que todavía no han llegado), se pinta una
+        previsualización: sin casilla, porque no se puede completar lo que no ha
+        nacido, y al tocarla se abre la rutina. Así se ve la semana entera por
+        delante, aunque en Rutinas solo salgan la de hoy y las pendientes.
+     Al cambiar de día la Agenda se repinta sola (ver el `setInterval` de
+     `startApp`), así que el lunes a las 00:00 entra la semana nueva: se van las
+     ocurrencias de la semana anterior y aparecen las de esta.
+     Esto es solo de la Agenda: "Durante el día" (Hoy) sigue mostrando lo de
+     siempre, así que estas entradas NO van en `dayEntries`, sino en su `extra`
+     desde `renderAgenda`. */
+
+  // ¿La rutina tiene una ocurrencia ese día? Se compara con la primera
+  // ocurrencia en o después de esa fecha: si es la fecha misma, toca ese día.
+  function plannedOccursOn(p, iso) {
+    if (!plannedIsRecurrent(p)) return false;
+    return plannedNextOccurrence(p, iso, false) === iso;
+  }
+
+  // ¿Esa ocurrencia quedó atrás sin dejar tarea? Pasa con las eliminadas (el
+  // despeje se apunta en `lastClearedAt`) y con las fechas anteriores a la
+  // propia rutina. No se previsualizan: el ciclo va ya por la siguiente.
+  function plannedOccurrenceCleared(p, iso) {
+    if (p.lastClearedAt) return iso <= p.lastClearedAt;
+    return !!p.createdAt && iso < p.createdAt;
+  }
+
+  // Copia ya creada de esa rutina para esa ocurrencia (o undefined)
+  function plannedCopyFor(p, iso) {
+    return tasks.find(
+      (t) => t.sourcePlannedId === p.id && t.occurrenceDate === iso
+    );
+  }
+
+  // Rutinas que tocan ese día, repartidas en las que ya tienen tarea real
+  // (`copias`, entradas de día como las demás) y las que aún no (`previas`).
+  function agendaRutinasFor(iso) {
+    const copias = [];
+    const previas = [];
+    planned.forEach((p) => {
+      if (!plannedOccursOn(p, iso)) return;
+      const copia = plannedCopyFor(p, iso);
+      // La copia se muestra aunque esté completada: ese día se hizo.
+      if (copia) {
+        copias.push({ id: copia.id, task: copia, origin: ORIGEN.rutinas });
+      } else if (!plannedOccurrenceCleared(p, iso)) {
+        previas.push(p);
+      }
+    });
+    return { copias: copias, previas: previas };
+  }
+
+  // Fila de una tarea que todavía no existe: apagada y sin casilla, con el asa
+  // y la casilla en hueco —alinean la fila con las demás del día y el círculo
+  // punteado dice que aún no ha nacido—.
+  function agendaPreviaEl(previa, origin, onOpen) {
+    const li = createTaskItem(previa, origin, {
+      hideCheck: true, // no se completa lo que aún no ha nacido
+      hideDate: true, // la fecha ya la lleva la cabecera del día
+      hideStar: true,
+      onOpen: onOpen,
+    });
+    li.classList.add("is-previa");
+    const asa = document.createElement("span");
+    asa.className = "day-handle is-hueco"; // el glifo da el ancho; va invisible
+    asa.textContent = "⠿";
+    asa.setAttribute("aria-hidden", "true");
+    const casilla = document.createElement("span");
+    casilla.className = "task-check-hueco";
+    casilla.setAttribute("aria-hidden", "true");
+    li.prepend(asa, casilla);
+    return li;
+  }
+
+  // Rutina prevista: con el color de la categoría de su rutina. Al tocarla se
+  // abre la rutina, porque la tarea todavía no existe.
+  function agendaRutinaPreviaEl(p, iso) {
+    return agendaPreviaEl(
+      {
+        id: "rutina:" + p.id + ":" + iso,
+        text: p.text,
+        done: false,
+        sourcePlannedId: p.id, // de aquí saca el color de su categoría
+        occurrenceDate: iso,
+      },
+      ORIGEN.rutinas,
+      () => openPlannedNote(p.id)
+    );
+  }
+
+  /* ---------- Tareas que App tareas creará más adelante ----------
+     Sus plantillas (`detail-tasks`) se ven en los días de la Agenda que aún no
+     han llegado, igual que nuestras rutinas. Solo a futuro: hoy y los días
+     pasados enseñan lo que existe de verdad, para que una tarea que se creó y
+     se borró no vuelva aquí como si estuviera por venir.
+     De App lactancia no se previsualiza nada: sus tareas no repiten por día de
+     la semana, nacen de lo que se va registrando.
+
+     OJO: `atOccursOn` es una RÉPLICA de las reglas de App tareas. Vive en la
+     otra app y puede cambiar sin que esta se entere; si allí se tocan las
+     repeticiones, hay que repasarla. */
+
+  const AT_REPEATS = [
+    "daily",
+    "weekly",
+    "monthly",
+    "quarterly",
+    "yearly",
+    "biannually",
+  ];
+
+  // Meses completos entre dos fechas ISO, por año y mes (como App tareas)
+  function mesesEntreISO(isoA, isoB) {
+    const a = isoA.split("-").map(Number);
+    const b = isoB.split("-").map(Number);
+    return (b[0] - a[0]) * 12 + (b[1] - a[1]);
+  }
+
+  // ¿Esta plantilla de App tareas tiene una ocurrencia ese día? Dos avisos:
+  //  - Su `date` es la FECHA DE INICIO. Antes de ella no hay ocurrencias, y
+  //    mensual/trimestral/anual/bienal la necesitan, porque el día (o el día y
+  //    el mes) de la repetición salen de ella. Sin fecha, no repiten.
+  //  - App tareas no recorta el día al máximo del mes: una mensual del 31 no
+  //    tiene ocurrencia en los meses de 30. Aquí igual, para no anunciar lo que
+  //    su app no va a crear.
+  function atOccursOn(t, iso) {
+    if (!t || !atIsCristina(t) || t.enabled === false) return false;
+    if (AT_REPEATS.indexOf(t.repeat) === -1) return false;
+    // Las que alternan con otras dependen del historial de App tareas (a cuál
+    // le tocó la vez anterior), que no tenemos: nunca se anuncian.
+    if (t.alternaTareas) return false;
+    const inicio = typeof t.date === "string" ? t.date : "";
+    if (inicio && inicio > iso) return false;
+    if (t.repeat === "daily") return true;
+    if (t.repeat === "weekly") {
+      // '0'=Domingo … '6'=Sábado en App tareas; 1=Lunes … 7=Domingo aquí
+      if (t.weekday === "" || t.weekday == null) return false;
+      return (Number(t.weekday) === 0 ? 7 : Number(t.weekday)) === dowOf(iso);
+    }
+    if (!inicio) return false; // el resto no sabe qué día le toca
+    if (t.repeat === "monthly") return inicio.slice(8) === iso.slice(8);
+    if (t.repeat === "quarterly") {
+      if (inicio.slice(8) !== iso.slice(8)) return false;
+      return mesesEntreISO(inicio, iso) % 3 === 0;
+    }
+    if (t.repeat === "yearly") return inicio.slice(5) === iso.slice(5);
+    if (t.repeat === "biannually") {
+      if (inicio.slice(5) !== iso.slice(5)) return false;
+      const años = Number(iso.slice(0, 4)) - Number(inicio.slice(0, 4));
+      return años % 2 === 0;
+    }
+    return false;
+  }
+
+  function agendaAtPreviasFor(iso) {
+    if (iso <= todayISO()) return []; // solo los días que están por venir
+    // Las que App tareas ya creó para ese día: su plantilla no se repite aquí.
+    // La marca fiable es `seriesId` (el id de la plantilla); el texto vale de
+    // apoyo para las creadas antes de que App tareas lo guardara.
+    const creadas = atRaw.filter(
+      (t) => t && atIsCristina(t) && t.addedDate === iso
+    );
+    return atDetailRaw.filter((plantilla) => {
+      if (!atOccursOn(plantilla, iso)) return false;
+      const titulo = (plantilla.title || "").trim();
+      if (!titulo) return false;
+      return !creadas.some(
+        (t) =>
+          (plantilla.id && t.seriesId === plantilla.id) ||
+          (t.text || "").trim() === titulo
+      );
+    });
+  }
+
+  // Se pinta con el amarillo de App tareas y no se abre: esas tareas se editan
+  // allí, igual que en la Previsión semanal.
+  function agendaAtPreviaEl(plantilla, iso) {
+    const li = agendaPreviaEl(
+      {
+        id: "at-plantilla:" + (plantilla.id || plantilla.title) + ":" + iso,
+        text: (plantilla.title || "").trim(),
+        done: false,
+      },
+      ORIGEN.appTareas,
+      () => {} // no se abre desde aquí
+    );
+    li.classList.add("is-at", "is-external");
+    return li;
+  }
+
   /* ---------- Lista combinada de un día (Agenda + tareas con fecha) ----------
      La misma lista se pinta en la pestaña Agenda (un día por sección) y en la
      sección automática "Durante el día" de Hoy (el día de hoy). El orden manual
@@ -5243,7 +5661,11 @@
   // únicas sin etiqueta: ya se anuncian con su indicador (🍼 / 🏠), su color de
   // fondo y su propio byline.
   function hoyPinnedOrigin(t) {
-    if (t._lact || t._at) return null;
+    // Las de lactancia que crea su app sola (copias de su plantilla, las del
+    // baño) son rutinas suyas, y así se anuncian. Una suelta, escrita a mano
+    // allí, no lo es.
+    if (t._lact) return t.auto ? ORIGEN.rutinas : null;
+    if (t._at) return null;
     if (t.sourcePlannedId) return ORIGEN.rutinas;
     if (recados.indexOf(t) !== -1) return ORIGEN.recados;
     if (pendientes.indexOf(t) !== -1) return ORIGEN.pendientes;
@@ -5297,6 +5719,16 @@
   function fijadaDoneAt(x) {
     return x && typeof x === "object" && x.d ? x.d : null;
   }
+  // `p`: el día en que se pospuso a mañana (ver `isTaskPostponed`)
+  function fijadaPostponedAt(x) {
+    return x && typeof x === "object" && x.p ? x.p : null;
+  }
+  // `a`: el registro existe SOLO para guardar estado (el día en que se pospuso,
+  // por ejemplo) de una tarea que va a Hoy porque lo dice su propia app, no
+  // porque la fijáramos aquí. No cuenta como fijado.
+  function fijadaIsAuto(x) {
+    return !!(x && typeof x === "object" && x.a);
+  }
   // Normaliza el registro que llega de la nube o de IndexedDB y tira las
   // claves de App tareas del formato viejo ("at:<texto>", sin fecha): fijaban
   // todas las ocurrencias de una rutina a la vez. Lo que se hubiera fijado así
@@ -5318,7 +5750,9 @@
 
   function isHoyFijada(task) {
     const key = hoyExternKey(task);
-    return !!key && fijadaIndex(key) !== -1;
+    if (!key) return false;
+    const i = fijadaIndex(key);
+    return i !== -1 && !fijadaIsAuto(hoyFijadas[i]);
   }
 
   function setHoyFijada(task, on) {
@@ -5326,8 +5760,44 @@
     if (!key) return;
     const i = fijadaIndex(key);
     if (on && i === -1) hoyFijadas.push(key);
-    else if (!on && i !== -1) hoyFijadas.splice(i, 1);
+    else if (on && fijadaIsAuto(hoyFijadas[i])) {
+      // Había registro, pero solo de estado: pasa a ser un fijado de verdad
+      const reg = Object.assign({}, hoyFijadas[i]);
+      delete reg.a;
+      hoyFijadas[i] = reg;
+    } else if (!on && i !== -1) hoyFijadas.splice(i, 1);
     else return; // ya estaba como toca
+    saveHoyFijadas();
+  }
+
+  // Reescribe un registro cambiando solo los campos que se le pasan y
+  // conservando el resto: `d` (completada) y `p` (pospuesta) son
+  // independientes. Sin ninguno de los dos se guarda la clave sola, que es la
+  // forma corta de siempre.
+  // Devuelve cómo queda un registro al cambiarle solo los campos indicados,
+  // conservando el resto. `null` significa que el registro ya no hace falta.
+  // Si no había registro se crea uno de solo estado (`a`): la tarea va a Hoy
+  // porque lo dice su app, y fijarla no es cosa nuestra.
+  function fijadaConCampos(actual, key, campos) {
+    const d = "d" in campos ? campos.d : fijadaDoneAt(actual);
+    const p = "p" in campos ? campos.p : fijadaPostponedAt(actual);
+    const auto = actual ? fijadaIsAuto(actual) : true;
+    if (!d && !p) return auto ? null : key;
+    const reg = { k: key };
+    if (auto) reg.a = 1;
+    if (d) reg.d = d;
+    if (p) reg.p = p;
+    return reg;
+  }
+
+  function setFijadaCampos(key, campos) {
+    const i = fijadaIndex(key);
+    const reg = fijadaConCampos(i === -1 ? null : hoyFijadas[i], key, campos);
+    if (i === -1) {
+      if (!reg) return; // nada que guardar
+      hoyFijadas.push(reg);
+    } else if (!reg) hoyFijadas.splice(i, 1);
+    else hoyFijadas[i] = reg;
     saveHoyFijadas();
   }
 
@@ -5335,11 +5805,7 @@
   // que se quede tachada en Hoy hasta que cambie el día.
   function setFijadaDone(task, iso) {
     const key = hoyExternKey(task);
-    if (!key) return;
-    const i = fijadaIndex(key);
-    if (i === -1) return; // no está fijada: no hay nada que recordar
-    hoyFijadas[i] = iso ? { k: key, d: iso } : key;
-    saveHoyFijadas();
+    if (key) setFijadaCampos(key, { d: iso || null });
   }
   // El día en que se completó, si lo tenemos apuntado
   function fijadaDoneOf(task) {
@@ -5347,6 +5813,18 @@
     if (!key) return null;
     const i = fijadaIndex(key);
     return i === -1 ? null : fijadaDoneAt(hoyFijadas[i]);
+  }
+
+  // Lo mismo para "Posponer a mañana" de una fijada de otra app.
+  function setFijadaPostponed(task, iso) {
+    const key = hoyExternKey(task);
+    if (key) setFijadaCampos(key, { p: iso || null });
+  }
+  function fijadaPostponedOf(task) {
+    const key = hoyExternKey(task);
+    if (!key) return null;
+    const i = fijadaIndex(key);
+    return i === -1 ? null : fijadaPostponedAt(hoyFijadas[i]);
   }
 
   /* Mantiene el apunte de "completada" de las fijadas de App tareas al día:
@@ -5361,14 +5839,18 @@
       const key = hoyExternKey(t);
       const i = key ? fijadaIndex(key) : -1;
       if (i === -1 || fijadaDoneAt(hoyFijadas[i])) return;
-      hoyFijadas[i] = { k: key, d: todayISO() }; // completada: se apunta hoy
+      // Completada: se apunta hoy, sin tocar lo demás (p. ej. el posponer)
+      hoyFijadas[i] = fijadaConCampos(hoyFijadas[i], key, { d: todayISO() });
       cambios = true;
     });
     atareasPending().forEach((t) => {
       const key = hoyExternKey(t);
       const i = key ? fijadaIndex(key) : -1;
       if (i === -1 || !fijadaDoneAt(hoyFijadas[i])) return;
-      hoyFijadas[i] = key; // vuelve a estar pendiente: se borra el apunte
+      // Vuelve a estar pendiente: se borra el apunte de completada
+      const reg = fijadaConCampos(hoyFijadas[i], key, { d: null });
+      if (reg) hoyFijadas[i] = reg;
+      else hoyFijadas.splice(i, 1);
       cambios = true;
     });
     if (cambios) saveHoyFijadas();
@@ -5394,14 +5876,20 @@
       ? agendaItem(e.agenda, from === "hoy" ? "Agenda" : null)
       : createTaskItem(e.task, e.origin, {
           // La fecha sobra cuando es la que coloca la tarea en este día; en
-          // una fijada no lo es, así que ahí sí se muestra.
-          hideDate: !e.pinned,
+          // una fijada no lo es, así que ahí sí se muestra. `keepByline`: la
+          // 2ª línea de una tarea de otra app que no es su fecha (ver
+          // `agendaExternasFor`).
+          hideDate: !e.pinned && !e.keepByline,
           hideStar: true,
           // Dentro de Hoy el distintivo sobra; en la Agenda sí informa.
           hideHoy: from === "hoy",
           dragHandle: true,
         });
     li.classList.add("day-item"); // clase común: el arrastre las mezcla
+    // Pospuesta: solo se atenúa en Hoy, que es donde significa algo. En la
+    // Agenda la tarea se sigue viendo normal.
+    if (from === "hoy" && !e.agenda && isTaskPostponed(e.task))
+      li.classList.add("is-postponed");
     return li;
   }
 
@@ -5534,12 +6022,25 @@
       }
       wrap.appendChild(title);
 
-      // Tareas de Agenda de ese día + tareas y recados con fecha exacta en ese
-      // día de la semana en curso, en el orden manual común con Hoy.
+      // Tareas de Agenda de ese día + tareas, compras y recados con fecha
+      // exacta en ese día de la semana en curso + las rutinas que tocan ese
+      // día + las de App lactancia y App tareas con ese día propio, en el
+      // orden manual común con Hoy.
       const ul = document.createElement("ul");
       ul.className = "task-list";
       wrap.appendChild(ul);
-      renderDayList(ul, d.day, dayEntries(d.day, iso), "agenda");
+      const rutinas = agendaRutinasFor(iso);
+      const extra = rutinas.copias.concat(agendaExternasFor(iso));
+      renderDayList(ul, d.day, dayEntries(d.day, iso, extra), "agenda");
+      // Las rutinas que aún no tienen tarea van al final: no se completan ni se
+      // reordenan (su id no es el de ninguna tarea), solo anuncian lo que toca.
+      rutinas.previas.forEach((p) =>
+        ul.appendChild(agendaRutinaPreviaEl(p, iso))
+      );
+      // Y lo que App tareas creará los días que aún no han llegado
+      agendaAtPreviasFor(iso).forEach((t) =>
+        ul.appendChild(agendaAtPreviaEl(t, iso))
+      );
 
       const form = document.createElement("form");
       form.className = "new-task agenda-add-form";
@@ -5716,7 +6217,7 @@
     return { done: done, total: total, ready: ready, waiting: waiting };
   }
 
-  function addProyecto(text, url, category, sectionId) {
+  function addProyecto(text, url, category, tipo) {
     const trimmed = text.trim();
     if (!trimmed) return;
     const nuevo = {
@@ -5725,8 +6226,8 @@
       url: (url || "").trim(),
       category: category || "",
     };
-    // Sin sección no se guarda el campo (es lo normal)
-    if (sectionId) nuevo.sectionId = sectionId;
+    // El modal siempre manda uno; la guarda es por si acaso
+    if (tipo) nuevo.tipo = tipo;
     proyectos.push(nuevo);
     saveProyectos();
     renderProyectos();
@@ -7306,16 +7807,9 @@
     clearProyectoSel();
   });
 
-  // ¿La sección existe todavía? Un proyecto con una sección borrada (o sin
-  // sección) cae en el bloque "Sin sección".
-  function proyectoSeccionOf(item) {
-    const id = (item && item.sectionId) || "";
-    return proyectoSecciones.some((s) => s.id === id) ? id : "";
-  }
-
   // `conHueco`: reservar el avatar aunque el proyecto no tenga enlace, para que
-  // todas las filas de la sección empiecen igual. En "Sin sección" no se
-  // reserva: allí solo lleva avatar el que tenga enlace a Notion.
+  // todas las filas del grupo empiecen igual. En "Sin tipo" no se reserva: allí
+  // solo lleva avatar el que tenga enlace a Notion.
   function proyectoItemEl(item, conHueco) {
     const li = document.createElement("li");
     li.className = "proyecto-item";
@@ -7399,60 +7893,124 @@
     return li;
   }
 
-  // Estados, con cuántos proyectos tiene cada uno. Se pintan en dos sitios: la
-  // barra lateral (escritorio) y la fila de pestañas del índice (móvil).
-  // Con un proyecto abierto se resalta el estado al que pertenece.
-  function renderProyectosTabs() {
-    const abierto = getProyectoOpen();
-    const activo = abierto ? proyectoEstado(abierto) : proyectosTab;
-    const cuenta = (id) =>
+  // Las pestañas del índice: primero los estados y luego los tipos (más "Sin
+  // tipo"). Se pintan en dos sitios: la barra lateral (escritorio) y la fila de
+  // pestañas del índice (móvil). Solo se elige una.
+  function proyectosFiltros() {
+    const cuentaEstado = (id) =>
       proyectos.filter((p) => proyectoEstado(p) === id).length;
+    const cuentaTipo = (id) =>
+      proyectos.filter((p) => proyectoTipo(p) === id).length;
+    // El tipo es obligatorio, así que no hay pestaña "Sin tipo"... salvo que
+    // queden proyectos de antes sin él: entonces sale mientras haga falta, para
+    // que no se queden sin ninguna pestaña donde aparecer.
+    const tipos = PROYECTO_TIPOS.map((t) => ({
+      eje: "tipo",
+      id: t.id,
+      name: t.name,
+      n: cuentaTipo(t.id),
+    }));
+    const huerfanos = cuentaTipo("");
+    if (huerfanos)
+      tipos.push({ eje: "tipo", id: "", name: "Sin tipo", n: huerfanos });
+    return {
+      estados: PROYECTO_ESTADOS.filter((e) => e.tab !== false).map((e) => ({
+        eje: "estado",
+        id: e.id,
+        name: e.plural || e.name,
+        n: cuentaEstado(e.id),
+      })),
+      tipos: tipos,
+    };
+  }
+
+  // ¿Esa pestaña se sigue ofreciendo?
+  function proyectosTabExiste(sel) {
+    if (!sel) return false;
+    const grupos = proyectosFiltros();
+    const lista = sel.eje === "estado" ? grupos.estados : grupos.tipos;
+    return lista.some((f) => f.id === sel.id);
+  }
+
+  // Con un proyecto abierto se resalta la pestaña a la que pertenece, en el eje
+  // que esté elegido.
+  function proyectosSelVisible() {
+    const abierto = getProyectoOpen();
+    if (!abierto) return proyectosSel;
+    return {
+      eje: proyectosSel.eje,
+      id:
+        proyectosSel.eje === "tipo"
+          ? proyectoTipo(abierto)
+          : proyectoEstado(abierto),
+    };
+  }
+
+  function renderProyectosTabs() {
+    const sel = proyectosSelVisible();
+    const activa = (f) => f.eje === sel.eje && f.id === sel.id;
+    const grupos = proyectosFiltros();
 
     if (proyectosTabsEl) {
       proyectosTabsEl.innerHTML = "";
-      PROYECTO_ESTADOS.forEach((estado) => {
-        const n = cuenta(estado.id);
-        const activa = estado.id === activo;
-        const tab = document.createElement("button");
-        tab.type = "button";
-        tab.className = "task-tab" + (activa ? " is-active" : "");
-        tab.dataset.tab = estado.id;
-        tab.setAttribute("role", "tab");
-        tab.setAttribute("aria-selected", activa ? "true" : "false");
-        tab.textContent =
-          (estado.plural || estado.name) + (n ? " (" + n + ")" : "");
-        proyectosTabsEl.appendChild(tab);
+      [grupos.estados, grupos.tipos].forEach((grupo, i) => {
+        // Separador entre los dos ejes: la fila es larga y se desplaza
+        if (i) {
+          const sep = document.createElement("span");
+          sep.className = "task-tabs-sep";
+          sep.setAttribute("aria-hidden", "true");
+          proyectosTabsEl.appendChild(sep);
+        }
+        grupo.forEach((f) => {
+          const on = activa(f);
+          const tab = document.createElement("button");
+          tab.type = "button";
+          tab.className = "task-tab" + (on ? " is-active" : "");
+          tab.dataset.eje = f.eje;
+          tab.dataset.id = f.id;
+          tab.setAttribute("role", "tab");
+          tab.setAttribute("aria-selected", on ? "true" : "false");
+          tab.textContent = f.name + (f.n ? " (" + f.n + ")" : "");
+          proyectosTabsEl.appendChild(tab);
+        });
       });
     }
 
     if (proyectosNavItemsEl) {
       proyectosNavItemsEl.innerHTML = "";
-      PROYECTO_ESTADOS.forEach((estado) => {
-        const n = cuenta(estado.id);
-        const activa = estado.id === activo;
-        const item = document.createElement("button");
-        item.type = "button";
-        item.className = "app-nav-item" + (activa ? " is-active" : "");
-        item.dataset.estado = estado.id;
-        item.textContent = estado.plural || estado.name;
-        if (n) {
-          const badge = document.createElement("span");
-          badge.className = "nav-count";
-          badge.textContent = String(n);
-          item.appendChild(badge);
+      [grupos.estados, grupos.tipos].forEach((grupo, i) => {
+        if (i) {
+          const sep = document.createElement("hr");
+          sep.className = "app-nav-sep";
+          proyectosNavItemsEl.appendChild(sep);
         }
-        proyectosNavItemsEl.appendChild(item);
+        grupo.forEach((f) => {
+          const on = activa(f);
+          const item = document.createElement("button");
+          item.type = "button";
+          item.className = "app-nav-item" + (on ? " is-active" : "");
+          item.dataset.eje = f.eje;
+          item.dataset.id = f.id;
+          item.textContent = f.name;
+          if (f.n) {
+            const badge = document.createElement("span");
+            badge.className = "nav-count";
+            badge.textContent = String(f.n);
+            item.appendChild(badge);
+          }
+          proyectosNavItemsEl.appendChild(item);
+        });
       });
     }
   }
 
-  // Elegir estado: desde el índice solo cambia de lista; con un proyecto
-  // abierto, vuelve al índice y se planta en ese estado.
-  function setProyectosTab(estado) {
-    if (!estado) return;
+  // Elegir pestaña: desde el índice solo cambia de lista; con un proyecto
+  // abierto, vuelve al índice y se planta en esa pestaña.
+  function setProyectosTab(eje, id) {
+    if (eje !== "estado" && eje !== "tipo") return;
     const abierto = !!getProyectoOpen();
-    if (!abierto && estado === proyectosTab) return;
-    proyectosTab = estado;
+    if (!abierto && eje === proyectosSel.eje && id === proyectosSel.id) return;
+    proyectosSel = { eje: eje, id: id };
     if (abierto) closeProyectoTasks();
     else renderProyectosIndex();
   }
@@ -7460,57 +8018,83 @@
   if (proyectosTabsEl) {
     proyectosTabsEl.addEventListener("click", (e) => {
       const tab = e.target.closest(".task-tab");
-      if (tab) setProyectosTab(tab.dataset.tab);
+      if (tab) setProyectosTab(tab.dataset.eje, tab.dataset.id);
     });
   }
 
   if (proyectosNavItemsEl) {
     proyectosNavItemsEl.addEventListener("click", (e) => {
       const item = e.target.closest(".app-nav-item");
-      if (item) setProyectosTab(item.dataset.estado);
+      if (item) setProyectosTab(item.dataset.eje, item.dataset.id);
     });
   }
 
-  // Índice de proyectos: solo los del estado de la pestaña activa. Sin
-  // secciones creadas es una sola lista, como siempre. Con secciones, un
-  // bloque por sección y, al final, "Sin sección" (que se mantiene aunque esté
-  // vacío: es donde se sueltan los que salen de una).
+  // Aviso de que la pestaña elegida no tiene ningún proyecto
+  function proyectosVacioTexto() {
+    if (proyectosSel.eje === "estado") {
+      const e = PROYECTO_ESTADOS.find((x) => x.id === proyectosSel.id);
+      return e ? e.vacio : "";
+    }
+    const t = PROYECTO_TIPOS.find((x) => x.id === proyectosSel.id);
+    return t ? "No hay proyectos de tipo " + t.name + "." : "";
+  }
+
+  // Índice de proyectos: los de la pestaña elegida, agrupados por el otro eje.
+  // En una pestaña de estado, un bloque por tipo. En una de tipo, un bloque por
+  // estado. Arrastrar un proyecto de un bloque a otro le cambia ese valor.
   function renderProyectosIndex() {
     if (!proyectosListEl) return;
     proyectosListEl.innerHTML = "";
+    // Si la pestaña elegida ya no se ofrece (un estado sin pestaña, o "Sin
+    // tipo" cuando ya no queda ninguno), se vuelve a la de siempre.
+    if (!proyectosTabExiste(proyectosSel))
+      proyectosSel = { eje: "estado", id: "curso" };
     renderProyectosTabs();
-    const conSecciones = proyectoSecciones.length > 0;
-    const delEstado = proyectos.filter(
-      (p) => proyectoEstado(p) === proyectosTab
+    const porEstado = proyectosSel.eje === "estado";
+    const visibles = proyectos.filter((p) =>
+      porEstado
+        ? proyectoEstado(p) === proyectosSel.id
+        : proyectoTipo(p) === proyectosSel.id
     );
 
-    // Pestaña vacía: solo su aviso, sin cabeceras de sección vacías
+    // Pestaña vacía: solo su aviso, sin cabeceras de bloques vacíos
     if (proyectosEmpty) {
-      proyectosEmpty.hidden = delEstado.length !== 0;
-      const estado = PROYECTO_ESTADOS.find((e) => e.id === proyectosTab);
-      proyectosEmpty.textContent = estado ? estado.vacio : "";
+      proyectosEmpty.hidden = visibles.length !== 0;
+      proyectosEmpty.textContent = proyectosVacioTexto();
     }
-    if (!delEstado.length) return;
+    if (!visibles.length) return;
 
-    // Bloques a pintar: las secciones en orden y, al final, "Sin sección"
-    const bloques = proyectoSecciones
-      .map((s) => ({ id: s.id, name: s.name }))
-      .concat([{ id: "", name: "Sin sección" }]);
+    // El eje por el que se agrupa es el que no filtra
+    const ejeBloques = porEstado ? "tipo" : "estado";
+    // Agrupando por tipo, el bloque "Sin tipo" solo sale mientras quede algún
+    // proyecto de antes de que el tipo fuera obligatorio: es un resto a repartir,
+    // no un destino (no se puede soltar ahí), y desaparece al vaciarse.
+    const sinTipoPend =
+      porEstado && visibles.some((p) => !proyectoTipo(p))
+        ? [{ id: "", name: "Sin tipo" }]
+        : [];
+    const bloques = porEstado
+      ? PROYECTO_TIPOS.map((t) => ({ id: t.id, name: t.name })).concat(
+          sinTipoPend
+        )
+      : PROYECTO_ESTADOS.map((e) => ({ id: e.id, name: e.plural || e.name }));
 
     bloques.forEach((bloque) => {
-      const items = delEstado.filter((p) => proyectoSeccionOf(p) === bloque.id);
-      // Sin secciones no hay cabeceras ni bloques vacíos que enseñar
-      if (!conSecciones && !items.length) return;
+      const items = visibles.filter(
+        (p) =>
+          (ejeBloques === "tipo" ? proyectoTipo(p) : proyectoEstado(p)) ===
+          bloque.id
+      );
 
+      const resto = ejeBloques === "tipo" && bloque.id === "";
       const wrap = document.createElement("section");
       wrap.className = "proyecto-sec";
-      wrap.dataset.section = bloque.id;
+      wrap.dataset.eje = ejeBloques;
+      wrap.dataset.valor = bloque.id;
+      // Al resto sin tipo no se puede soltar: el tipo es obligatorio
+      if (resto) wrap.dataset.nodrop = "1";
 
-      // "Sin sección" vacío no lleva cabecera: se queda al final como un
-      // destino discreto donde volver a soltar lo que salga de una sección.
-      const conCabecera = conSecciones && (bloque.id !== "" || items.length > 0);
-
-      if (conCabecera) {
+      {
         const head = document.createElement("div");
         head.className = "proyecto-sec-head";
         const title = document.createElement("h2");
@@ -7519,42 +8103,48 @@
         const n = document.createElement("span");
         n.className = "proyecto-sec-count";
         n.textContent = items.length;
-        // Crea un proyecto ya con esta sección puesta
-        const add = document.createElement("button");
-        add.type = "button";
-        add.className = "proyecto-sec-add";
-        add.textContent = "+";
-        const etiqueta =
-          bloque.id === ""
-            ? "Nuevo proyecto sin sección"
-            : "Nuevo proyecto en " + bloque.name;
-        add.title = etiqueta;
-        add.setAttribute("aria-label", etiqueta);
-        add.addEventListener("click", () => openProyectoNew(bloque.id));
-        head.append(title, n, add);
+        head.append(title, n);
+        // Crear un proyecto ya con este tipo puesto. Agrupando por estado no se
+        // ofrece: un proyecto nuevo nace siempre "En curso".
+        if (ejeBloques === "tipo" && !resto) {
+          const add = document.createElement("button");
+          add.type = "button";
+          add.className = "proyecto-sec-add";
+          add.textContent = "+";
+          const etiqueta =
+            bloque.id === ""
+              ? "Nuevo proyecto sin tipo"
+              : "Nuevo proyecto de tipo " + bloque.name;
+          add.title = etiqueta;
+          add.setAttribute("aria-label", etiqueta);
+          add.addEventListener("click", () => openProyectoNew(bloque.id));
+          head.appendChild(add);
+        }
         wrap.appendChild(head);
       }
 
       const ul = document.createElement("ul");
       ul.className = "proyecto-list";
-      // El hueco del avatar solo se reserva dentro de una sección con nombre
+      // El hueco del avatar solo se reserva dentro de un bloque con nombre
       items.forEach((item) =>
         ul.appendChild(proyectoItemEl(item, bloque.id !== ""))
       );
       wrap.appendChild(ul);
 
-      if (conSecciones && !items.length) {
+      if (resto) {
         const hint = document.createElement("p");
         hint.className = "proyecto-sec-empty";
-        hint.textContent = conCabecera
-          ? "Arrastra proyectos aquí."
-          : "Arrastra aquí los proyectos sin sección.";
+        hint.textContent = "Arrastra cada uno a su tipo.";
+        wrap.appendChild(hint);
+      } else if (!items.length) {
+        const hint = document.createElement("p");
+        hint.className = "proyecto-sec-empty";
+        hint.textContent = "Arrastra proyectos aquí.";
         wrap.appendChild(hint);
       }
 
       proyectosListEl.appendChild(wrap);
     });
-
   }
 
   proyectoTasksBack.addEventListener("click", closeProyectoTasks);
@@ -7563,11 +8153,12 @@
     if (item) openProyectoDetail(item.id);
   });
 
-  /* ---------- Arrastrar proyectos: entre secciones y dentro de una ----------
+  /* ---------- Arrastrar proyectos: entre bloques y dentro de uno ----------
      Mismo gesto que el board de tareas: con el dedo hay que mantener pulsado
      (mover sería scroll) y con ratón basta con arrastrar un poco. Al soltar se
      reescribe el array `proyectos` con el orden del DOM y cada uno se queda con
-     la sección del bloque en el que ha caído. */
+     el valor del bloque en el que ha caído: su tipo si los bloques son tipos, o
+     su estado si son estados. */
   const PRO_MOVE_PX = 8; // con ratón, se arrastra al pasar de este margen
 
   function enableProyectoDrag(container) {
@@ -7589,6 +8180,8 @@
       let best = null;
       let bestDist = Infinity;
       container.querySelectorAll(".proyecto-sec").forEach((sec) => {
+        // El resto sin tipo solo se vacía: el tipo es obligatorio
+        if (sec.dataset.nodrop) return;
         const r = sec.getBoundingClientRect();
         if (!r.height) return;
         const dy = y < r.top ? r.top - y : y > r.bottom ? y - r.bottom : 0;
@@ -7635,17 +8228,22 @@
     }
 
     // Reescribe `proyectos` con lo que se ve: recorre los bloques en orden y,
-    // dentro de cada uno, sus filas. Cada proyecto se queda con la sección del
-    // bloque donde ha caído ("" = sin sección, que no se guarda).
+    // dentro de cada uno, sus filas. Cada proyecto se queda con el valor del
+    // bloque donde ha caído (el campo depende del eje por el que se agrupa; en
+    // los dos, el valor por defecto no se guarda).
     function commitOrder() {
       const orden = [];
       container.querySelectorAll(".proyecto-sec").forEach((sec) => {
-        const secId = sec.dataset.section || "";
+        const eje = sec.dataset.eje || "tipo";
+        const valor = sec.dataset.valor || "";
         sec.querySelectorAll(".proyecto-item").forEach((li) => {
           const item = proyectos.find((p) => p.id === li.dataset.id);
           if (!item) return;
-          if (secId) item.sectionId = secId;
-          else delete item.sectionId;
+          if (eje === "estado") {
+            if (valor && valor !== "curso") item.status = valor;
+            else delete item.status;
+          } else if (valor) item.tipo = valor;
+          else delete item.tipo;
           orden.push(item);
         });
       });
@@ -7741,163 +8339,33 @@
 
   enableProyectoDrag(proyectosListEl);
 
-  /* ---------- Secciones de Proyectos (modal de ajustes) ---------- */
-  // Dos botones para lo mismo: el de la barra lateral (escritorio) y el de la
-  // cabecera de la vista (móvil, donde esa barra no existe)
-  const proyectosSeccionesBtns = [
-    document.getElementById("proyectos-secciones-nav-btn"),
-    document.getElementById("proyectos-secciones-btn"),
-  ].filter(Boolean);
-  const proSeccionesOverlay = document.getElementById(
-    "proyecto-secciones-overlay"
-  );
-  const proSeccionesClose = document.getElementById("proyecto-secciones-close");
-  const proSeccionForm = document.getElementById("proyecto-seccion-form");
-  const proSeccionName = document.getElementById("proyecto-seccion-name");
-  const proSeccionList = document.getElementById("proyecto-seccion-list");
-  const proSeccionEmpty = document.getElementById("proyecto-seccion-empty");
-
-  // Lista de secciones del modal: nombre editable + eliminar
-  function renderProyectoSeccionesModal() {
-    if (!proSeccionList) return;
-    proSeccionList.innerHTML = "";
-    proyectoSecciones.forEach((sec) => {
-      const li = document.createElement("li");
-      li.className = "seccion-item";
-      li.dataset.id = sec.id;
-
-      const input = document.createElement("input");
-      input.type = "text";
-      input.className = "seccion-name";
-      input.maxLength = 80;
-      input.value = sec.name;
-      input.setAttribute("aria-label", "Nombre de la sección");
-      // El nombre se guarda al salir del campo; en blanco, se recupera
-      input.addEventListener("blur", () => {
-        const v = input.value.trim();
-        if (!v) {
-          input.value = sec.name;
-          return;
-        }
-        if (v === sec.name) return;
-        sec.name = v;
-        saveProyectoSecciones();
-        renderProyectosIndex();
-      });
-      input.addEventListener("keydown", (e) => {
-        if (e.key === "Enter") {
-          e.preventDefault();
-          input.blur();
-        }
-      });
-
-      const del = document.createElement("button");
-      del.type = "button";
-      del.className = "seccion-del";
-      del.textContent = "🗑";
-      del.title = "Eliminar sección";
-      del.setAttribute("aria-label", "Eliminar la sección " + sec.name);
-      del.addEventListener("click", () => deleteProyectoSeccion(sec.id));
-
-      li.append(input, del);
-      proSeccionList.appendChild(li);
-    });
-    if (proSeccionEmpty) proSeccionEmpty.hidden = proyectoSecciones.length !== 0;
-  }
-
-  function addProyectoSeccion(name) {
-    const trimmed = (name || "").trim();
-    if (!trimmed) return;
-    proyectoSecciones.push({ id: newId(), name: trimmed });
-    saveProyectoSecciones();
-    renderProyectoSeccionesModal();
-    renderProyectosIndex();
-  }
-
-  // Eliminar una sección no borra sus proyectos: vuelven a "Sin sección".
-  function deleteProyectoSeccion(id) {
-    const sec = proyectoSecciones.find((s) => s.id === id);
-    if (!sec) return;
-    const n = proyectos.filter((p) => proyectoSeccionOf(p) === id).length;
-    const msg = n
-      ? 'Eliminar la sección "' +
-        sec.name +
-        '"? Sus ' +
-        n +
-        " proyecto(s) pasan a Sin sección (no se borran)."
-      : 'Eliminar la sección "' + sec.name + '"?';
-    if (!confirm(msg)) return;
-    proyectoSecciones = proyectoSecciones.filter((s) => s.id !== id);
-    proyectos.forEach((p) => {
-      if (p.sectionId === id) delete p.sectionId;
-    });
-    saveProyectoSecciones();
-    saveProyectos();
-    renderProyectoSeccionesModal();
-    renderProyectosIndex();
-  }
-
-  function openProyectoSecciones() {
-    renderProyectoSeccionesModal();
-    proSeccionName.value = "";
-    proSeccionesOverlay.hidden = false;
-    proSeccionName.focus();
-  }
-
-  function closeProyectoSecciones() {
-    if (proSeccionesOverlay.hidden) return;
-    proSeccionesOverlay.hidden = true;
-  }
-
-  proyectosSeccionesBtns.forEach((b) =>
-    b.addEventListener("click", openProyectoSecciones)
-  );
-  proSeccionesClose.addEventListener("click", closeProyectoSecciones);
-  proSeccionesOverlay.addEventListener("click", (e) => {
-    if (e.target === proSeccionesOverlay) closeProyectoSecciones();
-  });
-  document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && !proSeccionesOverlay.hidden)
-      closeProyectoSecciones();
-  });
-  proSeccionForm.addEventListener("submit", (e) => {
-    e.preventDefault();
-    addProyectoSeccion(proSeccionName.value);
-    proSeccionName.value = "";
-    proSeccionName.focus();
-  });
-
-  /* ---------- Nuevo proyecto (botón + de la cabecera o de una sección) ---- */
+  /* ---------- Nuevo proyecto (botón + de la cabecera o de un tipo) ---------- */
   const proyectoNewOverlay = document.getElementById("proyecto-new-overlay");
   const proyectoNewForm = document.getElementById("proyecto-new-form");
   const proyectoNewName = document.getElementById("proyecto-new-name");
   const proyectoNewUrl = document.getElementById("proyecto-new-url");
   const proyectoNewCancel = document.getElementById("proyecto-new-cancel");
   const proyectoNewCat = document.getElementById("proyecto-new-cat");
-  const proyectoNewSec = document.getElementById("proyecto-new-sec");
+  const proyectoNewTipo = document.getElementById("proyecto-new-tipo");
   fillCategorySelect(proyectoNewCat);
 
-  // Las secciones se crean y se borran sobre la marcha: el selector se rellena
-  // al abrir el modal, no una vez al arrancar.
-  function fillSeccionSelect(sel) {
+  // El tipo es obligatorio: no hay opción vacía, así que un proyecto nuevo
+  // siempre nace con uno (el primero, si no se entra por el "+" de un tipo).
+  function fillTipoSelect(sel) {
     sel.innerHTML = "";
-    const ninguna = document.createElement("option");
-    ninguna.value = "";
-    ninguna.textContent = "Sin sección";
-    sel.appendChild(ninguna);
-    proyectoSecciones.forEach((s) => {
+    PROYECTO_TIPOS.forEach((t) => {
       const opt = document.createElement("option");
-      opt.value = s.id;
-      opt.textContent = s.name;
+      opt.value = t.id;
+      opt.textContent = t.name;
       sel.appendChild(opt);
     });
   }
 
-  // `seccionId` (opcional): con qué sección viene prerrellenado el formulario
-  function openProyectoNew(seccionId) {
+  // `tipo` (opcional): con qué tipo viene prerrellenado el formulario
+  function openProyectoNew(tipo) {
     proyectoNewForm.reset();
-    fillSeccionSelect(proyectoNewSec);
-    proyectoNewSec.value = seccionId || "";
+    fillTipoSelect(proyectoNewTipo);
+    proyectoNewTipo.value = tipo || PROYECTO_TIPOS[0].id;
     proyectoNewOverlay.hidden = false;
     proyectoNewName.focus();
   }
@@ -7923,13 +8391,16 @@
       proyectoNewName.focus();
       return;
     }
-    // Nace "En curso": se lleva el índice a esa pestaña para que se vea
-    proyectosTab = "curso";
+    // Nace "En curso": si la pestaña de ahora no lo va a mostrar, se cambia a
+    // la de "En curso" para no perderlo de vista.
+    const tipoNuevo = proyectoNewTipo.value;
+    if (!(proyectosSel.eje === "tipo" && proyectosSel.id === tipoNuevo))
+      proyectosSel = { eje: "estado", id: "curso" };
     addProyecto(
       name,
       proyectoNewUrl.value,
       proyectoNewCat.value,
-      proyectoNewSec.value
+      proyectoNewTipo.value
     );
     closeProyectoNew();
   });
@@ -7951,6 +8422,7 @@
   const proyectoDetailStatus = document.getElementById(
     "proyecto-detail-status"
   );
+  const proyectoDetailTipo = document.getElementById("proyecto-detail-tipo");
   fillCategorySelect(proyectoDetailCat);
   PROYECTO_ESTADOS.forEach((estado) => {
     const opt = document.createElement("option");
@@ -7974,6 +8446,17 @@
     proyectoDetailUrl.value = item.url || "";
     proyectoDetailCat.value = item.category || "";
     proyectoDetailStatus.value = proyectoEstado(item);
+    // El tipo es obligatorio, así que no hay opción vacía. Se añade solo si este
+    // proyecto todavía no tiene (los de antes): así el selector no aparenta un
+    // tipo que no está puesto, pero una vez elegido ya no se puede volver atrás.
+    fillTipoSelect(proyectoDetailTipo);
+    if (!proyectoTipo(item)) {
+      const aun = document.createElement("option");
+      aun.value = "";
+      aun.textContent = "Sin tipo";
+      proyectoDetailTipo.insertBefore(aun, proyectoDetailTipo.firstChild);
+    }
+    proyectoDetailTipo.value = proyectoTipo(item);
     proyectoDetailDiagram.checked = proyectoConDiagrama(item);
     proyectoDetailOverlay.hidden = false;
     document.body.classList.add("no-scroll");
@@ -8039,6 +8522,23 @@
     renderAllLists(); // el color va en el byline de sus tareas
   });
 
+  // Tipo (obligatorio): elegir uno quita la opción "Sin tipo" de los de antes
+  proyectoDetailTipo.addEventListener("change", () => {
+    const item = getProyectoDetailItem();
+    if (!item) return;
+    const valor = proyectoDetailTipo.value;
+    if (!valor) return; // "Sin tipo" no se elige, solo se abandona
+    item.tipo = valor;
+    const aun = proyectoDetailTipo.querySelector('option[value=""]');
+    if (aun) aun.remove();
+    // Si el índice está filtrando por tipo, se sigue al proyecto a su nueva
+    // pestaña. Filtrando por estado no hace falta: no se mueve de sitio.
+    if (proyectosSel.eje === "tipo")
+      proyectosSel = { eje: "tipo", id: proyectoTipo(item) };
+    saveProyectos();
+    renderProyectos();
+  });
+
   // Apagar el diagrama deja el proyecto como si nunca lo hubiera tenido: se
   // borran las flechas (y con ellas el estado "Bloqueada": esas tareas pasan a
   // "Sin empezar") y también la colocación de los post-it. Volver a encenderlo
@@ -8083,7 +8583,15 @@
     const valor = proyectoDetailStatus.value;
     if (valor === "curso") delete item.status;
     else item.status = valor;
-    proyectosTab = proyectoEstado(item);
+    // Si el índice está filtrando por estado, se sigue al proyecto para no
+    // perderlo de vista: a la pestaña de su estado nuevo si la tiene y, si no
+    // (aparcado / abandonado / completado), a la de su tipo, donde sí sale.
+    if (proyectosSel.eje === "estado") {
+      const nuevo = { eje: "estado", id: proyectoEstado(item) };
+      proyectosSel = proyectosTabExiste(nuevo)
+        ? nuevo
+        : { eje: "tipo", id: proyectoTipo(item) };
+    }
     saveProyectos();
     renderProyectos();
     renderAllLists(); // el selector de proyecto de las tareas cambia
@@ -8145,12 +8653,11 @@
     let localProyectos = [];
     if (db) localProyectos = await idbGet(IDB_KEY_PROYECTOS);
     proyectos = Array.isArray(localProyectos) ? localProyectos : [];
-    if (migrarArchivados(proyectos) && db)
+    if (migrarProyectos(proyectos) && db)
       idbSet(IDB_KEY_PROYECTOS, proyectos).catch(() => {});
 
-    let localProSecciones = [];
-    if (db) localProSecciones = await idbGet(IDB_KEY_PRO_SECCIONES);
-    proyectoSecciones = Array.isArray(localProSecciones) ? localProSecciones : [];
+    // Las secciones las sustituyó el tipo: se limpia lo que quedara guardado
+    if (db) idbSet(IDB_KEY_PRO_SECCIONES, null).catch(() => {});
 
     let localFijadas = [];
     if (db) localFijadas = await idbGet(IDB_KEY_HOY_FIJADAS);
@@ -8202,6 +8709,13 @@
   function startFirebaseSync() {
     fbReady = true;
 
+    // Las secciones de Proyectos las sustituyó el tipo: su nodo ya no se lee ni
+    // se escribe, así que se borra lo que quedara ahí de antes.
+    fdb
+      .ref(FB_ROOT + "/" + FB_KEY_PRO_SECCIONES)
+      .remove()
+      .catch(() => {});
+
     // Estado real de la conexión: `fbReady` seguía a true con el websocket
     // caído, y entonces se escribía en lactancia a partir de datos viejos.
     fdb.ref(".info/connected").on("value", (snap) => {
@@ -8209,11 +8723,11 @@
       if (fbOnline) flushLactOutbox();
     });
 
-    // La materialización de planificadas corre una sola vez, cuando ya han
-    // llegado los primeros datos de la nube de tasks Y planned.
+    // La materialización de planificadas corre una sola vez por carga, cuando
+    // ya han llegado los primeros datos de la nube de tasks Y planned (y otra
+    // vez en cada cambio de día, desde el reloj de `startApp`).
     let tasksSynced = false;
     let plannedSynced = false;
-    let materializationDone = false;
     function maybeMaterialize() {
       if (tasksSynced && plannedSynced && !materializationDone) {
         materializationDone = true;
@@ -8413,36 +8927,12 @@
         firstPro = false;
         proyectos = remote;
         // Lo archivado de antes pasa a "Completado", y se sube ya migrado
-        const migrados = migrarArchivados(proyectos);
+        const migrados = migrarProyectos(proyectos);
         if (db) idbSet(IDB_KEY_PROYECTOS, proyectos).catch(() => {});
         if (remote !== llegan || migrados) saveProyectos(); // ya limpio
         clearError();
         renderProyectos();
         renderAllLists(); // sus nombres salen en el byline de las tareas
-      },
-      (err) =>
-        showError("Al leer la nube: " + (err && err.message ? err.message : err))
-    );
-
-    // Listener: secciones del índice de Proyectos
-    let firstProSec = true;
-    const refProSec = fdb.ref(FB_ROOT + "/" + FB_KEY_PRO_SECCIONES);
-    refProSec.on(
-      "value",
-      (snap) => {
-        const raw = snap.val();
-        const remote = Array.isArray(raw) ? raw : raw ? Object.values(raw) : [];
-        if (firstProSec && remote.length === 0 && proyectoSecciones.length > 0) {
-          firstProSec = false;
-          refProSec.set(proyectoSecciones).catch(() => {});
-          return;
-        }
-        firstProSec = false;
-        proyectoSecciones = remote;
-        if (db) idbSet(IDB_KEY_PRO_SECCIONES, proyectoSecciones).catch(() => {});
-        clearError();
-        renderProyectos();
-        renderProyectoSeccionesModal();
       },
       (err) =>
         showError("Al leer la nube: " + (err && err.message ? err.message : err))
@@ -8617,6 +9107,7 @@
         const raw = snap.val();
         atDetailRaw = Array.isArray(raw) ? raw : raw ? Object.values(raw) : [];
         if (plannedTab === "semana") renderPlannedWeek();
+        renderAgenda(); // los días futuros enseñan estas plantillas
       },
       (err) =>
         showError(
@@ -8630,9 +9121,24 @@
     appStarted = true;
     await initLocal(); // respaldo local → pinta ya
     startFirebaseSync(); // engancha la nube
-    // Reseteo diario de "Hoy": comprueba cada minuto por si cruza la medianoche
+    // Reloj: comprueba cada minuto por si se cruza la medianoche con la app
+    // abierta (en el móvil puede llevar días sin recargarse).
+    let ultimoDia = todayISO();
     setInterval(() => {
+      // Reseteo de "Hoy". Va aparte porque puede llegar tarde: si la nube tardó
+      // en sincronizar, el día ya había cambiado cuando `hoyReady` se puso.
       if (resetHoyIfNewDay()) renderHoy();
+      const dia = todayISO();
+      if (dia === ultimoDia) return;
+      ultimoDia = dia;
+      // Día nuevo: nacen las copias de las rutinas que tocan hoy y se repinta
+      // todo lo que depende de la fecha. La Agenda, además, pasa sola a la
+      // semana del calendario en curso: al cruzar de domingo a lunes entran las
+      // rutinas de la semana nueva y se van las de la anterior.
+      if (materializationDone) runPlannedMaterialization();
+      renderTasksViews();
+      renderHoyView();
+      renderAgenda();
     }, 60000);
   }
 
