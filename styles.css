@@ -2300,6 +2300,11 @@ textarea.proyecto-detail-name {
 .proyecto-texto {
   position: absolute;
   z-index: 1;
+  /* El ancho lo decide el texto, no el hueco que quede hasta el borde: sin
+     esto, al estrechar la ventana el rótulo se re-partía en más líneas. Si se
+     sale del lienzo, se sale. */
+  width: -webkit-max-content;
+  width: max-content;
   max-width: 260px;
   padding: 2px 4px;
   font-size: 1rem;
