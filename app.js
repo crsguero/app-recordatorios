@@ -1711,7 +1711,14 @@
   // igual que el título del panel. Guarda al escribir (nunca vacío), Enter
   // termina y, si se deja vacío, al salir recupera el texto guardado. Lo
   // comparten el panel de tareas y el de Hoy; `onSave` guarda en cada uno.
-  function subtaskTextEl(sub, onSave) {
+  //
+  // `findSub(id)` devuelve la subtarea viva. Hay que volver a buscarla en cada
+  // pulsación y no quedarse con la del render: cada dato que llega de la nube
+  // rehace los arrays con objetos nuevos (`tasks = remote`, `hoy = …`), y el
+  // eco de nuestro propio guardado basta para que la de aquí quede huérfana.
+  // Escribiendo sobre ella el cambio no llega a la lista y se pierde al cerrar.
+  function subtaskTextEl(sub, findSub, onSave) {
+    const subId = sub.id;
     const el = document.createElement("textarea");
     el.className = "subtask-text";
     el.rows = 1;
@@ -1722,7 +1729,9 @@
       autoGrow(el);
       const value = el.value.trim();
       if (!value) return; // no guardar vacío
-      sub.text = value;
+      const actual = findSub(subId);
+      if (!actual) return; // ya no existe (borrada en otro dispositivo)
+      actual.text = value;
       onSave();
     });
     el.addEventListener("keydown", (e) => {
@@ -1733,7 +1742,8 @@
     });
     el.addEventListener("blur", () => {
       if (el.value.trim()) return;
-      el.value = sub.text;
+      const actual = findSub(subId);
+      el.value = actual ? actual.text : sub.text;
       autoGrow(el);
     });
     // La altura, ya en el DOM y con el panel visible (si no, scrollHeight es 0)
@@ -1755,7 +1765,7 @@
       check.setAttribute("aria-label", "Completar subtarea");
       check.addEventListener("change", () => toggleSubtask(sub.id));
 
-      const span = subtaskTextEl(sub, saveOpenTask);
+      const span = subtaskTextEl(sub, findOpenSubtask, saveOpenTask);
 
       const del = document.createElement("button");
       del.type = "button";
@@ -1779,15 +1789,20 @@
     renderSubtasks(task);
   }
 
-  function toggleSubtask(subId) {
+  // La subtarea viva de la tarea abierta, buscada en el momento (ver
+  // `subtaskTextEl`: las referencias de un render anterior pueden estar muertas)
+  function findOpenSubtask(subId) {
     const task = getOpenTask();
-    if (!task || !task.subtasks) return;
-    const sub = task.subtasks.find((s) => s.id === subId);
-    if (sub) {
-      sub.done = !sub.done;
-      saveOpenTask();
-      renderSubtasks(task);
-    }
+    if (!task || !task.subtasks) return null;
+    return task.subtasks.find((s) => s.id === subId) || null;
+  }
+
+  function toggleSubtask(subId) {
+    const sub = findOpenSubtask(subId);
+    if (!sub) return;
+    sub.done = !sub.done;
+    saveOpenTask();
+    renderSubtasks(getOpenTask());
   }
 
   function deleteSubtask(subId) {
@@ -4983,7 +4998,7 @@
       check.setAttribute("aria-label", "Completar subtarea");
       check.addEventListener("change", () => toggleHoySubtask(sub.id));
 
-      const span = subtaskTextEl(sub, saveHoy);
+      const span = subtaskTextEl(sub, findHoySubtask, saveHoy);
 
       const del = document.createElement("button");
       del.type = "button";
@@ -5007,14 +5022,19 @@
     renderHoySubtasks(item);
   }
 
-  function toggleHoySubtask(subId) {
+  // La subtarea viva de la tarea de Hoy abierta (ver `findOpenSubtask`)
+  function findHoySubtask(subId) {
     const item = getHoyDetailItem();
-    if (!item || !item.subtasks) return;
-    const sub = item.subtasks.find((x) => x.id === subId);
+    if (!item || !item.subtasks) return null;
+    return item.subtasks.find((x) => x.id === subId) || null;
+  }
+
+  function toggleHoySubtask(subId) {
+    const sub = findHoySubtask(subId);
     if (!sub) return;
     sub.done = !sub.done;
     saveHoy();
-    renderHoySubtasks(item);
+    renderHoySubtasks(getHoyDetailItem());
   }
 
   function deleteHoySubtask(subId) {
@@ -6393,6 +6413,8 @@
     // móvil tampoco (allí el diagrama es de solo lectura).
     if (proyectoCommentAddBtn)
       proyectoCommentAddBtn.hidden = !esGrafo || grafoSoloLectura();
+    if (proyectoTextoAddBtn)
+      proyectoTextoAddBtn.hidden = !esGrafo || grafoSoloLectura();
     if (esGrafo) renderProyectoGrafo(item, entries);
     else renderProyectoLista(item, entries);
   }
@@ -6847,6 +6869,12 @@
       maxY = Math.max(maxY, pos.y + POSTIT_SIZE);
     });
 
+    // Textos sueltos: por debajo de todo, que son rótulos de fondo
+    proyectoTextos(proyecto).forEach((t) => {
+      proyectoTasksCanvas.appendChild(textoEl(proyecto, t));
+      maxY = Math.max(maxY, (t.y || 0) + TEXTO_ALTO);
+    });
+
     // Comentarios sueltos del lienzo, por encima de los post-it
     proyectoComentarios(proyecto).forEach((c) => {
       const el = comentarioEl(proyecto, c);
@@ -7035,6 +7063,119 @@
     if (comentariosAbiertos.has(id)) comentariosAbiertos.delete(id);
     else comentariosAbiertos.add(id);
     renderProyectoTasks();
+  }
+
+  /* ---------- Textos sueltos del diagrama ----------
+     Rótulos para organizar el lienzo: no son tareas ni comentarios, solo texto
+     a la vista. Viven en el propio proyecto (`textos`), como las flechas, las
+     posiciones de los post-it y los comentarios. */
+  const TEXTO_ALTO = 24; // lo que ocupa de alto, para estirar el lienzo
+
+  function proyectoTextos(proyecto) {
+    const raw = proyecto && proyecto.textos;
+    const arr = Array.isArray(raw)
+      ? raw
+      : raw && typeof raw === "object"
+      ? Object.values(raw)
+      : [];
+    return arr.filter((t) => t && t.id);
+  }
+
+  function saveTextos(proyecto, lista) {
+    if (lista.length) proyecto.textos = lista;
+    else delete proyecto.textos;
+    saveProyectos();
+  }
+
+  function addTexto(proyecto, text, x, y) {
+    const trimmed = (text || "").trim();
+    if (!trimmed) return null;
+    const t = {
+      id: newId(),
+      text: trimmed,
+      x: Math.max(0, Math.round(x)),
+      y: Math.max(0, Math.round(y)),
+    };
+    saveTextos(proyecto, proyectoTextos(proyecto).concat([t]));
+    return t;
+  }
+
+  function deleteTexto(proyecto, id) {
+    saveTextos(
+      proyecto,
+      proyectoTextos(proyecto).filter((t) => t.id !== id)
+    );
+    renderProyectoTasks();
+  }
+
+  function textoEl(proyecto, t) {
+    const el = document.createElement("div");
+    el.className = "proyecto-texto";
+    el.dataset.id = t.id;
+    el.style.left = (t.x || 0) + "px";
+    el.style.top = (t.y || 0) + "px";
+    el.textContent = t.text;
+    if (!grafoSoloLectura()) el.title = "Arrastra para moverlo, pulsa para editarlo";
+    enableTextoDrag(el, proyecto, t);
+    return el;
+  }
+
+  // Mismo gesto que un post-it: se arrastra por el lienzo y, si no se ha
+  // movido, el toque abre su modal para editarlo o eliminarlo.
+  function enableTextoDrag(el, proyecto, t) {
+    if (grafoSoloLectura()) return; // en móvil el diagrama solo se consulta
+    let dragging = false;
+    let moved = false;
+    let offX = 0;
+    let offY = 0;
+
+    el.addEventListener("pointerdown", (e) => {
+      if (e.button && e.button !== 0) return;
+      dragging = true;
+      moved = false;
+      const caja = el.getBoundingClientRect();
+      offX = e.clientX - caja.left;
+      offY = e.clientY - caja.top;
+      el.classList.add("is-dragging");
+      try {
+        el.setPointerCapture(e.pointerId);
+      } catch (err) {
+        /* algunos navegadores no lo permiten; no es crítico */
+      }
+      e.preventDefault();
+      e.stopPropagation();
+    });
+
+    el.addEventListener("pointermove", (e) => {
+      if (!dragging) return;
+      moved = true;
+      const caja = proyectoTasksCanvas.getBoundingClientRect();
+      el.style.left = Math.max(0, e.clientX - caja.left - offX) + "px";
+      el.style.top = Math.max(0, e.clientY - caja.top - offY) + "px";
+    });
+
+    function soltar() {
+      if (!dragging) return;
+      dragging = false;
+      el.classList.remove("is-dragging");
+      if (!moved) {
+        openTextoEdit(t.id);
+        return;
+      }
+      const x = parseFloat(el.style.left);
+      const y = parseFloat(el.style.top);
+      const lista = proyectoTextos(proyecto);
+      const actual = lista.find((n) => n.id === t.id);
+      if (actual) {
+        actual.x = Math.round(x);
+        actual.y = Math.round(y);
+        saveTextos(proyecto, lista);
+      }
+      fitProyectoCanvas(y + TEXTO_ALTO);
+    }
+
+    el.addEventListener("pointerup", soltar);
+    el.addEventListener("pointercancel", soltar);
   }
 
   /* ---------- Flechas entre post-it ---------- */
@@ -7733,6 +7874,87 @@
     const r = proyectoTasksCanvas.getBoundingClientRect();
     openComentarioNew(e.clientX - r.left, e.clientY - r.top);
   });
+
+  /* ---------- Modal del texto suelto (crear, editar y eliminar) ---------- */
+  const proyectoTextoAddBtn = document.getElementById("proyecto-texto-add-btn");
+  const proyectoTextoOverlay = document.getElementById(
+    "proyecto-texto-overlay"
+  );
+  const proyectoTextoForm = document.getElementById("proyecto-texto-form");
+  const proyectoTextoInput = document.getElementById("proyecto-texto-text");
+  const proyectoTextoCancel = document.getElementById("proyecto-texto-cancel");
+  const proyectoTextoDelete = document.getElementById("proyecto-texto-delete");
+  const proyectoTextoTitle = document.getElementById("proyecto-texto-title");
+  let textoEditId = null; // null = se está creando uno nuevo
+  let textoNuevoPos = { x: 0, y: 0 };
+
+  function openTextoNew(x, y) {
+    if (!getProyectoOpen() || grafoSoloLectura()) return;
+    textoEditId = null;
+    textoNuevoPos = { x: x, y: y };
+    proyectoTextoTitle.textContent = "Nuevo texto";
+    proyectoTextoInput.value = "";
+    proyectoTextoDelete.hidden = true;
+    proyectoTextoOverlay.hidden = false;
+    proyectoTextoInput.focus();
+  }
+
+  function openTextoEdit(id) {
+    const proyecto = getProyectoOpen();
+    if (!proyecto) return;
+    const t = proyectoTextos(proyecto).find((n) => n.id === id);
+    if (!t) return;
+    textoEditId = id;
+    proyectoTextoTitle.textContent = "Texto";
+    proyectoTextoInput.value = t.text;
+    proyectoTextoDelete.hidden = false;
+    proyectoTextoOverlay.hidden = false;
+    proyectoTextoInput.focus();
+  }
+
+  function closeTextoModal() {
+    if (proyectoTextoOverlay.hidden) return;
+    proyectoTextoOverlay.hidden = true;
+    textoEditId = null;
+  }
+
+  proyectoTextoCancel.addEventListener("click", closeTextoModal);
+  proyectoTextoOverlay.addEventListener("click", (e) => {
+    if (e.target === proyectoTextoOverlay) closeTextoModal();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !proyectoTextoOverlay.hidden) closeTextoModal();
+  });
+
+  proyectoTextoDelete.addEventListener("click", () => {
+    const proyecto = getProyectoOpen();
+    if (!proyecto || !textoEditId) return;
+    const id = textoEditId;
+    closeTextoModal();
+    deleteTexto(proyecto, id);
+  });
+
+  proyectoTextoForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const proyecto = getProyectoOpen();
+    const valor = proyectoTextoInput.value.trim();
+    if (!proyecto || !valor) return;
+    if (textoEditId) {
+      const lista = proyectoTextos(proyecto);
+      const t = lista.find((n) => n.id === textoEditId);
+      if (t) {
+        t.text = valor;
+        saveTextos(proyecto, lista);
+      }
+    } else {
+      addTexto(proyecto, valor, textoNuevoPos.x, textoNuevoPos.y);
+    }
+    closeTextoModal();
+    renderProyectoTasks();
+  });
+
+  // Desde la cabecera: cae arriba a la izquierda del lienzo, y ya se arrastra
+  proyectoTextoAddBtn.addEventListener("click", () => openTextoNew(16, 56));
 
   /* ---------- Nueva tarea dentro de un proyecto ----------
      Desde la cabecera nace "Sin empezar"; desde el "+" de una columna de la

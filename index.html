@@ -542,6 +542,15 @@
                   title="Nuevo comentario"
                   hidden
                 >💬</button>
+                <!-- Solo en la vista Diagrama: rótulo suelto sobre el lienzo -->
+                <button
+                  type="button"
+                  class="header-icon-btn"
+                  id="proyecto-texto-add-btn"
+                  aria-label="Nuevo texto"
+                  title="Nuevo texto"
+                  hidden
+                >🔤</button>
                 <button
                   type="button"
                   class="header-icon-btn"
@@ -1001,6 +1010,33 @@
         <div class="fab-actions">
           <button type="button" class="fab-cancel" id="proyecto-new-cancel">Cancelar</button>
           <button type="submit" class="fab-submit">Crear</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Texto suelto del diagrama: crear, editar y eliminar -->
+  <div class="fab-overlay" id="proyecto-texto-overlay" hidden>
+    <div class="fab-box" role="dialog" aria-modal="true" aria-labelledby="proyecto-texto-title">
+      <h2 class="fab-title" id="proyecto-texto-title">Texto</h2>
+
+      <form id="proyecto-texto-form" autocomplete="off">
+        <label class="fab-label" for="proyecto-texto-text">Texto</label>
+        <textarea
+          id="proyecto-texto-text"
+          class="task-input proyecto-comment-input"
+          rows="2"
+          maxlength="200"
+          placeholder="Un rótulo para organizar el diagrama…"
+        ></textarea>
+
+        <button class="detail-delete" id="proyecto-texto-delete" type="button" hidden>
+          🗑 Eliminar texto
+        </button>
+
+        <div class="fab-actions">
+          <button type="button" class="fab-cancel" id="proyecto-texto-cancel">Cancelar</button>
+          <button type="submit" class="fab-submit">Guardar</button>
         </div>
       </form>
     </div>

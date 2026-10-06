@@ -2294,6 +2294,50 @@ textarea.proyecto-detail-name {
   z-index: 5;
 }
 
+/* ---------- Textos sueltos del diagrama ----------
+   Rótulos para organizar el lienzo: texto a secas, sin tarjeta ni icono. Por
+   debajo de los post-it y de las flechas, que son el contenido. */
+.proyecto-texto {
+  position: absolute;
+  z-index: 1;
+  max-width: 260px;
+  padding: 2px 4px;
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--text-soft);
+  white-space: pre-wrap;
+  word-break: break-word;
+  border-radius: 6px;
+  cursor: grab;
+  /* El gesto es del rótulo: no debe convertirse en scroll de la página */
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.proyecto-texto:hover {
+  background: var(--star-bg);
+  color: var(--text);
+}
+
+.proyecto-texto.is-dragging {
+  z-index: 6;
+  cursor: grabbing;
+  background: var(--star-bg);
+  color: var(--text);
+}
+
+/* En móvil el diagrama solo se consulta: el rótulo no se agarra */
+.proyecto-canvas.is-readonly .proyecto-texto {
+  cursor: default;
+}
+
+.proyecto-canvas.is-readonly .proyecto-texto:hover {
+  background: none;
+  color: var(--text-soft);
+}
+
 /* ---------- Comentarios sueltos del diagrama ----------
    Se colocan en cualquier punto del lienzo. Plegados son solo el icono; al
    pulsarlo se abre el globo con el texto. */
