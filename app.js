@@ -275,11 +275,14 @@
     items: () => tasks,
     setItems: (v) => (tasks = v),
     save: () => save(),
-    filter: (t) => isTaskWaiting(t),
-    extraPending: () =>
-      recados
-        .filter(isTaskWaiting)
-        .concat(pendientes.filter(isTaskWaiting), compras.filter(isTaskWaiting)),
+    // Las de un proyecto parado tampoco asoman por aquí: "ninguna lista"
+    filter: (t) => isTaskWaiting(t) && !isTaskProyectoParado(t),
+    extraPending: () => {
+      const espera = (t) => isTaskWaiting(t) && !isTaskProyectoParado(t);
+      return recados
+        .filter(espera)
+        .concat(pendientes.filter(espera), compras.filter(espera));
+    },
     // Lista mixta: cada una dice de qué lista viene
     originOf: (t) =>
       recados.indexOf(t) !== -1
@@ -1426,6 +1429,13 @@
   const detailCheck = document.getElementById("detail-check");
   const detailDelete = document.getElementById("detail-delete");
   const detailNoteLabel = document.querySelector(".detail-note-label");
+  // Instrucciones: editor (en la rutina) y su gemelo de solo lectura (en la
+  // copia que genera)
+  const detailInstrWrap = document.getElementById("detail-instr-wrap");
+  const detailInstr = document.getElementById("detail-instr");
+  const detailInstrToolbar = document.getElementById("detail-instr-toolbar");
+  const detailInstrReadWrap = document.getElementById("detail-instr-read-wrap");
+  const detailInstrRead = document.getElementById("detail-instr-read");
   const detailTaskFields = document.getElementById("detail-task-fields");
   const detailTypeWrap = document.getElementById("detail-type-wrap");
   const detailType = document.getElementById("detail-type");
@@ -2049,6 +2059,190 @@
   });
 
   // Abre el modal con SOLO el campo nota, para una tarea planificada
+  /* ---------- Instrucciones de una rutina ----------
+     Texto con formato (negrita, cursiva y listas) que explica cómo se hace la
+     rutina. Se escribe en la rutina y sus repeticiones lo muestran en solo
+     lectura. No se copia en la tarea: se lee en vivo de la rutina, así que
+     corregirlo arregla también las repeticiones que ya existan.
+
+     Lo que se guarda es HTML, así que entra y sale siempre por el colador de
+     `sanitizeInstr`: solo estas etiquetas y sin ningún atributo. */
+  const INSTR_TAGS = [
+    "B", "STRONG", "I", "EM", "U", "UL", "OL", "LI", "BR", "P", "DIV",
+  ];
+  // Una lista de casillas es un <ul> con esta marca. En la rutina solo se
+  // dibujan (ahí se definen los pasos); en la repetición son casillas de verdad
+  // y lo que se marca se guarda en esa tarea, así que la siguiente nace limpia.
+  const INSTR_CHECK_CLASS = "instr-check";
+  function sanitizeInstr(html) {
+    if (!html || typeof html !== "string") return "";
+    const doc = new DOMParser().parseFromString(
+      "<body>" + html + "</body>",
+      "text/html"
+    );
+    const out = document.createElement("div");
+    // Copia solo texto y etiquetas de la lista. De las demás se queda el
+    // contenido (un <span style> pierde el estilo, no las palabras).
+    const copiar = (src, dest) => {
+      Array.prototype.forEach.call(src.childNodes, (n) => {
+        if (n.nodeType === 3) {
+          dest.appendChild(document.createTextNode(n.nodeValue));
+          return;
+        }
+        if (n.nodeType !== 1) return;
+        if (INSTR_TAGS.indexOf(n.tagName) === -1) {
+          copiar(n, dest);
+          return;
+        }
+        const el = document.createElement(n.tagName.toLowerCase());
+        // Único atributo que sobrevive: la marca de "lista de casillas", que
+        // distingue una lista de pasos marcables de una lista con puntos.
+        if (n.tagName === "UL" && n.classList.contains(INSTR_CHECK_CLASS))
+          el.className = INSTR_CHECK_CLASS;
+        dest.appendChild(el);
+        copiar(n, el);
+      });
+    };
+    copiar(doc.body, out);
+    return out.innerHTML;
+  }
+  // ¿Está vacío? Un editor vacío deja restos (<br>, <div></div>) que no son nada
+  function instrVacio(html) {
+    const limpio = sanitizeInstr(html);
+    if (!limpio) return true;
+    const d = document.createElement("div");
+    d.innerHTML = limpio;
+    return d.textContent.trim() === "" && !d.querySelector("li");
+  }
+
+  // Pinta el campo según lo que haya abierto: "edit" en la rutina, "read" en su
+  // repetición (`task`, la dueña de lo marcado) y nada en el resto
+  function renderDetailInstr(mode, html, task) {
+    const limpio = sanitizeInstr(html);
+    if (detailInstrWrap) detailInstrWrap.hidden = mode !== "edit";
+    if (detailInstr && mode === "edit") detailInstr.innerHTML = limpio;
+    // En solo lectura, sin instrucciones no se enseña ni la etiqueta
+    const verRead = mode === "read" && !instrVacio(limpio);
+    if (detailInstrReadWrap) detailInstrReadWrap.hidden = !verRead;
+    if (detailInstrRead) {
+      detailInstrRead.innerHTML = verRead ? limpio : "";
+      if (verRead) pintarInstrChecks(detailInstrRead, task);
+    }
+  }
+
+  // Cambia los pasos de una lista de casillas por casillas de verdad, con lo
+  // que ya estuviera marcado en esta tarea (`instrChecked`, las posiciones de
+  // los pasos marcados, contando todos los de las instrucciones en orden).
+  function pintarInstrChecks(root, task) {
+    const pasos = root.querySelectorAll("ul." + INSTR_CHECK_CLASS + " > li");
+    const marcados =
+      task && Array.isArray(task.instrChecked) ? task.instrChecked : [];
+    Array.prototype.forEach.call(pasos, (li, i) => {
+      const box = document.createElement("input");
+      box.type = "checkbox";
+      box.className = "instr-check-box";
+      box.checked = marcados.indexOf(i) !== -1;
+      box.setAttribute("aria-label", "Paso " + (i + 1));
+      li.insertBefore(box, li.firstChild);
+      li.classList.toggle("is-checked", box.checked);
+      box.addEventListener("change", () => {
+        li.classList.toggle("is-checked", box.checked);
+        marcarInstrCheck(task, i, box.checked);
+      });
+    });
+  }
+
+  function marcarInstrCheck(task, i, on) {
+    if (!task) return;
+    const lista = Array.isArray(task.instrChecked)
+      ? task.instrChecked.slice()
+      : [];
+    const k = lista.indexOf(i);
+    if (on && k === -1) lista.push(i);
+    else if (!on && k !== -1) lista.splice(k, 1);
+    else return;
+    lista.sort((a, b) => a - b);
+    if (lista.length) task.instrChecked = lista;
+    else delete task.instrChecked;
+    const e = findTaskEntry(task.id);
+    if (e) e.ctx.save();
+  }
+
+  // ¿En qué lista está el cursor? (solo dentro del editor)
+  function instrClosestList(sel) {
+    const s = window.getSelection();
+    if (!s || !s.rangeCount || !detailInstr) return null;
+    let n = s.getRangeAt(0).startContainer;
+    if (n && n.nodeType === 3) n = n.parentNode;
+    const el = n && n.closest ? n.closest(sel) : null;
+    return el && detailInstr.contains(el) ? el : null;
+  }
+
+  if (detailInstrToolbar) {
+    // En `mousedown` para no perder la selección del editor al pulsar el botón
+    detailInstrToolbar.addEventListener("mousedown", (e) => {
+      const btn = e.target.closest(".detail-instr-btn");
+      if (!btn) return;
+      e.preventDefault();
+      detailInstr.focus();
+      // Formato con etiquetas (<b>, <i>), no con `style`: si el navegador usa
+      // CSS, el colador se lleva el <span> y con él la negrita.
+      try {
+        document.execCommand("styleWithCSS", false, false);
+      } catch (err) {
+        /* algún navegador no lo admite; el valor por defecto ya es este */
+      }
+      const cmd = btn.dataset.cmd;
+      const check = "ul." + INSTR_CHECK_CLASS;
+      if (cmd === "checklist") {
+        // Una lista de casillas es una lista con puntos marcada. Si ya lo es,
+        // el botón la deshace.
+        if (instrClosestList(check)) {
+          document.execCommand("insertUnorderedList", false, null);
+        } else {
+          if (!instrClosestList("ul"))
+            document.execCommand("insertUnorderedList", false, null);
+          const ul = instrClosestList("ul");
+          if (ul) ul.classList.add(INSTR_CHECK_CLASS);
+        }
+      } else if (cmd === "insertUnorderedList" && instrClosestList(check)) {
+        // De casillas a puntos: ya es un <ul>, solo pierde la marca
+        instrClosestList(check).classList.remove(INSTR_CHECK_CLASS);
+      } else {
+        // Números (o quitar la lista) sobre casillas: deja de serlo
+        const conCheck = instrClosestList(check);
+        if (conCheck) conCheck.classList.remove(INSTR_CHECK_CLASS);
+        document.execCommand(cmd, false, null);
+      }
+      guardarInstr();
+    });
+  }
+
+  if (detailInstr) {
+    // Pegar entra como texto plano: el formato se pone con los botones
+    detailInstr.addEventListener("paste", (e) => {
+      e.preventDefault();
+      const texto = (e.clipboardData || window.clipboardData).getData("text");
+      document.execCommand("insertText", false, texto);
+    });
+    detailInstr.addEventListener("input", guardarInstr);
+    detailInstr.addEventListener("blur", guardarInstr);
+  }
+
+  // Guarda lo escrito en la rutina abierta. Ojo: no reescribe el editor (eso
+  // movería el cursor); el colador se aplica a lo que se guarda.
+  function guardarInstr() {
+    if (openPlannedId === null || !detailInstr) return;
+    const item = planned.find((p) => p.id === openPlannedId);
+    if (!item) return;
+    const limpio = sanitizeInstr(detailInstr.innerHTML);
+    const valor = instrVacio(limpio) ? "" : limpio;
+    if ((item.instructions || "") === valor) return;
+    if (valor) item.instructions = valor;
+    else delete item.instructions;
+    savePlanned();
+  }
+
   function openPlannedNote(id) {
     const item = planned.find((p) => p.id === id);
     if (!item) return;
@@ -2074,6 +2268,7 @@
     detailAddHoyWrap.hidden = false; // "Añadir a Hoy" solo en planificadas
     detailAddHoy.checked = !!item.addToHoy;
     renderDetailPostpone(null); // una rutina no está en "Durante el día"
+    renderDetailInstr("edit", item.instructions); // se escriben aquí
     detailNote.value = item.note || "";
     overlay.hidden = false;
     document.body.classList.add("no-scroll");
@@ -2101,6 +2296,7 @@
     // (las de "antes de la extracción", que ya tienen su sección en Hoy) y
     // donde ya lo manda la plantilla de lactancia, igual que en la copia de una
     // rutina que lleva el ajuste puesto: ahí se decide en la otra app.
+    renderDetailInstr("none"); // las instrucciones son de nuestras rutinas
     detailAddHoyWrap.hidden = !hoyExternKey(task) || lactAutoHoy(task);
     detailAddHoy.checked = isHoyFijada(task) || lactAutoHoy(task);
     renderDetailPostpone(task);
@@ -2133,6 +2329,7 @@
     detailCatWrap.hidden = true;
     // "Añadir a Hoy": también en las de otras apps. Se oculta donde no aplica
     // (las de "antes de la extracción", que ya tienen su sección en Hoy).
+    renderDetailInstr("none"); // las instrucciones son de nuestras rutinas
     detailAddHoyWrap.hidden = !hoyExternKey(task);
     detailAddHoy.checked = isHoyFijada(task);
     renderDetailPostpone(task);
@@ -2168,6 +2365,12 @@
     // todas sus repeticiones nacen en Hoy, así que el interruptor solo
     // confundiría.
     const rutinaDeTask = plannedOf(task);
+    // Las instrucciones de la rutina, en solo lectura (se editan en la rutina)
+    renderDetailInstr(
+      "read",
+      rutinaDeTask && rutinaDeTask.instructions,
+      task // dueña de lo que se marque en sus casillas
+    );
     detailAddHoyWrap.hidden = !!(rutinaDeTask && rutinaDeTask.addToHoy);
     detailAddHoy.checked = !!task.hoyDia;
     renderDetailPostpone(task);
@@ -2545,10 +2748,24 @@
     );
   }
 
-  // Tareas que no salen de su proyecto: bloqueadas por el diagrama, en espera o
-  // descartadas. Es el filtro que usan todas las listas de tareas.
+  // ¿Su proyecto está parado? Un proyecto que no está "En curso" (en espera,
+  // aparcado, abandonado o completado) no reparte trabajo: ninguna de sus
+  // tareas sale en las listas, ni pendiente ni completada. Dentro del proyecto
+  // se siguen viendo todas, que es donde toca.
+  function isTaskProyectoParado(task) {
+    if (!task || !task.projectId) return false;
+    const p = proyectos.find((x) => x.id === task.projectId);
+    // Con una referencia colgando (proyecto borrado) no se esconde nada
+    return !!p && proyectoEstado(p) !== "curso";
+  }
+
+  // Tareas que no salen de su proyecto: bloqueadas por el diagrama, en espera,
+  // descartadas, o de un proyecto que no está en curso. Es el filtro que usan
+  // todas las listas de tareas.
   function isTaskOnHold(task) {
-    return isTaskParked(task) || isTaskBlocked(task);
+    return (
+      isTaskParked(task) || isTaskBlocked(task) || isTaskProyectoParado(task)
+    );
   }
 
   // ¿Espera a que llegue una fecha?
@@ -2684,6 +2901,7 @@
       setNote(openTaskId, detailNote.value);
       renderOpenTask();
     } else if (openPlannedId !== null) {
+      guardarInstr(); // por si el editor no llegó a perder el foco
       setPlannedNote(openPlannedId, detailNote.value);
       renderPlanned();
     }
@@ -5374,17 +5592,18 @@
   // Tareas de Tareas/Recados con fecha exacta ("En fecha") en ese día
   function agendaDatedFor(iso) {
     const out = [];
+    // Un proyecto que no está en curso no coloca nada en el calendario
+    const ponerla = (t) => t.dateMode === "on" && t.dateStart === iso &&
+      !isTaskProyectoParado(t);
     tasks.forEach((t) => {
-      if (!t.sourcePlannedId && t.dateMode === "on" && t.dateStart === iso)
+      if (!t.sourcePlannedId && ponerla(t))
         out.push({ task: t, origin: ORIGEN.tareas });
     });
     recados.forEach((t) => {
-      if (t.dateMode === "on" && t.dateStart === iso)
-        out.push({ task: t, origin: ORIGEN.recados });
+      if (ponerla(t)) out.push({ task: t, origin: ORIGEN.recados });
     });
     compras.forEach((t) => {
-      if (t.dateMode === "on" && t.dateStart === iso)
-        out.push({ task: t, origin: ORIGEN.compras });
+      if (ponerla(t)) out.push({ task: t, origin: ORIGEN.compras });
     });
     return out;
   }
@@ -5676,8 +5895,9 @@
     [tasks, recados, pendientes, compras].forEach((lista) => {
       lista.forEach((t) => {
         // En espera (por fecha o a mano) manda sobre el fijado: la tarea no
-        // asoma por Hoy hasta que salga de "En espera".
-        if (isTaskWaiting(t)) return;
+        // asoma por Hoy hasta que salga de "En espera". Lo mismo si su proyecto
+        // no está en curso.
+        if (isTaskWaiting(t) || isTaskProyectoParado(t)) return;
         if (t.hoyDia && (!t.done || t.completedAt === todayISO())) out.push(t);
       });
     });
@@ -8521,6 +8741,9 @@
         if (moved) {
           commitOrder();
           renderProyectosIndex(); // repinta contadores y bloques vacíos
+          // Soltarlo en otro estado cambia qué tareas se ven en las listas (las
+          // de un proyecto que no está en curso no salen)
+          renderAllLists();
         }
         return;
       }

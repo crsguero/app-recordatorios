@@ -127,6 +127,39 @@ cálculo de la "siguiente ocurrencia").
 - Migración: las planificadas semanales sin `createdAt` reciben la fecha de hoy
   en la primera comprobación (empiezan a generar desde su próxima ocurrencia).
 
+### Instrucciones de una rutina
+
+Campo **Instrucciones** del panel de una rutina (`instructions`): cómo se hace,
+con formato básico (negrita, cursiva, lista con puntos, lista numerada y lista
+de casillas). Se guarda **HTML**, así que entra y sale siempre por
+`sanitizeInstr`, que solo deja pasar `b/strong/i/em/u/ul/ol/li/br/p/div` y
+ningún atributo, **salvo** `class="instr-check"` en un `<ul>`, que es lo que
+marca una lista de casillas (de las demás etiquetas conserva el texto). Pegar
+entra como texto plano.
+
+**Casillas:** en la rutina solo se dibuja el cuadrito (allí se definen los
+pasos, no se marcan). En la repetición son casillas de verdad y lo marcado se
+guarda **en esa tarea** (`instrChecked`, las posiciones de los pasos marcados en
+orden de documento), así que la siguiente ocurrencia nace limpia. Al guardarse
+por posición, reordenar los pasos de la rutina descoloca lo ya marcado en una
+copia pendiente.
+
+Sus repeticiones lo muestran en **solo lectura**, debajo de "Repetir" y encima
+de "Nota". **No se copia en la tarea:** se lee en vivo de la rutina
+(`plannedOf`), así que corregirlo arregla también las repeticiones que ya
+existan, y sin instrucciones no se enseña ni la etiqueta. Convertir una rutina
+en tarea (`plannedToTask`) las pierde: la tarea no tiene dónde guardarlas.
+
+Código (`app.js`): `sanitizeInstr`, `instrVacio`,
+`renderDetailInstr(mode, html, task)` (`"edit"` en la rutina, `"read"` en su
+copia, `"none"` en el resto, que lo llaman las cuatro funciones `open*` del
+panel), `guardarInstr` (input, blur y `closeDetail`; no reescribe el editor, que
+movería el cursor), `pintarInstrChecks` + `marcarInstrCheck` (las casillas de la
+copia) e `instrClosestList` (en qué lista está el cursor, para los botones de la
+barra). El formato se aplica con `execCommand` y `styleWithCSS` apagado, para
+que salgan etiquetas y no `style` (que el colador se llevaría). UI:
+`detail-instr-wrap` / `detail-instr-read-wrap` en `index.html`.
+
 ### Rutinas en la Agenda (semana del calendario)
 
 Cada día de la pestaña **Agenda** muestra, además de lo suyo, las rutinas que

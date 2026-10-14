@@ -796,6 +796,34 @@
           </div>
         </div>
 
+        <!-- Instrucciones (solo rutinas): texto con formato básico. Lo que se
+             escriba aquí lo muestran sus repeticiones en solo lectura. -->
+        <div id="detail-instr-wrap" hidden>
+          <h3 class="detail-section-label">Instrucciones</h3>
+          <div class="detail-instr-toolbar" id="detail-instr-toolbar">
+            <button type="button" class="detail-instr-btn" data-cmd="bold" aria-label="Negrita" title="Negrita"><strong>B</strong></button>
+            <button type="button" class="detail-instr-btn" data-cmd="italic" aria-label="Cursiva" title="Cursiva"><em>I</em></button>
+            <button type="button" class="detail-instr-btn" data-cmd="insertUnorderedList" aria-label="Lista con puntos" title="Lista con puntos">•—</button>
+            <button type="button" class="detail-instr-btn" data-cmd="insertOrderedList" aria-label="Lista numerada" title="Lista numerada">1.—</button>
+            <button type="button" class="detail-instr-btn" data-cmd="checklist" aria-label="Lista de casillas" title="Lista de casillas">☐—</button>
+          </div>
+          <div
+            id="detail-instr"
+            class="detail-instr"
+            contenteditable="true"
+            role="textbox"
+            aria-multiline="true"
+            aria-label="Instrucciones"
+            data-placeholder="Cómo se hace esta rutina…"
+          ></div>
+        </div>
+
+        <!-- Las mismas instrucciones, en la ocurrencia: solo lectura -->
+        <div id="detail-instr-read-wrap" hidden>
+          <h3 class="detail-section-label">Instrucciones</h3>
+          <div class="detail-instr-read" id="detail-instr-read"></div>
+        </div>
+
         <label class="detail-note-label detail-section-label" for="detail-note">Nota</label>
         <textarea
           id="detail-note"

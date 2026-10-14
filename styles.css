@@ -2983,8 +2983,119 @@ textarea.proyecto-detail-name {
 #detail-overlay #detail-project-wrap,
 #detail-overlay #detail-state-wrap,
 #detail-overlay #detail-task-fields,
+#detail-overlay #detail-instr-wrap,
+#detail-overlay #detail-instr-read-wrap,
 #detail-overlay #detail-repeat-section {
   margin-bottom: 24px;
+}
+
+/* --- Instrucciones de una rutina (texto con formato) --- */
+.detail-instr-toolbar {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.detail-instr-btn {
+  flex: 0 0 auto;
+  min-width: 38px;
+  height: 34px;
+  padding: 0 8px;
+  font-size: 0.95rem;
+  font-family: inherit;
+  line-height: 1;
+  color: var(--text);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.detail-instr-btn:hover {
+  border-color: var(--primary);
+  background: var(--star-bg);
+}
+
+.detail-instr,
+.detail-instr-read {
+  padding: 14px 16px;
+  font-size: 1rem;
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  overflow-wrap: anywhere;
+}
+
+.detail-instr {
+  min-height: 110px;
+}
+
+.detail-instr:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+
+/* Pista mientras está vacío (el editor sin contenido no tiene hijos) */
+.detail-instr:empty::before {
+  content: attr(data-placeholder);
+  color: var(--text-soft);
+}
+
+/* El reset global quita sangrías y viñetas: las listas las recuperan aquí */
+.detail-instr ul,
+.detail-instr ol,
+.detail-instr-read ul,
+.detail-instr-read ol {
+  margin: 4px 0;
+  padding-left: 22px;
+}
+
+.detail-instr li,
+.detail-instr-read li {
+  margin: 2px 0;
+}
+
+.detail-instr p,
+.detail-instr-read p {
+  margin: 4px 0;
+}
+
+/* Listas de casillas. En la rutina solo se dibuja el cuadrito (ahí se definen
+   los pasos); en la repetición hay casillas de verdad y se pueden marcar. */
+.detail-instr ul.instr-check,
+.detail-instr-read ul.instr-check {
+  list-style: none;
+  padding-left: 2px;
+}
+
+.detail-instr ul.instr-check > li::before {
+  content: "☐";
+  margin-right: 8px;
+  color: var(--text-soft);
+}
+
+.detail-instr-read ul.instr-check > li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.instr-check-box {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  margin-top: 3px;
+  accent-color: var(--primary);
+  cursor: pointer;
+}
+
+/* Paso hecho: como una tarea completada */
+.detail-instr-read ul.instr-check > li.is-checked {
+  color: var(--done);
+  text-decoration: line-through;
 }
 
 /* El motivo va pegado a su interruptor "En espera", no a 24px */
