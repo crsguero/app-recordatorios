@@ -64,14 +64,13 @@
       </div>
       <button type="button" class="app-nav-item" data-view="hoy">Hoy</button>
       <button type="button" class="app-nav-item" data-view="agenda">Agenda</button>
-      <button type="button" class="app-nav-item" data-view="rutinas">Mis tareas</button>
+      <button type="button" class="app-nav-item" data-view="rutinas">Destacadas</button>
       <button type="button" class="app-nav-item" data-view="espera">En espera</button>
       <hr class="app-nav-sep" />
       <button type="button" class="app-nav-item is-active" data-view="tareas">Tareas</button>
       <button type="button" class="app-nav-item" data-view="compras">Compras</button>
       <button type="button" class="app-nav-item" data-view="recados">Recados</button>
       <button type="button" class="app-nav-item" data-view="repeticiones">Rutinas</button>
-      <button type="button" class="app-nav-item" data-view="pendientes">Pendientes</button>
     </nav>
 
     <!-- Barra lateral de la sección Proyectos: una entrada por estado (las
@@ -92,11 +91,11 @@
       <button type="button" class="mtab" data-view="agenda">
         <span class="mtab-ico">🗓️</span><span class="mtab-lbl">Agenda</span>
       </button>
-      <!-- "Mis tareas" en la barra abre la vista interna `rutinas` -->
-      <button type="button" class="mtab" data-view="rutinas">
-        <span class="mtab-ico">✅</span><span class="mtab-lbl">Mis tareas</span>
+      <!-- "Tareas" no es una vista: abre el menú con todas las listas -->
+      <button type="button" class="mtab" data-menu="tareas-menu" aria-haspopup="true">
+        <span class="mtab-ico">✅</span><span class="mtab-lbl">Tareas</span>
       </button>
-      <button type="button" class="mtab" data-more="1" aria-haspopup="true">
+      <button type="button" class="mtab" data-menu="more-menu" aria-haspopup="true">
         <span class="mtab-ico">•••</span><span class="mtab-lbl">Más</span>
       </button>
     </nav>
@@ -104,16 +103,23 @@
     <!-- Botón de creación rápida (solo móvil) -->
     <button type="button" class="fab" id="fab-btn" aria-label="Crear">+</button>
 
-    <!-- Menú "Más": el resto de pestañas (solo móvil) -->
-    <div class="more-menu" id="more-menu" hidden>
+    <!-- Menú "Tareas": todas las listas (solo móvil). "Destacadas" es la vista
+         interna `rutinas`; "Rutinas", la vista `repeticiones`. -->
+    <div class="more-menu" id="tareas-menu" hidden>
       <div class="more-menu-head">
-        <h2>Más</h2>
-        <button type="button" class="more-menu-close" id="more-close" aria-label="Cerrar">✕</button>
+        <h2>Tareas</h2>
+        <button type="button" class="more-menu-close" data-menu-close="1" aria-label="Cerrar">✕</button>
       </div>
       <div class="more-menu-list">
+        <button type="button" class="menu-item" data-view="rutinas">
+          <span class="menu-item-ico">⭐</span> Destacadas
+        </button>
         <button type="button" class="menu-item" data-view="espera">
           <span class="menu-item-ico">⏸️</span> En espera
         </button>
+        <!-- Mismo corte que la barra lateral de escritorio: arriba lo que
+             reúne tareas de varias listas, abajo las listas en sí -->
+        <hr class="more-menu-sep" />
         <button type="button" class="menu-item" data-view="tareas">
           <span class="menu-item-ico">✅</span> Tareas
         </button>
@@ -126,9 +132,16 @@
         <button type="button" class="menu-item" data-view="repeticiones">
           <span class="menu-item-ico">🔁</span> Rutinas
         </button>
-        <button type="button" class="menu-item" data-view="pendientes">
-          <span class="menu-item-ico">⏳</span> Pendientes
-        </button>
+      </div>
+    </div>
+
+    <!-- Menú "Más": lo que no es una lista de tareas (solo móvil) -->
+    <div class="more-menu" id="more-menu" hidden>
+      <div class="more-menu-head">
+        <h2>Más</h2>
+        <button type="button" class="more-menu-close" data-menu-close="1" aria-label="Cerrar">✕</button>
+      </div>
+      <div class="more-menu-list">
         <button type="button" class="menu-item" data-action="settings">
           <span class="menu-item-ico">⚙️</span> Ajustes
         </button>
@@ -153,9 +166,6 @@
           </button>
           <button type="button" class="fab-choice" data-create="rutinas">
             <span class="fab-choice-ico">🔁</span><span>Rutina</span>
-          </button>
-          <button type="button" class="fab-choice" data-create="pendientes">
-            <span class="fab-choice-ico">⏳</span><span>Pendiente</span>
           </button>
         </div>
 
@@ -237,12 +247,12 @@
         <div id="agenda-sections"></div>
       </section>
 
-      <!-- Vista: "Mis tareas" (interna: rutinas). Tareas automáticas:
+      <!-- Vista: "Destacadas" (interna: rutinas). Tareas automáticas:
            planificadas + lactancia. El id/hash sigue siendo `rutinas`. -->
       <section class="view" id="view-rutinas" hidden>
         <header class="app-header">
           <div class="header-top">
-            <h1>Mis tareas</h1>
+            <h1>Destacadas</h1>
           </div>
           <p class="subtitle" id="rutinas-summary">Sin tareas todavía</p>
         </header>
@@ -270,7 +280,7 @@
         </div>
       </section>
 
-      <!-- Vista: "En espera". Tareas, recados y pendientes con una fecha que
+      <!-- Vista: "En espera". Tareas, compras y recados con una fecha que
            todavía no ha llegado ("En fecha", "A partir de" o "Entre"): mientras
            esperan no salen de su lista, y vuelven a ella al cumplirse la fecha.
            No tiene formulario: aquí no se crea nada, solo se espera. -->
@@ -299,7 +309,7 @@
 
       <!-- Vista: "Rutinas" (interna: repeticiones). Las repeticiones que
            generan las Planificadas (más las tareas automáticas de otras apps).
-           Son las mismas que salen en "Mis tareas" con el filtro Rutinas. -->
+           Son las mismas que salen en "Destacadas" con el filtro Rutinas. -->
       <section class="view" id="view-repeticiones" hidden>
         <!-- Índice: la lista de repeticiones -->
         <div id="repeticiones-index">
@@ -419,7 +429,7 @@
         </div>
       </section>
 
-      <!-- Vista: Recados (igual que Mis tareas, sin planificadas automáticas) -->
+      <!-- Vista: Recados (igual que Destacadas, sin planificadas automáticas) -->
       <section class="view" id="view-recados" hidden>
         <header class="app-header">
           <div class="header-top">
@@ -452,42 +462,6 @@
             <button type="button" class="clear-btn" id="recados-clear-done">Borrar completados</button>
           </div>
           <ul class="task-list done-list" id="recados-done-list" hidden></ul>
-        </div>
-      </section>
-
-      <!-- Vista: Pendientes (igual que Recados) -->
-      <section class="view" id="view-pendientes" hidden>
-        <header class="app-header">
-          <div class="header-top">
-            <h1>Pendientes</h1>
-          </div>
-          <p class="subtitle" id="pendientes-summary">Sin tareas todavía</p>
-        </header>
-
-        <form class="new-task" id="pendientes-form" autocomplete="off">
-          <input
-            type="text"
-            id="pendientes-input"
-            class="task-input"
-            placeholder="Añadir una tarea…"
-            aria-label="Nueva tarea"
-            maxlength="200"
-          />
-          <button type="submit" class="add-btn" aria-label="Añadir tarea">+</button>
-        </form>
-
-        <ul class="task-list" id="pendientes-list"></ul>
-
-        <p class="empty-state" id="pendientes-empty" hidden>
-          No hay tareas aquí. ¡Añade una arriba! 🎉
-        </p>
-
-        <div class="done-section" id="pendientes-done-section" hidden>
-          <div class="done-header">
-            <button type="button" class="toggle-done-btn" id="pendientes-toggle-done"></button>
-            <button type="button" class="clear-btn" id="pendientes-clear-done">Borrar completadas</button>
-          </div>
-          <ul class="task-list done-list" id="pendientes-done-list" hidden></ul>
         </div>
       </section>
 
@@ -641,7 +615,6 @@
             <option value="compras">Compras</option>
             <option value="recados">Recados</option>
             <option value="rutinas">Rutinas</option>
-            <option value="pendientes">Pendientes</option>
             <!-- Solo con proyecto asignado: la tarea vive únicamente allí -->
             <option value="sinTipo">Sin tipo (solo en el proyecto)</option>
           </select>
@@ -670,8 +643,7 @@
         </label>
 
         <!-- Aparta la tarea a mano: sale de su lista y se va a "En espera"
-             hasta que se desmarque. Solo en Tareas / Compras / Recados /
-             Pendientes. -->
+             hasta que se desmarque. Solo en Tareas / Compras / Recados. -->
         <label class="hoy-switch hoy-switch-wide" id="detail-espera-wrap" hidden>
           <span class="hoy-switch-text">En espera</span>
           <input type="checkbox" id="detail-espera" aria-label="En espera" />
@@ -689,7 +661,7 @@
           />
         </div>
 
-        <!-- Proyecto al que pertenece (solo Tareas / Recados / Pendientes) -->
+        <!-- Proyecto al que pertenece (solo Tareas / Compras / Recados) -->
         <div id="detail-project-wrap" hidden>
           <h3 class="detail-section-label">Proyecto</h3>
           <select id="detail-project" class="date-mode" aria-label="Proyecto"></select>
@@ -880,7 +852,7 @@
 
         <section class="settings-section" id="tab-datos">
           <p class="settings-desc">
-            Guarda una copia de todas tus listas (tareas, compras, recados, pendientes,
+            Guarda una copia de todas tus listas (tareas, compras, recados,
             proyectos y planificadas) en un archivo, o restáuralas desde uno.
           </p>
           <button type="button" class="settings-action" id="export-btn">⬇️ Exportar datos</button>
@@ -993,7 +965,6 @@
           <option value="tareas">Tareas</option>
           <option value="compras">Compras</option>
           <option value="recados">Recados</option>
-          <option value="pendientes">Pendientes</option>
         </select>
 
         <div class="fab-actions">

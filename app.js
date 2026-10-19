@@ -33,17 +33,6 @@
   const comprasClearDone = document.getElementById("compras-clear-done");
   const comprasSummary = document.getElementById("compras-summary");
 
-  // Vista Pendientes (tercera lista, igual que Recados)
-  const pendientesForm = document.getElementById("pendientes-form");
-  const pendientesInput = document.getElementById("pendientes-input");
-  const pendientesList = document.getElementById("pendientes-list");
-  const pendientesEmpty = document.getElementById("pendientes-empty");
-  const pendientesDoneSection = document.getElementById("pendientes-done-section");
-  const pendientesDoneList = document.getElementById("pendientes-done-list");
-  const pendientesToggleDone = document.getElementById("pendientes-toggle-done");
-  const pendientesClearDone = document.getElementById("pendientes-clear-done");
-  const pendientesSummary = document.getElementById("pendientes-summary");
-
   // Vista Proyectos: no son tareas (no se completan). Título + enlace a Notion.
   const proyectosListEl = document.getElementById("proyectos-list");
   const proyectosEmpty = document.getElementById("proyectos-empty");
@@ -86,7 +75,7 @@
   const rutinasSummary = document.getElementById("rutinas-summary");
 
   // Vista Rutinas (interna: repeticiones): las copias que generan las
-  // planificadas, sin las destacadas que acompañan a "Mis tareas".
+  // planificadas, sin las destacadas que acompañan a "Destacadas".
   const repeticionesList = document.getElementById("repeticiones-list");
   const repeticionesEmpty = document.getElementById("repeticiones-empty");
   const repeticionesDoneSection = document.getElementById(
@@ -101,7 +90,7 @@
   );
   const repeticionesSummary = document.getElementById("repeticiones-summary");
 
-  // Vista "En espera": tareas, recados y pendientes con una fecha futura. No
+  // Vista "En espera": tareas, compras y recados con una fecha futura. No
   // tiene array propio: lee de las tres listas y las junta en una sola.
   const esperaList = document.getElementById("espera-list");
   const esperaEmpty = document.getElementById("espera-empty");
@@ -117,7 +106,6 @@
     tareas: "Tarea",
     compras: "Compra",
     recados: "Recado",
-    pendientes: "Pendiente",
     rutinas: "Rutina",
     // Las de otras apps nombran la app, no un tipo de tarea nuestro (igual que
     // el byline de la Previsión semanal). En Cuanto antes no la llevan: allí se
@@ -126,7 +114,7 @@
     appTareas: "App tareas",
   };
 
-  /* ---------- Contextos de lista (Mis tareas / Recados) ----------
+  /* ---------- Contextos de lista (Destacadas / Recados) ----------
      Ambas listas comparten toda la lógica (render, modal, drag, completadas).
      Cada contexto sabe de qué array leer/escribir y en qué DOM pintar. */
   // Tareas y Rutinas comparten el mismo array `tasks`; se distinguen por filtro:
@@ -197,16 +185,16 @@
       recados: "No hay recados destacados.",
     },
   };
-  // Vista Rutinas: solo las repeticiones, las mismas que en "Mis tareas" con el
+  // Vista Rutinas: solo las repeticiones, las mismas que en "Destacadas" con el
   // filtro Rutinas (copias de planificadas + tareas automáticas de otras apps).
-  // Comparte el array `tasks` con Tareas y con "Mis tareas"; lo que cambia es
+  // Comparte el array `tasks` con Tareas y con "Destacadas"; lo que cambia es
   // el filtro. Sin destacadas ni recados: aquí no pintan nada.
   const ctxRepeticiones = {
     noun: "tarea",
     items: () => tasks,
     setItems: (v) => (tasks = v),
     save: () => save(),
-    // Igual que en "Mis tareas": "Añadir a Hoy" no saca la repetición de aquí
+    // Igual que en "Destacadas": "Añadir a Hoy" no saca la repetición de aquí
     // (se ve en las dos partes), y las bloqueadas por su proyecto aún no tocan.
     filter: (t) => !isTaskHidden(t) && !!t.sourcePlannedId,
     listEl: repeticionesList,
@@ -235,21 +223,6 @@
     doneVisible: false,
     plannedRank: false,
   };
-  const ctxPendientes = {
-    noun: "tarea",
-    items: () => pendientes,
-    setItems: (v) => (pendientes = v),
-    save: () => savePendientes(),
-    filter: (t) => !isTaskHidden(t),
-    listEl: pendientesList,
-    doneListEl: pendientesDoneList,
-    emptyEl: pendientesEmpty,
-    doneSectionEl: pendientesDoneSection,
-    toggleBtn: pendientesToggleDone,
-    summaryEl: pendientesSummary,
-    doneVisible: false,
-    plannedRank: false,
-  };
   const ctxCompras = {
     noun: "compra",
     items: () => compras,
@@ -267,7 +240,7 @@
   };
   // "En espera": lo que espera a que llegue su fecha, venga de donde venga.
   // Las nativas salen de `tasks` y las otras dos listas entran por
-  // `extraPending`, como los recados destacados en "Mis tareas". Los objetos
+  // `extraPending`, como los recados destacados en "Destacadas". Los objetos
   // son los reales, así que se editan y completan desde aquí igual que en su
   // lista, y al cumplirse la fecha desaparecen solas de esta vista.
   const ctxEspera = {
@@ -279,9 +252,7 @@
     filter: (t) => isTaskWaiting(t) && !isTaskProyectoParado(t),
     extraPending: () => {
       const espera = (t) => isTaskWaiting(t) && !isTaskProyectoParado(t);
-      return recados
-        .filter(espera)
-        .concat(pendientes.filter(espera), compras.filter(espera));
+      return recados.filter(espera).concat(compras.filter(espera));
     },
     // Lista mixta: cada una dice de qué lista viene
     originOf: (t) =>
@@ -289,8 +260,6 @@
         ? ORIGEN.recados
         : compras.indexOf(t) !== -1
         ? ORIGEN.compras
-        : pendientes.indexOf(t) !== -1
-        ? ORIGEN.pendientes
         : ORIGEN.tareas,
     // Las apartadas a mano llevan su motivo en el byline
     // y, como la fecha, en una línea aparte bajo la procedencia y el proyecto
@@ -332,8 +301,6 @@
       return { item: item, ctx: item.sourcePlannedId ? ctxRutinas : ctxTareas };
     item = recados.find((t) => t.id === id);
     if (item) return { item: item, ctx: ctxRecados };
-    item = pendientes.find((t) => t.id === id);
-    if (item) return { item: item, ctx: ctxPendientes };
     item = compras.find((t) => t.id === id);
     if (item) return { item: item, ctx: ctxCompras };
     item = sinTipo.find((t) => t.id === id);
@@ -362,7 +329,8 @@
   const FB_KEY = "tasks"; // recordatorios/tasks = array de tareas
   const FB_KEY_PLANNED = "planned"; // recordatorios/planned = tareas planificadas
   const FB_KEY_RECADOS = "recados"; // recordatorios/recados = segunda lista
-  const FB_KEY_PENDIENTES = "pendientes"; // recordatorios/pendientes = tercera lista
+  // recordatorios/pendientes = lista retirada; solo se lee para vaciarla
+  const FB_KEY_PENDIENTES = "pendientes";
   const FB_KEY_COMPRAS = "compras"; // recordatorios/compras = cuarta lista
   // recordatorios/sinTipo = tareas sin tipo (solo dentro de su proyecto)
   const FB_KEY_SIN_TIPO = "sinTipo";
@@ -452,7 +420,7 @@
 
   let tasks = [];
   let recados = []; // segunda lista (misma funcionalidad, sin planificadas auto)
-  let pendientes = []; // tercera lista (igual que recados)
+  let pendientes = []; // lista retirada: solo de paso hacia `tasks`
   let compras = []; // cuarta lista (igual que recados)
   // Tareas sin tipo: solo viven en su proyecto, fuera de las listas de tareas
   let sinTipo = [];
@@ -625,16 +593,30 @@
     }
   }
 
-  function savePendientes() {
-    if (db) idbSet(IDB_KEY_PENDIENTES, pendientes).catch(() => {});
+  /* ---------- Pendientes: lista retirada ----------
+     La pestaña Pendientes ya no existe y sus tareas viven ahora en Tareas. El
+     array `pendientes` solo sigue aquí para vaciar lo que quede guardado: el
+     respaldo local al arrancar, y el nodo de la nube cada vez que llegue algo
+     (un dispositivo sin actualizar todavía puede escribir ahí).
+
+     Mueve lo que haya a `tasks` y borra el rastro. Devuelve si movió algo, para
+     que quien llame repinte solo entonces. Conserva los ids, como al mover una
+     tarea de lista a mano, así que no hay que apuntar ningún borrado. */
+  function migrarPendientes() {
+    if (!pendientes.length) return false;
+    tasks = tasks.concat(pendientes);
+    pendientes = [];
+    save(); // sube Tareas ya con las migradas
+    if (db) idbSet(IDB_KEY_PENDIENTES, null).catch(() => {});
     if (fbReady) {
       fdb
         .ref(FB_ROOT + "/" + FB_KEY_PENDIENTES)
-        .set(pendientes && pendientes.length ? pendientes : null)
+        .set(null)
         .catch((e) =>
           showError("Al sincronizar: " + (e && e.message ? e.message : e))
         );
     }
+    return true;
   }
 
   function saveSinTipo() {
@@ -941,7 +923,7 @@
   }
 
   /* ---------- Materialización de planificadas semanales ----------
-     Convierte cada planificada "Semanalmente" en una tarea de Mis tareas según
+     Convierte cada planificada "Semanalmente" en una tarea de Destacadas según
      el día configurado, sin duplicados y con recuperación (catch-up). Ver el
      plan/documentación para las reglas completas. Se ejecuta una vez por carga
      tras sincronizar tasks y planned. */
@@ -1105,13 +1087,47 @@
     renderAllLists();
   }
 
+  // "Borrar completadas" de una lista. Dos guardarraíles, porque el borrado es
+  // definitivo (y deja registro local para que la nube no las devuelva):
+  //  - no toca las de un proyecto: son su historial, y este botón vive en una
+  //    lista. Esas se borran una a una, desde la propia tarea;
+  //  - avisa de cuántas se va a llevar antes de hacerlo.
   function clearDoneIn(ctx) {
-    // Solo borra las completadas que pertenecen a esta vista (respeta el filtro,
-    // ya que Tareas y Rutinas comparten el array `tasks`).
+    // Solo las completadas que pertenecen a esta vista (respeta el filtro, ya
+    // que Tareas y Rutinas comparten el array `tasks`).
     const belongs = ctx.filter || (() => true);
-    const fuera = (t) => t.done && belongs(t);
-    rememberDeletedMany(ctx.items().filter(fuera).map((t) => t.id));
-    ctx.setItems(ctx.items().filter((t) => !fuera(t)));
+    const candidatas = ctx.items().filter((t) => t.done && belongs(t));
+    const deProyecto = candidatas.filter((t) => !!taskProjectOf(t));
+    const borrables = candidatas.filter((t) => !taskProjectOf(t));
+    const nombre = ctx.noun === "tarea" ? "tarea" : ctx.noun;
+    const plural = nombre === "compra" ? "compras" : nombre + "s";
+
+    if (!borrables.length) {
+      if (deProyecto.length)
+        alert(
+          "Las " +
+            deProyecto.length +
+            " completadas que hay son de proyectos, y esas no se borran desde" +
+            " aquí: se borran una a una, desde la propia tarea."
+        );
+      return;
+    }
+
+    let aviso =
+      borrables.length === 1
+        ? "¿Borrar 1 " + nombre + " completada?"
+        : "¿Borrar " + borrables.length + " " + plural + " completadas?";
+    aviso += " No se puede deshacer.";
+    if (deProyecto.length)
+      aviso +=
+        "\n\nLas " +
+        deProyecto.length +
+        " de proyectos se quedan: esas se borran una a una.";
+    if (!confirm(aviso)) return;
+
+    const quitar = new Set(borrables.map((t) => t.id));
+    rememberDeletedMany([...quitar]);
+    ctx.setItems(ctx.items().filter((t) => !quitar.has(t.id)));
     ctx.save();
     renderAllLists();
   }
@@ -1938,7 +1954,7 @@
     if (openExternTask) {
       setHoyFijada(openExternTask, detailAddHoy.checked);
       renderDetailPostpone(openExternTask); // deja de estar fijada → sin posponer
-      // Sigue en Mis tareas y en Rutinas, pero ahí se le pone (o se le quita)
+      // Sigue en Destacadas y en Rutinas, pero ahí se le pone (o se le quita)
       // el distintivo de Hoy, así que hay que repintarlas también.
       renderRutinas();
       renderHoyView();
@@ -2393,13 +2409,12 @@
   }
 
   /* ---------- "Tipo": mover la tarea de lista ----------
-     Tareas / Recados / Pendientes comparten formato: se mueve el objeto de un
+     Tareas / Compras / Recados comparten formato: se mueve el objeto de un
      array a otro. Rutinas (planificadas) es otro modelo: al convertir se crea
      la entrada nueva con el texto y la nota, y se borra la de origen. */
   const CTX_BY_TYPE = {
     tareas: () => ctxTareas,
     recados: () => ctxRecados,
-    pendientes: () => ctxPendientes,
     compras: () => ctxCompras,
     sinTipo: () => ctxSinTipo,
   };
@@ -2411,7 +2426,6 @@
     const e = findTaskEntry(openTaskId);
     if (!e || e.item.sourcePlannedId) return null; // copia de una rutina
     if (e.ctx === ctxRecados) return "recados";
-    if (e.ctx === ctxPendientes) return "pendientes";
     if (e.ctx === ctxCompras) return "compras";
     if (e.ctx === ctxTareas) return "tareas";
     if (e.ctx === ctxSinTipo) return "sinTipo";
@@ -2422,9 +2436,9 @@
   // "Sin tipo" solo se ofrece con un proyecto asignado: sin él la tarea no se
   // vería en ninguna parte.
   // "En espera": aparta la tarea a mano, sin depender de ninguna fecha. Solo en
-  // las cuatro listas propias; una copia de rutina vuelve a nacer sola y una
+  // las tres listas propias; una copia de rutina vuelve a nacer sola y una
   // tarea "sin tipo" ya tiene el estado "En espera" de su proyecto.
-  const TIPOS_CON_ESPERA = ["tareas", "compras", "recados", "pendientes"];
+  const TIPOS_CON_ESPERA = ["tareas", "compras", "recados"];
 
   function renderDetailType() {
     const type = detailTypeOf();
@@ -2525,7 +2539,7 @@
   }
 
   /* ---------- "Proyecto": a qué proyecto pertenece la tarea ----------
-     Solo para las tareas de Tareas / Recados / Pendientes. Si el proyecto se
+     Solo para las tareas de Tareas / Compras / Recados. Si el proyecto se
      elimina, la referencia deja de resolver y el byline no muestra nada. */
   function taskProjectOf(task) {
     if (!task || !task.projectId) return null;
@@ -2730,7 +2744,7 @@
   }
 
   // ¿La tarea está bloqueada por otra de su proyecto? Se usa para esconderla
-  // de Tareas, Recados, Pendientes y Mis tareas: todavía no toca hacerla.
+  // de Tareas, Compras, Recados y Destacadas: todavía no toca hacerla.
   // La comprobación cara solo corre para las tareas que tienen proyecto.
   function isTaskBlocked(task) {
     if (!task || !task.projectId || task.done) return false;
@@ -2749,11 +2763,12 @@
   }
 
   // ¿Su proyecto está parado? Un proyecto que no está "En curso" (en espera,
-  // aparcado, abandonado o completado) no reparte trabajo: ninguna de sus
-  // tareas sale en las listas, ni pendiente ni completada. Dentro del proyecto
-  // se siguen viendo todas, que es donde toca.
+  // aparcado, abandonado o completado) no reparte trabajo: sus tareas
+  // pendientes no salen en las listas ni en Hoy/Agenda. Las completadas sí
+  // siguen a la vista, como con los demás motivos para esconder una tarea: ya
+  // se hicieron, y el historial no se toca. Dentro del proyecto se ven todas.
   function isTaskProyectoParado(task) {
-    if (!task || !task.projectId) return false;
+    if (!task || !task.projectId || task.done) return false;
     const p = proyectos.find((x) => x.id === task.projectId);
     // Con una referencia colgando (proyecto borrado) no se esconde nada
     return !!p && proyectoEstado(p) !== "curso";
@@ -3625,17 +3640,12 @@
       ).length,
       compras: pend(compras),
       recados: pend(recados),
-      espera:
-        esperando(tasks) +
-        esperando(recados) +
-        esperando(pendientes) +
-        esperando(compras),
+      espera: esperando(tasks) + esperando(recados) + esperando(compras),
       // Rutinas: las mismas pendientes que pinta su lista (repeticiones
       // propias + tareas automáticas de otras apps), por eso reusa su contexto.
       repeticiones:
         tasks.filter((t) => !t.done && ctxRepeticiones.filter(t)).length +
         ctxRepeticiones.externalPending().length,
-      pendientes: pend(pendientes),
       // Solo los que están en curso: el resto no es trabajo abierto
       proyectos: proyectos.filter((p) => proyectoEstado(p) === "curso").length,
     };
@@ -3670,7 +3680,6 @@
     renderList(ctxRutinas);
     renderList(ctxRepeticiones);
     renderList(ctxRecados);
-    renderList(ctxPendientes);
     renderList(ctxCompras);
     renderList(ctxEspera);
     // Ambas muestran tareas/recados con fecha: la Agenda los de la semana y
@@ -3679,7 +3688,7 @@
     renderHoyView();
     renderProyectos(); // cada proyecto lleva su número de tareas
   }
-  // "Mis tareas" y Rutinas se nutren de lo mismo (copias de planificadas y
+  // "Destacadas" y Rutinas se nutren de lo mismo (copias de planificadas y
   // tareas automáticas de otras apps): lo que repinta una, repinta la otra.
   function renderRutinas() {
     renderList(ctxRutinas);
@@ -3691,7 +3700,7 @@
   function renderRepeticiones() {
     renderList(ctxRepeticiones);
   }
-  // `tasks` alimenta a Tareas, "Mis tareas" y Rutinas: repinta las tres.
+  // `tasks` alimenta a Tareas, "Destacadas" y Rutinas: repinta las tres.
   // Y "En espera", que se nutre de las tres listas de tareas.
   function renderTasksViews() {
     renderList(ctxTareas);
@@ -3703,10 +3712,6 @@
     renderList(ctxRecados);
     renderList(ctxEspera);
   }
-  function renderPendientes() {
-    renderList(ctxPendientes);
-    renderList(ctxEspera);
-  }
   function renderCompras() {
     renderList(ctxCompras);
     renderList(ctxEspera);
@@ -3716,7 +3721,7 @@
   }
 
   /* ---------- Eventos ---------- */
-  // Tabs de filtro (solo "Mis tareas": por procedencia)
+  // Tabs de filtro (solo "Destacadas": por procedencia)
   [ctxRutinas].forEach((ctx) => {
     if (!ctx.tabsEl) return;
     ctx.tabsEl.addEventListener("click", (e) => {
@@ -3748,13 +3753,6 @@
     comprasInput.focus();
   });
 
-  pendientesForm.addEventListener("submit", (e) => {
-    e.preventDefault();
-    addTaskTo(ctxPendientes, pendientesInput.value);
-    pendientesInput.value = "";
-    pendientesInput.focus();
-  });
-
   toggleDoneBtn.addEventListener("click", () => {
     ctxTareas.doneVisible = !ctxTareas.doneVisible;
     renderList(ctxTareas);
@@ -3766,10 +3764,6 @@
   comprasToggleDone.addEventListener("click", () => {
     ctxCompras.doneVisible = !ctxCompras.doneVisible;
     renderList(ctxCompras);
-  });
-  pendientesToggleDone.addEventListener("click", () => {
-    ctxPendientes.doneVisible = !ctxPendientes.doneVisible;
-    renderList(ctxPendientes);
   });
   rutinasToggleDone.addEventListener("click", () => {
     ctxRutinas.doneVisible = !ctxRutinas.doneVisible;
@@ -3789,7 +3783,6 @@
 
   clearDoneBtn.addEventListener("click", () => clearDoneIn(ctxTareas));
   recadosClearDone.addEventListener("click", () => clearDoneIn(ctxRecados));
-  pendientesClearDone.addEventListener("click", () => clearDoneIn(ctxPendientes));
   comprasClearDone.addEventListener("click", () => clearDoneIn(ctxCompras));
   rutinasClearDone.addEventListener("click", () => clearDoneIn(ctxRutinas));
   repeticionesClearDone.addEventListener("click", () =>
@@ -4019,7 +4012,6 @@
   enableReorder(rutinasList, "task-item", () => tasks, save);
   enableReorder(repeticionesList, "task-item", () => tasks, save);
   enableReorder(recadosList, "task-item", () => recados, saveRecados);
-  enableReorder(pendientesList, "task-item", () => pendientes, savePendientes);
   enableReorder(comprasList, "task-item", () => compras, saveCompras);
   enableReorder(
     document.getElementById("planned-list"),
@@ -4049,7 +4041,6 @@
     "compras",
     "recados",
     "repeticiones",
-    "pendientes",
     "proyectos",
   ];
 
@@ -4105,7 +4096,6 @@
     else if (view === "espera") renderEspera();
     else if (view === "repeticiones") renderRepeticiones();
     else if (view === "recados") renderRecados();
-    else if (view === "pendientes") renderPendientes();
     else if (view === "compras") renderCompras();
     else if (view === "proyectos") {
       // Sin id en el hash se entra por el índice; con él, al proyecto
@@ -4123,8 +4113,26 @@
     return { view: raw.slice(0, corte), id: raw.slice(corte + 1) };
   }
 
+  // "#menu" no es una vista: abre el menú de Tareas (el de la barra de móvil)
+  // sobre la lista de Tareas. Es lo que apunta el atajo de la pantalla de
+  // inicio del iPhone.
+  const HASH_MENU = "menu";
+
   function applyHash() {
     const r = routeFromHash();
+    if (r.view === HASH_MENU) {
+      activateView("tareas");
+      openBarMenu(tareasMenu);
+      // La URL se queda en la vista de debajo, no en "#menu": así, la próxima
+      // vez que se toque el atajo, el hash vuelve a cambiar (y el menú vuelve a
+      // abrirse) en lugar de encontrarse el mismo "#menu" y no disparar nada.
+      try {
+        history.replaceState(null, "", "#tareas");
+      } catch (e) {
+        /* sin history utilizable: el hash se queda en "#menu", no es grave */
+      }
+      return;
+    }
     activateView(r.view, r.id);
   }
 
@@ -4159,36 +4167,55 @@
   window.addEventListener("hashchange", applyHash);
 
   /* ---------- Navegación móvil: barra inferior + menú "Más" + botón ＋ ----------
-     La barra tiene Hoy / Agenda / Mis tareas y un "Más" con el resto de vistas
-     (Ajustes incluido). El botón "Mis tareas" abre la vista interna `rutinas`;
-     la lista completa de Tareas queda en "Más". */
+     La barra tiene Hoy / Agenda y dos botones que abren un menú a pantalla
+     completa en vez de llevar a una vista: "Tareas", con todas las listas, y
+     "Más", con lo que no es una lista (hoy, solo Ajustes). Ojo con los nombres
+     dentro del menú de Tareas: "Destacadas" es la vista interna `rutinas` y
+     "Rutinas" es `repeticiones`. */
   const mobileTabbar = document.getElementById("mobile-tabbar");
   const moreMenu = document.getElementById("more-menu");
-  const moreClose = document.getElementById("more-close");
-  // Vistas que tienen botón propio en la barra ("Mis tareas" = `rutinas`)
-  const BAR_VIEWS = ["hoy", "rutinas", "agenda"];
+  const tareasMenu = document.getElementById("tareas-menu");
+  const barMenus = [moreMenu, tareasMenu].filter(Boolean);
+  // Vistas que cuelgan del botón "Tareas": con cualquiera de ellas abierta, el
+  // resaltado de la barra va ahí, porque ninguna tiene botón propio.
+  const TAREAS_MENU_VIEWS = [
+    "rutinas",
+    "espera",
+    "tareas",
+    "compras",
+    "recados",
+    "repeticiones",
+  ];
 
-  // Resalta la pestaña activa; si la vista no está en la barra (o el menú está
-  // abierto), el resaltado va en "Más".
+  const menuAbierto = () => barMenus.find((m) => !m.hidden) || null;
+
+  // Resalta la pestaña activa: la del menú abierto, si hay alguno; si no, la de
+  // la vista actual (sea un botón de vista o el menú del que cuelga).
   function syncMobileTabs() {
     if (!mobileTabbar) return;
-    const moreOpen = moreMenu && !moreMenu.hidden;
-    const inBar = BAR_VIEWS.indexOf(currentView) !== -1;
+    const abierto = menuAbierto();
     mobileTabbar.querySelectorAll(".mtab").forEach((b) => {
-      const active = b.dataset.more
-        ? moreOpen || !inBar
-        : !moreOpen && b.dataset.view === currentView;
+      const menuId = b.dataset.menu;
+      let active;
+      if (abierto) active = !!menuId && abierto.id === menuId;
+      else if (menuId)
+        active =
+          menuId === "tareas-menu" &&
+          TAREAS_MENU_VIEWS.indexOf(currentView) !== -1;
+      else active = b.dataset.view === currentView;
       b.classList.toggle("is-active", active);
     });
   }
 
-  function openMoreMenu() {
-    moreMenu.hidden = false;
+  // Solo puede haber un menú abierto: abrir uno cierra el otro.
+  function openBarMenu(menu) {
+    if (!menu) return;
+    barMenus.forEach((m) => (m.hidden = m !== menu));
     syncMobileTabs();
   }
   function closeMoreMenu() {
-    if (!moreMenu || moreMenu.hidden) return;
-    moreMenu.hidden = true;
+    if (!menuAbierto()) return;
+    barMenus.forEach((m) => (m.hidden = true));
     syncMobileTabs();
   }
 
@@ -4196,8 +4223,11 @@
     mobileTabbar.addEventListener("click", (e) => {
       const btn = e.target.closest(".mtab");
       if (!btn) return;
-      if (btn.dataset.more) {
-        if (moreMenu.hidden) openMoreMenu();
+      const menuId = btn.dataset.menu;
+      if (menuId) {
+        const menu = document.getElementById(menuId);
+        // El mismo botón cierra el menú que acaba de abrir
+        if (menu && menu.hidden) openBarMenu(menu);
         else closeMoreMenu();
         return;
       }
@@ -4206,9 +4236,12 @@
     });
   }
 
-  if (moreMenu) {
-    moreClose.addEventListener("click", closeMoreMenu);
-    moreMenu.addEventListener("click", (e) => {
+  barMenus.forEach((menu) => {
+    menu.addEventListener("click", (e) => {
+      if (e.target.closest("[data-menu-close]")) {
+        closeMoreMenu();
+        return;
+      }
       const item = e.target.closest(".menu-item");
       if (!item) return;
       closeMoreMenu();
@@ -4218,7 +4251,7 @@
       }
       goToView(item.dataset.view);
     });
-  }
+  });
 
   /* ---------- Botón ＋: creación en dos pasos ----------
      Paso 1: qué crear. Paso 2: sus datos (nombre, destacada, fecha, según el
@@ -4247,7 +4280,6 @@
     compras: "Nueva compra",
     recados: "Nuevo recado",
     rutinas: "Nueva rutina",
-    pendientes: "Nuevo pendiente",
   };
   // Lo que no es una tarea se crea solo con el nombre; el resto se configura
   // después, al abrirlo.
@@ -4425,7 +4457,6 @@
     const payload = {
       tasks,
       recados,
-      pendientes,
       compras,
       sinTipo,
       proyectos,
@@ -4481,14 +4512,18 @@
         }
         if (
           !confirm(
-            "Esto reemplazará las listas incluidas en el archivo (tareas, compras, recados, pendientes y rutinas). ¿Continuar?"
+            "Esto reemplazará las listas incluidas en el archivo (tareas, compras, recados y rutinas). ¿Continuar?"
           )
         ) {
           importFile.value = "";
           return;
         }
-        if (inTasks) {
-          tasks = inTasks.map(ensureId);
+        if (inTasks || inPendientes) {
+          // Las copias de antes de quitar Pendientes traen esa lista: se une a
+          // Tareas, que es a donde se movió todo al retirar la pestaña.
+          tasks = (inTasks || tasks)
+            .map(ensureId)
+            .concat((inPendientes || []).map(ensureId));
           save();
           renderTasksViews();
         }
@@ -4496,11 +4531,6 @@
           recados = inRecados.map(ensureId);
           saveRecados();
           renderRecados();
-        }
-        if (inPendientes) {
-          pendientes = inPendientes.map(ensureId);
-          savePendientes();
-          renderPendientes();
         }
         if (inCompras) {
           compras = inCompras.map(ensureId);
@@ -5892,7 +5922,7 @@
   // amanezca limpia.
   function hoyPinnedTasks() {
     const out = [];
-    [tasks, recados, pendientes, compras].forEach((lista) => {
+    [tasks, recados, compras].forEach((lista) => {
       lista.forEach((t) => {
         // En espera (por fecha o a mano) manda sobre el fijado: la tarea no
         // asoma por Hoy hasta que salga de "En espera". Lo mismo si su proyecto
@@ -5933,7 +5963,6 @@
     if (t._at) return t.auto ? ORIGEN.rutinas : null;
     if (t.sourcePlannedId) return ORIGEN.rutinas;
     if (recados.indexOf(t) !== -1) return ORIGEN.recados;
-    if (pendientes.indexOf(t) !== -1) return ORIGEN.pendientes;
     if (compras.indexOf(t) !== -1) return ORIGEN.compras;
     return ORIGEN.tareas;
   }
@@ -6467,7 +6496,7 @@
     let ready = 0;
     let waiting = 0;
     const bloqueadas = proyectoBlockedIds(proyectos.find((p) => p.id === id));
-    [tasks, recados, pendientes, compras, sinTipo].forEach((arr) =>
+    [tasks, recados, compras, sinTipo].forEach((arr) =>
       arr.forEach((t) => {
         if (t.projectId !== id) return;
         if (!t.done && t.projectState === "descartada") return;
@@ -6523,7 +6552,6 @@
     [
       { list: tasks, save: save },
       { list: recados, save: saveRecados },
-      { list: pendientes, save: savePendientes },
       { list: compras, save: saveCompras },
     ].forEach((l) => {
       let changed = false;
@@ -6593,7 +6621,7 @@
   }
 
   // Tareas asignadas al proyecto: las de las tres listas más las que no tienen
-  // tipo (estas van sin etiqueta de procedencia). Pendientes primero.
+  // tipo (estas van sin etiqueta de procedencia). Sin completar primero.
   function proyectoTasks(id) {
     const out = [];
     const add = (arr, origin) =>
@@ -6603,7 +6631,6 @@
     add(sinTipo, "");
     add(tasks, ORIGEN.tareas);
     add(recados, ORIGEN.recados);
-    add(pendientes, ORIGEN.pendientes);
     add(compras, ORIGEN.compras);
     return out
       .filter((e) => !e.task.done)
@@ -9107,9 +9134,13 @@
     if (db) localRecados = await idbGet(IDB_KEY_RECADOS);
     recados = Array.isArray(localRecados) ? localRecados : [];
 
+    // Pendientes ya no es una lista de la app: lo que quede guardado del
+    // respaldo local se une a Tareas (ver `migrarPendientes`). La nube se
+    // revisa aparte, en su listener, por si otro dispositivo aún no ha migrado.
     let localPendientes = [];
     if (db) localPendientes = await idbGet(IDB_KEY_PENDIENTES);
     pendientes = Array.isArray(localPendientes) ? localPendientes : [];
+    migrarPendientes();
 
     let localCompras = [];
     if (db) localCompras = await idbGet(IDB_KEY_COMPRAS);
@@ -9167,7 +9198,6 @@
 
     renderTasksViews(); // pinta Tareas + Rutinas con el respaldo local
     renderRecados();
-    renderPendientes();
     renderCompras();
     renderProyectos();
     renderHoy();
@@ -9302,26 +9332,19 @@
         showError("Al leer la nube: " + (err && err.message ? err.message : err))
     );
 
-    // Cuarto listener: pendientes (tercera lista)
-    let firstPen = true;
+    // Pendientes ya no es una lista de la app: su nodo solo se lee para vaciarlo
+    // en Tareas. Se queda escuchando (no `once`) porque un dispositivo que
+    // todavía no se haya actualizado puede volver a escribir ahí.
     const refPen = fdb.ref(FB_ROOT + "/" + FB_KEY_PENDIENTES);
     refPen.on(
       "value",
       (snap) => {
         const raw = snap.val();
         const llegan = Array.isArray(raw) ? raw : raw ? Object.values(raw) : [];
-        const remote = applyDeleted(llegan); // ver "Borrados definitivos"
-        if (firstPen && remote.length === 0 && pendientes.length > 0) {
-          firstPen = false;
-          refPen.set(pendientes).catch(() => {});
-          return;
-        }
-        firstPen = false;
-        pendientes = remote;
-        if (db) idbSet(IDB_KEY_PENDIENTES, pendientes).catch(() => {});
-        if (remote !== llegan) savePendientes(); // ya sin lo borrado
+        pendientes = applyDeleted(llegan); // ver "Borrados definitivos"
+        if (!migrarPendientes()) return;
         clearError();
-        renderPendientes();
+        renderTasksViews(); // las migradas ya salen en Tareas
         renderProyectos(); // cambia el número de tareas por proyecto
       },
       (err) =>

@@ -4,20 +4,41 @@
 No usar herramientas de preview (screenshot, snapshot, eval, DOM inspection) para verificar cambios.
 La usuaria hace el QA manualmente. Tras implementar, informar de los cambios y esperar.
 
-## Pestaña "Compras"
+## Listas de tareas
 
-Cuarta lista de tareas, igual que Recados/Pendientes (`compras`, `ctxCompras`,
-`saveCompras`, `renderCompras`). Nube: `recordatorios/compras`; IndexedDB:
-`compras`. Va debajo de Tareas en la navegación. Sus tareas "En fecha" salen en
+Son tres: **Tareas** (`tasks`), **Compras** (`compras`) y **Recados**
+(`recados`), más `sinTipo` (las que viven solo dentro de su proyecto). Todas
+comparten el mismo motor: un contexto (`ctxTareas`, `ctxCompras`, `ctxRecados`)
+que pasa por `renderList`, su `save*()` y su clave en Firebase/IndexedDB.
+
+Compras va debajo de Tareas en la navegación. Sus tareas "En fecha" salen en
 Agenda/Hoy y las que esperan, en "En espera". Las destacadas **no** van a Mis
-tareas (como Pendientes).
+tareas.
+
+### Pendientes (lista retirada)
+
+Hubo una cuarta lista, **Pendientes**. Se quitó, y sus tareas se movieron a
+**Tareas**. No queda ni pestaña, ni opción "Pendiente" en el campo Tipo, ni
+`ctxPendientes`.
+
+Del modelo solo sobrevive lo justo para vaciar lo que quedara guardado:
+`migrarPendientes()` mueve a `tasks` lo que encuentre en `pendientes` y borra el
+rastro (IndexedDB y `recordatorios/pendientes`). Corre al arrancar, con el
+respaldo local, y cada vez que llega algo por el listener de ese nodo, que sigue
+escuchando porque un dispositivo sin actualizar todavía puede escribir ahí.
+Conserva los ids, como mover una tarea de lista a mano, así que no apunta
+ningún borrado. Al importar una copia de seguridad antigua, su lista
+`pendientes` se une también a `tasks`.
+
+Cuando ya no queden dispositivos viejos, se puede retirar todo ese bloque
+(`migrarPendientes`, `pendientes`, `FB_KEY_PENDIENTES`, `IDB_KEY_PENDIENTES` y
+su listener).
 
 ## Pestaña "En espera"
 
 Reúne lo apartado, por dos vías: **por fecha** (espera a que llegue) y **a
 mano** (el interruptor "En espera" del panel de la tarea). Mientras espera, la
-tarea **no aparece** en Tareas / Compras / Recados / Pendientes / Mis tareas /
-Rutinas.
+tarea **no aparece** en Tareas / Compras / Recados / Destacadas / Rutinas.
 
 - Esperan por fecha: `dateMode` `"on"` ("En fecha"), `"from"` ("A partir de") y
   `"between"` ("Entre", por su `dateStart`; la de fin es solo el límite). Estas
@@ -25,7 +46,7 @@ Rutinas.
 - **No** espera `"before"` ("Antes de"): es un plazo, se puede hacer ya.
 - Esperan a mano: las que llevan `enEspera: true`. **No** vuelven solas: se
   quedan hasta que se desmarque el interruptor. Este se ofrece solo en las
-  cuatro listas propias (Tareas / Compras / Recados / Pendientes): en una copia
+  tres listas propias (Tareas / Compras / Recados): en una copia
   de rutina no, porque vuelve a nacer sola, ni en una tarea "sin tipo", que ya
   tiene el estado "En espera" de su proyecto (`projectState`, otra cosa: ese
   aparta la tarea dentro del proyecto y **no** la trae a esta pestaña).
@@ -40,7 +61,7 @@ Rutinas.
   los objetos reales de sus listas, así que se editan y completan desde aquí.
 - Orden: primero las de fecha, por `dateStart` ascendente (la que antes vuelve,
   primero), y al final las apartadas a mano, que no vuelven solas. Cada ítem
-  lleva su procedencia en el byline (Tarea / Compra / Recado / Pendiente).
+  lleva su procedencia en el byline (Tarea / Compra / Recado).
 - Agenda y Hoy no cambian: una tarea "En fecha" sigue colocada en su día.
 - "En espera" manda sobre "Añadir a Hoy": mientras espera, la tarea **no** sale
   en la sección "Durante el día" de Hoy, aunque tenga el fijado puesto. Vuelve a
@@ -52,10 +73,10 @@ Código (`app.js`): `isTaskWaitingByDate()` (solo la fecha), `isTaskWaiting()` =
 `ctxEspera` y el hook `sortPending` de `renderList`. UI: `detail-espera` en
 `index.html`, `renderDetailEspera()` (colgado de `renderDetailType()`).
 
-## Planificadas recurrentes → tareas en "Mis tareas"
+## Planificadas recurrentes → tareas en "Destacadas"
 
 Las tareas de la pestaña **Planificadas** con "Repetir" distinto de "Nunca" se
-**materializan** automáticamente como tareas normales en **Mis tareas**. Hay dos
+**materializan** automáticamente como tareas normales en **Destacadas**. Hay dos
 frecuencias:
 - **Semanalmente** (`repeat: "weekly"`, `repeatDay` 1=Lunes … 7=Domingo).
 - **Mensualmente** (`repeat: "monthly"`, `repeatDom` 1-31; el día se recorta al
